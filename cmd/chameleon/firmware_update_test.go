@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	chameleon "github.com/soulteary/chameleon-desk"
@@ -46,6 +47,7 @@ func TestFirmwareCheckAndDownloadCLI(t *testing.T) {
 	const commit = "6009a5fb8adbb92d3efb548eaac9e501bd179801"
 	pkg := signedFirmwareZIP(t, []byte("application"))
 	sum := sha256.Sum256(pkg)
+	var actionsDownloads atomic.Int32
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -53,7 +55,10 @@ func TestFirmwareCheckAndDownloadCLI(t *testing.T) {
 			fmt.Fprintf(w, `{"artifacts":[{"id":8,"name":"lite-dfu-app","workflow_run":{"id":5,"head_branch":"main","head_sha":"%s","head_repository_id":581338100}}]}`, commit)
 		case "/api/releases":
 			fmt.Fprintf(w, `[{"tag_name":"dev","prerelease":true,"target_commitish":"%s","author":{"login":"github-actions[bot]"},"assets":[{"name":"lite-dfu-app.zip","digest":"sha256:%s","browser_download_url":"%s/dev.zip"}]}]`, commit, hex.EncodeToString(sum[:]), server.URL)
-		case "/dev.zip", "/nightly/suites/5/artifacts/8":
+		case "/dev.zip":
+			_, _ = w.Write(pkg)
+		case "/nightly/actions/artifacts/8.zip":
+			actionsDownloads.Add(1)
 			_, _ = w.Write(pkg)
 		default:
 			http.NotFound(w, r)
@@ -89,8 +94,16 @@ func TestFirmwareCheckAndDownloadCLI(t *testing.T) {
 	if e := run("firmware", "download", "--model", "lite", "--output", out); e == nil {
 		t.Fatal("existing firmware file replaced")
 	}
-	if e := run("firmware", "download", "--model", "lite", "--source", "actions", "--output", filepath.Join(dir, "a.zip")); e != nil {
+	actionsBefore := actionsDownloads.Load()
+	actionsOutput := filepath.Join(dir, "a.zip")
+	if e := run("firmware", "download", "--model", "lite", "--source", "actions", "--output", actionsOutput); e != nil {
 		t.Fatal(e)
+	}
+	if actionsDownloads.Load() != actionsBefore+1 {
+		t.Fatal("actions download did not request the artifact ZIP path")
+	}
+	if b, _ := os.ReadFile(actionsOutput); !bytes.Equal(b, pkg) {
+		t.Fatal("saved actions package differs")
 	}
 	for _, bad := range [][]string{
 		{"firmware", "download", "--model", "lite"},
