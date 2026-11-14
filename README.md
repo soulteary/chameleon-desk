@@ -50,9 +50,13 @@ Use `--port` to select a device explicitly:
 ./chameleon serve --port /dev/ttyACM0
 ```
 
-Offline file tools work without a connected device. The card library is edited
-in the browser; use its export action to save changes. Dictionary downloads
-and firmware checks require internet access.
+Offline file tools work without a connected device. Valid card-library changes
+are saved automatically in IndexedDB and restored after refresh or restart,
+using the same browser profile and origin (scheme, host and port). Save failures
+retain the current draft and the previous committed copy. Export files for
+independent backups; browser storage is not a backup service. See
+[card-library persistence](docs/library-persistence.md) for recovery, conflicts
+and storage limits. Dictionary downloads and firmware checks require internet access.
 
 ## CLI and SDK
 
@@ -90,6 +94,18 @@ CLI build. It disables hardware-test opt-ins and Go dependency downloads, using
 the verified local module cache. Builds and checks use `-mod=readonly`.
 Results are written to the ignored `reports/` directory. Hardware tests remain
 opt-in and are not part of CI.
+The Web tests include IndexedDB transaction, recovery and conflict fixtures.
+For the real Chromium reload/browser/server restart check, build the CLI first:
+
+```sh
+npx playwright install chromium
+CHAMELEON_WEBUI_TEST_BINARY="$PWD/chameleon" npm run test:browser
+```
+
+The browser check uses a temporary profile and loopback server, with no device
+access. CI runs it separately on Linux with Chromium. The browser driver and
+IndexedDB emulator are test dependencies, not production runtime dependencies.
+
 On Linux and macOS, the suite also runs C helper regressions with AddressSanitizer.
 These checks need `cc`; complete worker tests also need liblzma and OpenSSL
 development files. CI installs these dependencies and requires the C tests.

@@ -9,6 +9,7 @@ const el = (tag, cls, text) => {
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
 let bridgeEnabled = false, bridgeStatus = null;
+let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
 const dictionaryLabels = {
   "proxmark3-classic": "Classic 默认密钥",
@@ -70,6 +71,60 @@ function updateWriteButtons() {
   $("#load-card-go").disabled = !writesEnabled || busy.has("hardware");
   document.querySelectorAll("[data-slot-active]").forEach((button) => { button.disabled = !writesEnabled || busy.has("hardware") || button.dataset.slotActive === "true"; });
   updateBridgeButtons();
+  updateLibraryButtons();
+}
+
+function updateLibraryButtons() {
+  const blocked = busy.has("database") || !libraryState || libraryState.loading;
+  $("#db-save-now").disabled = blocked || !libraryState.dirty || libraryState.blocked || libraryState.saving;
+  $("#db-reload").disabled = blocked || libraryState.saving;
+  $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
+  $("#db-export-draft").disabled = busy.has("database");
+}
+function resetLibraryView() {
+  $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
+}
+function startLibraryPersistence() {
+  libraryPersistence = new window.DeskLibraryPersistence({
+    getText: () => $("#db-json").value,
+    setText: (text) => { $("#db-json").value = text; resetLibraryView(); },
+    validate: async (database) => {
+      const result = await postJSON("/api/database", { op: "validate", database });
+      if (result.valid !== true) throw new Error("数据库校验未完成，未更新本地保存版本");
+    },
+    render: (state) => {
+      libraryState = state;
+      const status = $("#db-save-state"); status.textContent = state.message;
+      status.classList.toggle("has-changes", state.dirty || state.error);
+      status.setAttribute("role", state.error ? "alert" : "status");
+      updateLibraryButtons();
+    }
+  });
+  $("#db-save-now").addEventListener("click", () => libraryPersistence.save());
+  $("#db-reload").addEventListener("click", () => {
+    if (libraryPersistence.dirty && !window.confirm("重新读取将替换本页未保存内容。请先导出本页草稿，确认继续？")) return;
+    runTask("database", () => libraryPersistence.load());
+  });
+  $("#db-restore-previous").addEventListener("click", () => {
+    if (!window.confirm("上一保存版本将替换当前卡库。请先导出备份或本页草稿，确认恢复？")) return;
+    runTask("database", () => libraryPersistence.restorePrevious());
+  });
+  $("#db-export-draft").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([$("#db-json").value], { type: "text/plain;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "chameleon-desk-library-draft.txt"; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  $("#db-json").addEventListener("desk:before-library-replace", (event) => {
+    if (libraryPersistence.dirty && !window.confirm("导入将替换本页未保存的卡库。请先导出草稿，确认继续？")) event.preventDefault();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (libraryPersistence.dirty || pendingLibraryMutation) { event.preventDefault(); event.returnValue = ""; }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && libraryPersistence.dirty) libraryPersistence.save();
+  });
+  // Keep imports and database actions disabled until the initial read settles.
+  window.libraryReady = runTask("database", () => libraryPersistence.load());
 }
 
 function updateBridgeButtons() {
@@ -437,15 +492,19 @@ function wire() {
     if(payload.op==="add") payload.card=parseObject("#db-card","卡片");
     if((payload.op==="show"||payload.op==="delete")&&!payload.id) throw new Error("请先选择卡片或填写卡片 ID / 完整名称");
     const original=$("#db-json").value;
-    const value=await postJSON("/api/database",payload);
+    const mutation = payload.op === "add" || payload.op === "delete";
+    let value;
+    if (mutation) pendingLibraryMutation = true;
+    try { value = await postJSON("/api/database", payload); }
+    finally { if (mutation) pendingLibraryMutation = false; }
     if (!isCurrent()) return null;
     if(payload.op==="add"||payload.op==="delete"){
       if($("#db-json").value!==original) throw new Error("数据库输入已变化，请重新操作");
       const next=payload.op==="add"?value:value.database;
       if(!next||typeof next!=="object"||Array.isArray(next)) throw new Error("数据库结果不完整，请重新读取");
       $("#db-json").value=JSON.stringify(next,null,2);$("#library-results").replaceChildren();$("#db-id").value="";
-      $("#db-save-state").textContent="数据库已在本页更新 · 请导出文件保存";$("#db-save-state").classList.add("has-changes");
-      window.desktopToast("数据库已在内存中更新，请导出数据库保存");
+      libraryPersistence.changed();
+      window.desktopToast("数据库已更新，将自动保存到当前浏览器");
     }
     if(payload.op==="list"){
       if(!Array.isArray(value)||value.some((row)=>!row||typeof row.id!=="string"||!row.id)) throw new Error("卡片列表格式不完整，请重试搜索");
@@ -472,8 +531,8 @@ function wire() {
   $("#db-list").addEventListener("click", () => dbCall({ op: "list", query: $("#db-query").value.trim() }));
   $("#db-show").addEventListener("click", () => dbCall({ op: "show", id: $("#db-id").value.trim() }));
   $("#db-add").addEventListener("click", () => dbCall({ op: "add" }));
-  $("#db-delete").addEventListener("click", () => { if (!busy.has("database") && window.confirm("从当前数据库中移除这张卡片？导出保存后才会更改磁盘文件。")) dbCall({ op: "delete", id: $("#db-id").value.trim() }); });
-  $("#db-json").addEventListener("input", () => { $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out"); $("#db-save-state").textContent="当前输入已变化 · 搜索确认后可导出保存"; });
+  $("#db-delete").addEventListener("click", () => { if (!busy.has("database") && window.confirm("从当前卡库中移除这张卡片？此更改会自动保存到浏览器。")) dbCall({ op: "delete", id: $("#db-id").value.trim() }); });
+  $("#db-json").addEventListener("input", () => { resetLibraryView(); libraryPersistence?.changed(); });
   for (const id of ["#ndef-input", "#ndef-text", "#ndef-uri", "#ndef-language"]) $(id).addEventListener("input", () => { generatedCard = null; $("#ndef-use-result").hidden = true; invalidate("#ndef-out"); updateNdefSource(); });
   $("#db-card").addEventListener("input",()=>updateCardSource("#db-card","#db-card-source"));
   $("#db-id").addEventListener("input",()=>invalidate("#db-out"));
@@ -500,4 +559,5 @@ async function loadCapabilities() {
   } finally { capabilitiesPending = false; updateWriteButtons(); }
 }
 wire();
+startLibraryPersistence();
 loadCapabilities();

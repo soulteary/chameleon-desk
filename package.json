@@ -2,9 +2,12 @@
   "name": "chameleon-desk",
   "private": true,
   "scripts": {
-    "test:webui": "node --test scripts/webui-desktop.test.cjs scripts/webui-flow.test.cjs"
+    "test:webui": "node --test scripts/webui-desktop.test.cjs scripts/webui-flow.test.cjs scripts/library-persistence.test.cjs",
+    "test:browser": "node --test scripts/library-browser.test.cjs"
   },
   "devDependencies": {
-    "jsdom": "26.1.0"
+    "fake-indexeddb": "6.2.8",
+    "jsdom": "26.1.0",
+    "playwright": "1.65.1"
   }
 }

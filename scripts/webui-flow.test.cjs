@@ -3,14 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
+const { IDBFactory } = require('fake-indexeddb');
 const assets = path.join(__dirname, '../cmd/chameleon/webui');
 const source = (file) => fs.readFileSync(path.join(assets, file), 'utf8');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const response = (body, status = 200, type = 'application/json') => ({ ok: status < 400, status, headers: { get: () => type }, json: async () => body, text: async () => String(body) });
 
-async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false } = {}) {
-  const errors = [], requests = [], downloads = [], imports = [];
+async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false, indexedDB = new IDBFactory() } = {}) {
+  const errors = [], requests = [], downloads = [], imports = [], persistence = [];
   const virtualConsole = new VirtualConsole(); virtualConsole.on('jsdomError', (e) => errors.push(e));
   const dom = new JSDOM(source('index.html'), { url: 'http://127.0.0.1:8099/', runScripts: 'outside-only', virtualConsole });
   const w = dom.window, d = w.document, $ = (s) => d.querySelector(s);
@@ -26,7 +27,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
     for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); }
     await tick();
   };
-  Object.assign(w, { innerWidth: width, innerHeight: height, Blob: global.Blob });
+  Object.assign(w, { innerWidth: width, innerHeight: height, Blob: global.Blob, indexedDB, structuredClone: global.structuredClone });
   w.confirm = () => true;
   w.ResizeObserver = class { observe() {} };
   w.requestAnimationFrame = (callback) => queueMicrotask(callback);
@@ -40,6 +41,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   }
   w.fetch = async (url, opts) => {
     requests.push({ url, ...opts });
+    if (url === '/api/database' && JSON.parse(opts.body).op === 'validate') return routes.validateDatabase ? routes.validateDatabase(opts) : response({ valid: true });
     if (routes[url]) return routes[url](opts);
     if (url === '/api/capabilities') return response({ writes_enabled: writes, csrf_token: 'test-session-token' });
     throw new Error('Unexpected offline request: ' + url);
@@ -48,8 +50,20 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'app.js']) w.eval(source(file));
-  t.after(() => { dom.window.close(); assert.deepEqual(errors, [], 'no uncaught page errors'); });
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'app.js']) {
+    if (file === 'app.js') {
+      const Controller = w.DeskLibraryPersistence;
+      w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
+    }
+    w.eval(source(file));
+  }
+  t.after(async () => {
+    for (const controller of persistence) controller.cancelTimer();
+    await Promise.all(persistence.map(controller => controller.saving));
+    for (const controller of persistence) controller.cancelTimer();
+    dom.window.close(); assert.deepEqual(errors, [], 'no uncaught page errors');
+  });
+  await w.libraryReady;
   await tick();
   return { w, d, $, requests, downloads, imports, advance, timers, click: async (selector) => { $(selector).click(); await tick(); }, input: (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new w.Event('input', { bubbles: true })); } };
 }
@@ -848,4 +862,91 @@ test('pending BLE connection blocks competing hardware controls', async (t) => {
   connection.resolve(response(status)); await tick();
   assert.equal(p.$('#refresh-info').disabled, false);
   assert.equal(p.$('#bridge-connect').disabled, true);
+});
+
+async function waitForLibrary(p, expression) {
+  const deadline = Date.now() + 3000;
+  while (!expression()) { assert(Date.now() < deadline, p.$('#db-save-state').textContent); await tick(); }
+}
+function unloadPrevented(p) {
+  const event = new p.w.Event('beforeunload', { cancelable: true }); p.w.dispatchEvent(event); return event.defaultPrevented;
+}
+
+test('library autosaves after the debounce and restores on a new page without hardware access', async t => {
+  const factory = new IDBFactory(), a = await page(t, {}, { indexedDB: factory, clock: true });
+  const text = JSON.stringify({ 'flutter.cards': [], custom: { error: 'preserved', name: '卡库' } });
+  a.input('#db-json', text); assert(unloadPrevented(a));
+  await a.advance(599); assert(!a.requests.some(r => r.url === '/api/database'));
+  await a.advance(1); await waitForLibrary(a, () => a.$('#db-save-state').textContent.includes('已自动保存'));
+  assert(!unloadPrevented(a));
+  const b = await page(t, {}, { indexedDB: factory }); assert.equal(b.$('#db-json').value, text);
+  assert.match(b.$('#db-save-state').textContent, /已恢复/); assert(!unloadPrevented(b));
+  assert(b.requests.every(r => ['/api/database', '/api/capabilities'].includes(r.url)));
+  assert(b.requests.filter(r => r.url === '/api/database').every(r => JSON.parse(r.body).op === 'validate'));
+});
+
+test('library add and delete results are both persisted and the preceding snapshot can be restored', async t => {
+  const factory = new IDBFactory();
+  const p = await page(t, { '/api/database': opts => JSON.parse(opts.body).op === 'add' ? response({ 'flutter.cards': [JSON.stringify(card)], custom: 'retained' }) : response({ database: { 'flutter.cards': [], custom: 'retained' }, removed: 1 }) }, { indexedDB: factory });
+  p.input('#db-card', JSON.stringify(card)); await p.click('#db-add'); await p.click('#db-save-now');
+  await waitForLibrary(p, () => p.$('#db-save-state').textContent.includes('已自动保存'));
+  p.input('#db-id', card.id); await p.click('#db-delete'); await p.click('#db-save-now');
+  await waitForLibrary(p, () => p.$('#db-save-state').textContent.includes('已自动保存'));
+  const restored = await page(t, {}, { indexedDB: factory }); assert.equal(JSON.parse(restored.$('#db-json').value)['flutter.cards'].length, 0);
+  restored.w.confirm = () => false; await restored.click('#db-restore-previous'); assert.equal(JSON.parse(restored.$('#db-json').value)['flutter.cards'].length, 0);
+  restored.w.confirm = () => true; await restored.click('#db-restore-previous');
+  await waitForLibrary(restored, () => restored.$('#db-save-state').textContent === '已恢复上一保存版本');
+  assert.equal(JSON.parse(restored.$('#db-json').value)['flutter.cards'].length, 1); assert(!unloadPrevented(restored));
+});
+
+test('invalid library input stays dirty, can be exported as text and does not replace the saved copy', async t => {
+  const factory = new IDBFactory(), p = await page(t, {}, { indexedDB: factory });
+  p.input('#db-json', '{"saved":true}'); await p.click('#db-save-now'); await waitForLibrary(p, () => !unloadPrevented(p));
+  p.input('#db-json', '{broken'); await p.click('#db-save-now'); await waitForLibrary(p, () => p.$('#db-save-state').textContent.includes('JSON 尚未完整'));
+  assert(unloadPrevented(p)); assert.equal(p.$('#db-save-state').getAttribute('role'), 'alert');
+  await p.click('#db-export-draft'); assert.equal(await p.downloads.at(-1).blob.text(), '{broken'); assert.match(p.downloads.at(-1).name, /draft\.txt$/);
+  assert(unloadPrevented(p));
+  const restored = await page(t, {}, { indexedDB: factory }); assert.equal(restored.$('#db-json').value, '{"saved":true}');
+  p.w.confirm = () => false; await p.click('#db-reload'); assert.equal(p.$('#db-json').value, '{broken');
+  p.w.confirm = () => true; await p.click('#db-reload'); await waitForLibrary(p, () => !unloadPrevented(p)); assert.equal(p.$('#db-json').value, '{"saved":true}');
+});
+
+test('backend validation and storage failures remain visible and do not acknowledge a save', async t => {
+  let valid = false;
+  const p = await page(t, { validateDatabase: () => valid ? response({ valid: true }) : response({ error: 'invalid folder references' }, 400) });
+  p.input('#db-json', '{"cards":[]}'); await p.click('#db-save-now'); await waitForLibrary(p, () => p.$('#db-save-state').textContent.includes('invalid folder references'));
+  assert(unloadPrevented(p)); assert(!p.$('#db-save-now').disabled);
+  valid = true;
+  const write = p.w.DeskLibraryStore.prototype.write;
+  p.w.DeskLibraryStore.prototype.write = async () => { throw new p.w.DOMException('quota', 'QuotaExceededError'); };
+  await p.click('#db-save-now'); await waitForLibrary(p, () => p.$('#db-save-state').textContent.includes('空间不足')); assert(unloadPrevented(p));
+  p.w.DeskLibraryStore.prototype.write = write;
+  await p.click('#db-save-now'); await waitForLibrary(p, () => !unloadPrevented(p));
+});
+
+test('unavailable browser storage leaves local tools usable and warns before abandoning edits', async t => {
+  const p = await page(t, {}, { indexedDB: null }); assert.match(p.$('#db-save-state').textContent, /不可用/);
+  assert(!p.$('#db-json').disabled); p.input('#db-json', '{"draft":true}'); assert(unloadPrevented(p));
+  assert(p.$('#db-save-now').disabled); assert(!p.$('#db-reload').disabled);
+  await p.click('#db-export-draft'); assert.equal(await p.downloads.at(-1).blob.text(), '{"draft":true}');
+});
+
+test('database import confirms replacement of unsaved edits and autosaves an accepted import', async t => {
+  const p = await page(t, {}, { clock: true }); p.input('#db-json', '{"draft":"keep"}');
+  const importDatabase = async () => {
+    await p.click('[data-import="db-json"]'); const input = p.imports.at(-1);
+    Object.defineProperty(input, 'files', { value: [{ name: 'library.json', size: 20, text: async () => '{"imported":true}' }] });
+    input.dispatchEvent(new p.w.Event('change')); await tick();
+  };
+  p.w.confirm = () => false; await importDatabase(); assert.equal(p.$('#db-json').value, '{"draft":"keep"}');
+  p.w.confirm = () => true; await importDatabase(); assert.equal(p.$('#db-json').value, '{"imported":true}'); assert(unloadPrevented(p));
+  await p.advance(600); await waitForLibrary(p, () => !unloadPrevented(p));
+});
+
+test('a pending library mutation warns on exit until its result is committed', async t => {
+  const pending = deferred(), p = await page(t, { '/api/database': () => pending.promise });
+  p.input('#db-card', JSON.stringify(card)); assert(!unloadPrevented(p));
+  await p.click('#db-add'); assert(unloadPrevented(p));
+  pending.resolve(response({ 'flutter.cards': [JSON.stringify(card)] })); await tick();
+  assert(unloadPrevented(p)); await p.click('#db-save-now'); await waitForLibrary(p, () => !unloadPrevented(p));
 });

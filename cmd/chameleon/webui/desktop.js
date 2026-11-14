@@ -153,6 +153,10 @@
           const value = JSON.parse(text);
           if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("请选择 JSON 对象文件");
           if (b.disabled || target.disabled || inputRevisions.get(target) !== revision || target.value !== original) throw new Error("工作区正在处理或输入已变化，请重新导入");
+          if (target.id === "db-json") {
+            const replace = new Event("desk:before-library-replace", { cancelable: true });
+            target.dispatchEvent(replace); if (replace.defaultPrevented) return;
+          }
           target.value = text; target.dispatchEvent(new Event("input", { bubbles: true }));
           const details = target.closest("details"); if (details && target.id === "db-json") details.open = true;
           window.desktopToast("已导入 " + f.name);
