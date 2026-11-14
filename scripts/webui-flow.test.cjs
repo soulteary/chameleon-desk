@@ -565,6 +565,7 @@ for (const stalledBody of [false, true]) test(`a stalled ${stalledBody ? 'respon
   assert.equal(p.$('#acl-encode-go').disabled, true);
   await p.advance(60000);
   assert.match(summary(p.$, '#acl-out').textContent, /超时/);
+  assert.doesNotMatch(summary(p.$, '#acl-out').textContent, /写入|读取状态/);
   assert.equal(p.$('#acl-encode-go').disabled, false);
   assert.equal(p.$('#acl').hasAttribute('aria-busy'), false);
   await p.click('#acl .hardware-state button');

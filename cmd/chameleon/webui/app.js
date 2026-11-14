@@ -45,7 +45,10 @@ async function api(path, opts = {}) {
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
     return body;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error("本地服务响应超时。请确认服务仍在运行，再重试；写入操作请先读取状态确认结果。");
+    if (controller.signal.aborted) {
+      const message = "本地服务响应超时。请确认服务仍在运行，再重试。";
+      throw new Error(message + (path.startsWith("/api/slot/") ? "写入操作请先读取状态确认结果。" : ""));
+    }
     throw error;
   } finally { clearTimeout(timeout); }
 }
