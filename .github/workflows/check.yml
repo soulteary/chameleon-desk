@@ -12,6 +12,8 @@ jobs:
   offline:
     name: Offline checks (${{ matrix.os }}, Go ${{ matrix.go }})
     runs-on: ${{ matrix.os }}
+    env:
+      CHAMELEON_TEST_C_REQUIRED: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +30,19 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: false
+      - name: Install Linux recovery test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          if ! dpkg -s liblzma-dev >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes liblzma-dev
+          fi
+      - name: Install macOS recovery test dependencies
+        if: runner.os == 'macOS'
+        run: |
+          if ! brew list --versions xz >/dev/null 2>&1; then
+            brew install xz
+          fi
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22

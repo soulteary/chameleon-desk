@@ -76,8 +76,9 @@ The check script runs Go race tests, coverage, vet, Web UI regressions, and a
 CLI build. It disables hardware-test opt-ins and uses vendored Go dependencies.
 Results are written to the ignored `reports/` directory. Hardware tests remain
 opt-in and are not part of CI.
-On Linux and macOS, the suite also runs C helper regressions with AddressSanitizer
-when `cc` is available.
+On Linux and macOS, the suite also runs C helper regressions with AddressSanitizer.
+These checks need `cc`; the complete Hardnested worker test also needs liblzma
+development files. CI installs these dependencies and requires the C tests.
 
 ## License
 
