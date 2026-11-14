@@ -100,13 +100,12 @@ func NewGUIDictionaryFromText(name, text string) (GUIDictionary, error) {
 	var keys []HexBytes
 	seen := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
-		token := strings.TrimSpace(strings.ReplaceAll(line, "#", " "))
-		if i := strings.IndexByte(token, ' '); i >= 0 {
-			token = token[:i]
-		}
-		if token == "" {
+		line, _, _ = strings.Cut(line, "#")
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
 			continue
 		}
+		token := fields[0]
 		if len(token) != 12 && len(token) != 8 && len(token) != 32 {
 			continue
 		}

@@ -245,6 +245,35 @@ func (c *Client) Autopwn(ctx context.Context, o AutopwnOptions) (out ClassicKeyM
 			if side == 0 && len(entry.A) > 0 || side == 1 && len(entry.B) > 0 {
 				continue
 			}
+			if side == 1 && len(entry.A) == 6 {
+				var readable HexBytes
+				err = c.Reader(ctx, func(s *ReaderSession) error {
+					if e := ensureUID(ctx, s, out.UID); e != nil {
+						return e
+					}
+					first, count, _ := ClassicSectorGeometry(sector)
+					trailer, e := s.ReadClassicBlock(ctx, first+count-1, KeyA, entry.A)
+					if e != nil {
+						var status *StatusError
+						if errors.As(e, &status) && (status.Status == 2 || status.Status == 6) {
+							return nil
+						}
+						return e
+					}
+					if classicBReadable(trailer) {
+						readable = append(HexBytes(nil), trailer[10:16]...)
+					}
+					return nil
+				})
+				if err != nil {
+					return out, err
+				}
+				if len(readable) != 0 {
+					entry.B, entry.BReadable = readable, true
+					out.updateComplete()
+					continue
+				}
+			}
 			knownBlock, knownKind, knownKey := -1, KeyA, HexBytes(nil)
 			for _, s := range out.Sectors {
 				first, _, _ := ClassicSectorGeometry(s.Sector)
