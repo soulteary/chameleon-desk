@@ -331,6 +331,9 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		return nil
 	}
 	mutation := group == "sniff" || group == "t55" || group == "firmware" || group == "image" && action == "load" || group == "mode" || group == "raw" || group == "apdu" || group == "settings" && action != "get" || group == "slot" && action != "get" || group == "emulator" && (action == "write" || action == "import" || action == "flag" || action == "write-mode" || action == "lf-set" || action == "identity" && uid != "") || (group == "mfc" || group == "type2") && action == "write"
+	if group == "slot" && action != "get" && action != "save" && (slot < 1 || slot > 8) {
+		return fmt.Errorf("slot must be 1..8")
+	}
 	if mutation {
 		if e = requireWrite(); e != nil {
 			return e

@@ -59,10 +59,13 @@ type GUICardLoadOptions struct {
 }
 
 type GUICardLoadResult struct {
-	Plan      GUICardLoadPlan `json:"plan"`
-	Verified  bool            `json:"verified"`
-	Persisted bool            `json:"persisted"`
-	Activated bool            `json:"activated"`
+	Plan GUICardLoadPlan `json:"plan"`
+	// CompletedSteps counts acknowledged plan commands. A command that fails
+	// without a response may still have changed device state.
+	CompletedSteps int  `json:"completed_steps"`
+	Verified       bool `json:"verified"`
+	Persisted      bool `json:"persisted"`
+	Activated      bool `json:"activated"`
 }
 
 var guiClassicBlocks = map[uint16]int{1000: 20, 1001: 64, 1002: 128, 1003: 256}
@@ -311,7 +314,10 @@ func (c *Client) LoadGUICard(ctx context.Context, slot int, card GUICard, o GUIC
 		for i := 0; i < len(caps); i += 2 {
 			available[Command(binary.BigEndian.Uint16(caps[i:]))] = true
 		}
-		required := []Command{CmdGetActiveSlot, CmdGetSlotTagNick, CmdSlotDataConfigSave}
+		required := []Command{CmdGetActiveSlot, CmdGetSlotTagNick}
+		if o.Persist {
+			required = append(required, CmdSlotDataConfigSave)
+		}
 		for _, step := range plan.Steps {
 			required = append(required, step.Command)
 		}
@@ -368,6 +374,7 @@ func (c *Client) LoadGUICard(ctx context.Context, slot int, card GUICard, o GUIC
 			if _, e = s.expect(ctx, step.Command, step.Payload, 0x68); e != nil {
 				return fmt.Errorf("step %d %s (slot may be partially written): %w", i+1, step.Name, e)
 			}
+			out.CompletedSteps++
 		}
 		if plan.identity != nil {
 			got, e := s.expect(ctx, CmdHf14aGetAntiCollData, nil, 0x68)

@@ -1,5 +1,11 @@
 package chameleon
 
+import (
+	"encoding/hex"
+	"strings"
+	"unicode"
+)
+
 // Vanity SAK detection mirrors the upstream GUI helper. A "vanity SAK" card
 // stores the SAK with bit 0x80 set in block 0, which some readers need for a
 // 7-byte UID to be treated like a 4-byte one. These are pure checks.
@@ -27,18 +33,22 @@ func VanitySAKFromData(uid []byte, sak byte, block0 []byte) *bool {
 
 // VanitySAKFromUIDHex infers the vanity flag from a UID hex string alone: a
 // 7-byte (14 hex digit) UID is vanity, a 4-byte one is not. nil for any other
-// length. This matches the GUI's edit-dialog default.
+// length or invalid hexadecimal content. Whitespace is ignored.
 func VanitySAKFromUIDHex(uidHex string) *bool {
-	clean := 0
-	for _, r := range uidHex {
-		if r != ' ' {
-			clean++
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
 		}
+		return r
+	}, uidHex)
+	uid, err := hex.DecodeString(clean)
+	if err != nil {
+		return nil
 	}
-	switch clean {
-	case 8:
+	switch len(uid) {
+	case 4:
 		return boolPtr(false)
-	case 14:
+	case 7:
 		return boolPtr(true)
 	}
 	return nil
