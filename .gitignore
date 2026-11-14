@@ -3,6 +3,7 @@
 /chameleon-desk
 /tools/bin/
 /node_modules/
+/vendor/
 __pycache__/
 /coverage.out
 *.test
