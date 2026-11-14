@@ -6,6 +6,8 @@ Local modifications:
 - nested_util.c bounds candidate grouping and selection by their actual sizes, retains each recovered state, handles empty input and allocation/thread failures, and frees intermediate buffers. Its errno contract distinguishes valid empty results from internal failures.
 - nested.c and staticnested.c free their nonce arrays on success and failure and return a failure status when candidate recovery fails internally.
 - mfkey64.c validates hexadecimal input, allocates encrypted-data buffers from the decoded lengths, checks recovery results, and releases allocations on every exit path.
-The cryptographic primitives are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch and MEMORY-BOUNDS.patch.
+- hardnested_main.c rejects incomplete binary records and captures missing first-byte classes before recovery initialization, and checks temporary-file close errors.
+- HardnestedRecovery/cmdhfmfhard.c distinguishes EOF and malformed/read failures, finishes pending reductions with a bounded EOF step, validates replay reads, and releases input/recovery buffers on failure.
+The cryptographic primitives are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, and HARDNESTED-IO.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
 The offline C workers are optional executables; no Python is required at runtime.

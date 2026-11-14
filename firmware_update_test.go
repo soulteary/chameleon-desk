@@ -116,7 +116,7 @@ func TestFirmwareLatestBuildSelection(t *testing.T) {
 	}, ",") + `]}`
 	u := site.updater(t)
 	a, e := u.ActionsBuild(ctx, "ultra")
-	if e != nil || a.Commit != testMainCommit || a.RunID != 500 || a.ArtifactID != 80 || !strings.HasSuffix(a.URL, "/nightly/suites/500/artifacts/80") {
+	if e != nil || a.Commit != testMainCommit || a.RunID != 500 || a.ArtifactID != 80 || !strings.HasSuffix(a.URL, "/nightly/actions/artifacts/80.zip") {
 		t.Fatalf("%+v %v", a, e)
 	}
 	if v, e := u.LatestBuild(ctx, "Chameleon Ultra"); e != nil || v.Source != "release" || v.Tag != "dev" {
@@ -168,13 +168,45 @@ func TestFirmwareCheckUpdate(t *testing.T) {
 	}
 }
 
+func TestFirmwareLatestActionsBuildDownloadsSelectedArtifact(t *testing.T) {
+	ctx := context.Background()
+	firmware := []byte("selected nightly firmware")
+	archive := firmwareTestZIP(t, firmware, true)
+	site := &firmwareSite{
+		artifacts: `{"artifacts":[` + strings.Join([]string{
+			artifactJSON(90, 400, "main", testOldCommit, firmwareUpstreamID, false),
+			artifactJSON(80, 500, "main", testMainCommit, firmwareUpstreamID, false),
+			artifactJSON(100, 600, "main", testOldCommit, 42, false),
+		}, ",") + `]}`,
+		releases: releaseJSON(testOldCommit, ""),
+		// Only the direct download route for the selected artifact is served.
+		files: map[string][]byte{"/nightly/actions/artifacts/80.zip": archive},
+	}
+	u := site.updater(t)
+	build, e := u.LatestBuild(ctx, "ultra")
+	if e != nil || build.Source != "actions" || build.RunID != 500 || build.ArtifactID != 80 || build.Commit != testMainCommit || build.URL != u.NightlyBase+"/actions/artifacts/80.zip" {
+		t.Fatalf("wrong nightly artifact or download route: %+v %v", build, e)
+	}
+	output := filepath.Join(t.TempDir(), "nightly.zip")
+	result, e := u.DownloadFirmware(ctx, build, output)
+	if e != nil || result.Build.Commit != testMainCommit || result.Build.ArtifactID != 80 || result.InitHash != "sha256" || result.DigestVerified || result.Bytes != len(archive) {
+		t.Fatalf("nightly package verification failed: %+v %v", result, e)
+	}
+	if saved, e := os.ReadFile(output); e != nil || !bytes.Equal(saved, archive) {
+		t.Fatalf("downloaded archive changed: %v", e)
+	}
+	if image, e := ReadFirmwareApplication(output); e != nil || !bytes.Equal(image.Firmware, firmware) {
+		t.Fatalf("selected firmware image was not downloaded: %v", e)
+	}
+}
+
 func TestFirmwareDownloadVerifiesAndNeverOverwrites(t *testing.T) {
 	ctx := context.Background()
 	good := firmwareTestZIP(t, []byte("firmware image"), true)
 	sum := sha256.Sum256(good)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 	site := &firmwareSite{releases: releaseJSON(testMainCommit, digest), artifacts: `{"artifacts":[` + artifactJSON(80, 500, "main", testMainCommit, 581338100, false) + `]}`,
-		files: map[string][]byte{"/dl/dev.zip": good, "/nightly/suites/500/artifacts/80": good, "/dl/stable.zip": firmwareTestZIP(t, []byte("unsigned"), false)}}
+		files: map[string][]byte{"/dl/dev.zip": good, "/nightly/actions/artifacts/80.zip": good, "/dl/stable.zip": firmwareTestZIP(t, []byte("unsigned"), false)}}
 	u := site.updater(t)
 	dir := t.TempDir()
 	clean := func() {
