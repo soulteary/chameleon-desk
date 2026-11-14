@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,26 @@ import (
 	"syscall"
 	"time"
 )
+
+type offlineRecoveryCheckpoint struct {
+	chameleon.OfflineRecovery
+	Completed bool   `json:"completed"`
+	Error     string `json:"error,omitempty"`
+}
+
+func (p offlineRecoveryCheckpoint) matchesCapture(b chameleon.RecoveryBundle) bool {
+	if !p.Completed || p.Error != "" || p.VerifiedOnCard || p.Tool.Truncated || p.Tool.Tool != b.Tool ||
+		p.CaptureSHA256 != b.Checksum || p.Kind != b.Kind || !bytes.Equal(p.UID, b.UID) ||
+		p.Block != b.TargetBlock || p.KeyType != b.TargetType {
+		return false
+	}
+	for _, key := range p.Candidates {
+		if len(key) != 6 {
+			return false
+		}
+	}
+	return true
+}
 
 func isWorkflow(args []string) bool {
 	if len(args) == 0 {
@@ -222,12 +243,12 @@ func runWorkflow(args []string) (retErr error) {
 		}
 		if *resume && *output != "" {
 			if cached, readErr := readLimitedFile(*output); readErr == nil {
-				var prior chameleon.OfflineRecovery
-				if json.Unmarshal(cached, &prior) == nil && prior.CaptureSHA256 == b.Checksum && !prior.VerifiedOnCard {
+				var prior offlineRecoveryCheckpoint
+				if json.Unmarshal(cached, &prior) == nil && prior.matchesCapture(b) {
 					fmt.Fprintf(os.Stderr, "Reused cached offline result for capture %s\n", b.Checksum)
 					return result(prior, "", false)
 				}
-				return fmt.Errorf("cached result does not match capture checksum")
+				return fmt.Errorf("cached result is incomplete or does not match capture; use a new output file to recompute")
 			} else if !os.IsNotExist(readErr) {
 				return fmt.Errorf("read cached result: %w", readErr)
 			}
@@ -238,7 +259,11 @@ func runWorkflow(args []string) (retErr error) {
 		ctx, cancel := context.WithTimeout(context.Background(), *limit)
 		defer cancel()
 		v, err := chameleon.ComputeRecovery(ctx, *tools, b)
-		return errors.Join(err, result(v, *output, false))
+		checkpoint := offlineRecoveryCheckpoint{OfflineRecovery: v, Completed: err == nil}
+		if err != nil {
+			checkpoint.Error = err.Error()
+		}
+		return errors.Join(err, result(checkpoint, *output, false))
 	}
 	if group == "mfc" && action == "recover-collect" {
 		if *output == "" || *input != "" {
