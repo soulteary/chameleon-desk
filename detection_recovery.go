@@ -112,13 +112,22 @@ func RecoverDetectionLogs(ctx context.Context, logs []AuthLog, tools string, lim
 	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
 	pairs := 0
 	seen := map[string]bool{}
 	for i, a := range logs {
+		if e := ctx.Err(); e != nil {
+			return out, e
+		}
 		if a.Nested {
 			continue
 		}
 		for _, b := range logs[i+1:] {
+			if e := ctx.Err(); e != nil {
+				return out, e
+			}
 			if b.Nested || a.Block != b.Block || a.KeyType != b.KeyType || !bytes.Equal(a.UID, b.UID) || bytes.Equal(a.NT, b.NT) && bytes.Equal(a.NR, b.NR) && bytes.Equal(a.AR, b.AR) {
 				continue
 			}
