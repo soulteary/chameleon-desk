@@ -33,6 +33,7 @@
 #include <time.h> // MingW
 #include <stdint.h>
 #include <ctype.h>
+#include <errno.h>
 
 #include "crapto1.h"
 #include "parity.h"
@@ -458,37 +459,32 @@ static int add_nonce(uint32_t nonce_enc, uint8_t par_enc) {
     noncelistentry_t *p1 = nonces[first_byte].first;
     noncelistentry_t *p2 = NULL;
 
-    if (p1 == NULL) { // first nonce with this 1st byte
-        first_byte_num++;
-        first_byte_Sum += evenparity32((nonce_enc & 0xff000000) | (par_enc & 0x08));
-    }
-
     while (p1 != NULL && (p1->nonce_enc & 0x00ff0000) < (nonce_enc & 0x00ff0000)) {
         p2 = p1;
         p1 = p1->next;
     }
-
-    if (p1 == NULL) {                                                          // need to add at the end of the list
-        if (p2 == NULL) {           // list is empty yet. Add first entry.
-            p2 = nonces[first_byte].first = calloc(1, sizeof(noncelistentry_t));
-        } else {                    // add new entry at end of existing list.
-            p2 = p2->next = calloc(1, sizeof(noncelistentry_t));
-        }
-    } else if ((p1->nonce_enc & 0x00ff0000) !=
-               (nonce_enc & 0x00ff0000)) {     // found distinct 2nd byte. Need to insert.
-        if (p2 == NULL) {           // need to insert at start of list
-            p2 = nonces[first_byte].first = calloc(1, sizeof(noncelistentry_t));
-        } else {
-            p2 = p2->next = calloc(1, sizeof(noncelistentry_t));
-        }
-    } else {                                                                   // we have seen this 2nd byte before. Nothing to add or insert.
-        return (0);
+    if (p1 != NULL && (p1->nonce_enc & 0x00ff0000) == (nonce_enc & 0x00ff0000)) {
+        return 0; // This second byte is already represented.
     }
 
-    // add or insert new data
-    p2->next = p1;
-    p2->nonce_enc = nonce_enc;
-    p2->par_enc = par_enc;
+    noncelistentry_t *entry = calloc(1, sizeof(*entry));
+    if (entry == NULL) {
+        fprintf(stderr, "Cannot allocate hardnested nonce entry\n");
+        errno = ENOMEM;
+        return -1;
+    }
+    entry->next = p1;
+    entry->nonce_enc = nonce_enc;
+    entry->par_enc = par_enc;
+    if (p2 == NULL) {
+        if (nonces[first_byte].first == NULL) {
+            first_byte_num++;
+            first_byte_Sum += evenparity32((nonce_enc & 0xff000000) | (par_enc & 0x08));
+        }
+        nonces[first_byte].first = entry;
+    } else {
+        p2->next = entry;
+    }
 
     nonces[first_byte].num++;
     nonces[first_byte].Sum += evenparity32((nonce_enc & 0x00ff0000) | (par_enc & 0x04));
@@ -1234,7 +1230,9 @@ static int simulate_acquire_nonces(uint32_t uid, char* path) {
             }
             break;
         }
-        num_acquired_nonces += add_nonce(nt_enc, par_enc);
+        int added = add_nonce(nt_enc, par_enc);
+        if (added < 0) goto done;
+        num_acquired_nonces += added;
         total_num_nonces++;
 
         if (num_acquired_nonces % 256 == 0) {
@@ -1301,7 +1299,9 @@ static int simulate_acquire_nonces(uint32_t uid, char* path) {
                         fprintf(stderr, "Nonce file ended while replaying records\n");
                         goto done;
                     }
-                    num_acquired_nonces += add_nonce(nt_enc, par_enc);
+                    int added = add_nonce(nt_enc, par_enc);
+                    if (added < 0) goto done;
+                    num_acquired_nonces += added;
                     total_num_nonces++;
                 }
                 if (read_nonce_record(fp, &nt_enc, &par_enc) != 1) {
@@ -1529,6 +1529,12 @@ static void add_cached_states(statelist_t *cands, uint16_t part_sum_a0, uint16_t
 }
 
 
+// Shrinking is optional: keep the computed candidates if realloc fails.
+static void shrink_state_list(statelist_t *cands, odd_even_t odd_even) {
+    uint32_t *smaller = realloc(cands->states[odd_even], sizeof(uint32_t) * (cands->len[odd_even] + 1));
+    if (smaller != NULL) cands->states[odd_even] = smaller;
+}
+
 static void add_matching_states(statelist_t *cands, uint8_t part_sum_a0, uint8_t part_sum_a8, odd_even_t odd_even) {
 
     const uint32_t worstcase_size = 1 << 20;
@@ -1558,7 +1564,7 @@ static void add_matching_states(statelist_t *cands, uint8_t part_sum_a0, uint8_t
         free(cands->states[odd_even]);
         cands->states[odd_even] = NULL;
     } else if (cands->len[odd_even] + 1 < worstcase_size) {
-        cands->states[odd_even] = realloc(cands->states[odd_even], sizeof(uint32_t) * (cands->len[odd_even] + 1));
+        shrink_state_list(cands, odd_even);
     }
     free_bitarray(cands_bitarray);
 
@@ -1571,23 +1577,19 @@ static void add_matching_states(statelist_t *cands, uint8_t part_sum_a0, uint8_t
 }
 
 static statelist_t *add_more_candidates(void) {
-    statelist_t *new_candidates;
-    if (candidates == NULL) {
-        candidates = (statelist_t *) calloc(sizeof(statelist_t), sizeof(uint8_t));
-        new_candidates = candidates;
-    } else {
-        new_candidates = candidates;
-        while (new_candidates->next != NULL) {
-            new_candidates = new_candidates->next;
-        }
-        new_candidates = new_candidates->next = (statelist_t *) calloc(sizeof(statelist_t), sizeof(uint8_t));
+    statelist_t *entry = calloc(1, sizeof(*entry));
+    if (entry == NULL) {
+        PrintAndLogEx(ERR, "Out of memory error in add_more_candidates()");
+        exit(4);
     }
-    new_candidates->next = NULL;
-    new_candidates->len[ODD_STATE] = 0;
-    new_candidates->len[EVEN_STATE] = 0;
-    new_candidates->states[ODD_STATE] = NULL;
-    new_candidates->states[EVEN_STATE] = NULL;
-    return new_candidates;
+    if (candidates == NULL) {
+        candidates = entry;
+    } else {
+        statelist_t *tail = candidates;
+        while (tail->next != NULL) tail = tail->next;
+        tail->next = entry;
+    }
+    return entry;
 }
 
 static void add_bitflip_candidates(uint8_t byte) {
@@ -1606,8 +1608,7 @@ static void add_bitflip_candidates(uint8_t byte) {
 
         // slim down the allocated memory.
         if (candidates1->len[odd_even] + 1 < worstcase_size) {
-            candidates1->states[odd_even] = realloc(candidates1->states[odd_even],
-                                                    sizeof(uint32_t) * (candidates1->len[odd_even] + 1));
+            shrink_state_list(candidates1, odd_even);
         }
     }
     return;
@@ -1855,6 +1856,10 @@ static uint16_t real_sum_a8 = 0;
 static void set_test_state(uint8_t byte) {
     struct Crypto1State *pcs;
     pcs = crypto1_create(known_target_key);
+    if (pcs == NULL) {
+        PrintAndLogEx(ERR, "Out of memory error in set_test_state()");
+        exit(4);
+    }
     crypto1_byte(pcs, (cuid >> 24) ^ byte, true);
     test_state[ODD_STATE] = pcs->odd & 0x00ffffff;
     test_state[EVEN_STATE] = pcs->even & 0x00ffffff;
@@ -2022,6 +2027,7 @@ char *run_hardnested(uint32_t uid, char* path) {
     uint64_t foundkey = 0;
     if (mfnestedhard(0, 0, NULL, 0, 0, NULL, false, false, false, &foundkey, NULL, uid, path) == 1) {
         char *keystr = malloc(14);
+        if (keystr == NULL) return NULL;
         snprintf(keystr, 14, "%012" PRIx64 ";", foundkey);
         return keystr;
     } else {

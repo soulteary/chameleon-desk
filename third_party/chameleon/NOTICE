@@ -5,14 +5,18 @@ Local modifications:
 - nested.c, staticnested.c and darkside.c validate argument counts before argv access.
 - nested_util.c bounds candidate grouping and selection by their actual sizes, retains each recovered state, handles empty input and allocation/thread failures, and frees intermediate buffers. Its errno contract distinguishes valid empty results from internal failures.
 - nested.c and staticnested.c free their nonce arrays on success and failure and return a failure status when candidate recovery fails internally.
+- mfkey32.c and mfkey32v2.c report recovery-state allocation failures before iterating candidate states.
+- staticnested_1nt.c preserves existing dictionaries when candidate generation fails, releases partial results, and reports output failures.
+- staticnested_2x1nt_rf08s.c, staticnested_2x1nt_rf08s_1key.c and the local staticnested_dictionary.h validate complete 48-bit dictionary entries, preserve outputs on input/allocation errors, handle empty dictionaries, and return failure on input/output errors.
 - mfkey64.c validates hexadecimal input, allocates encrypted-data buffers from the decoded lengths, checks recovery results, and releases allocations on every exit path.
 - hardnested_main.c rejects incomplete binary records and captures missing first-byte classes before recovery initialization, and checks temporary-file close errors.
 - HardnestedRecovery/cmdhfmfhard.c distinguishes EOF and malformed/read failures, finishes pending reductions with a bounded EOF step, validates replay reads, and releases input/recovery buffers on failure.
 - HardnestedRecovery/cmdhfmfhard.c and hardnested_threads.h use exact first-byte partitions, bound worker counts, run failed thread partitions inline, and join only successfully started threads.
+- HardnestedRecovery/cmdhfmfhard.c preserves computed state lists when optional shrink allocations fail, checks nonce/candidate/cipher allocations before use, and reports incomplete nonce acquisition as failure.
 - hardnested_bruteforce.c sizes bucket storage from the complete candidate list, snapshots a positive bounded worker count, processes failed thread partitions inline, and frees benchmark and bucket buffers.
 - crapto1.c initializes recovery32 bucket ownership before allocation failures can reach cleanup, frees partial results, and returns NULL with ENOMEM on allocation failure.
 - mfulc_des_brute.c checks thread creation, signals a separate atomic abort flag on failure, joins only started workers, and reports an incomplete search as failure. It validates bounded numeric/hex input, frees partial allocations, and reads CBC bytes without alignment assumptions.
 - darkside.c and mfkey.c release empty and discarded candidate lists, transfer parity-zero history ownership explicitly, and report candidate-allocation failures separately from empty results. Parameter allocation failures clean up retained state.
-Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, RECOVERY32-ALLOCATIONS.patch, MFULC-THREADS.patch, HARDNESTED-THREADS.patch, and DARKSIDE-OWNERSHIP.patch.
+Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, RECOVERY32-ALLOCATIONS.patch, MFULC-THREADS.patch, HARDNESTED-THREADS.patch, DARKSIDE-OWNERSHIP.patch, HELPER-FAILURES.patch, and HARDNESTED-ALLOCATIONS.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
 The offline C workers are optional executables; no Python is required at runtime.
