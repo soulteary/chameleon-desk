@@ -315,6 +315,23 @@ func runWorkflow(args []string) (retErr error) {
 		v, err := c.VerifyRecoveryCandidate(ctx, b.UID, b.TargetBlock, b.TargetType, candidate)
 		return errors.Join(err, result(v, *output, false))
 	}
+	var desAID []byte
+	var desKeys []chameleon.HexBytes
+	if group == "des" && (action == "auth" || action == "check") {
+		desAID, e = decodeHex(*aidText)
+		if e != nil {
+			return e
+		}
+		if len(desAID) != 3 || *keyNo < 0 || *keyNo > 13 {
+			return fmt.Errorf("AID must have three bytes; key number must be 0..13")
+		}
+		if action == "check" {
+			desKeys, e = desfireDictionary(*dictionary, key)
+			if e != nil {
+				return e
+			}
+		}
+	}
 	mutation := group == "emv" && action == "load" || group == "mfc" && (action == "clone" || action == "value-set" || action == "value-inc" || action == "value-dec" || action == "value-copy") || group == "ulc" && (action == "write" || action == "set-key" || action == "password-write") || group == "rf" && action == "config-set" || group == "seos" && (action == "set" || action == "keys")
 	if mutation && !*yes {
 		return fmt.Errorf("%s %s requires --yes", group, action)
@@ -511,39 +528,11 @@ func runWorkflow(args []string) (retErr error) {
 		case "info":
 			out, e = c.DESFireInfo(ctx)
 		case "auth", "check":
-			aid, err := decodeHex(*aidText)
-			if err != nil {
-				return err
-			}
-			if *keyNo < 0 || *keyNo > 13 {
-				return fmt.Errorf("key number must be 0..13")
-			}
 			if action == "check" {
-				keys := []chameleon.HexBytes{}
-				if len(key) > 0 {
-					keys = append(keys, key)
-				}
-				if *dictionary != "" {
-					b, err := readFileWithLimit(*dictionary, dictionaryTextLimit)
-					if err != nil {
-						return err
-					}
-					for _, line := range strings.Split(string(b), "\n") {
-						line = strings.TrimSpace(line)
-						if line == "" || strings.HasPrefix(line, "#") {
-							continue
-						}
-						v, err := decodeHex(line)
-						if err != nil {
-							return err
-						}
-						keys = append(keys, v)
-					}
-				}
-				out, e = c.CheckDESFireDictionary(ctx, aid, byte(*keyNo), keys)
+				out, e = c.CheckDESFireDictionary(ctx, desAID, byte(*keyNo), desKeys)
 				break
 			}
-			ok, err := c.AuthenticateDESFire(ctx, aid, byte(*keyNo), *algorithm, key)
+			ok, err := c.AuthenticateDESFire(ctx, desAID, byte(*keyNo), *algorithm, key)
 			out = map[string]bool{"authenticated": ok}
 			e = err
 		default:
