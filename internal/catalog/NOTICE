@@ -1,0 +1,5 @@
+Command metadata and documentation are derived from RfidResearchGroup/ChameleonUltra.
+Upstream: https://github.com/RfidResearchGroup/ChameleonUltra
+Commit: 6009a5fb8adbb92d3efb548eaac9e501bd179801
+The upstream GPL-3.0 license is retained in this directory.
+Go protocol wrappers are independently implemented.

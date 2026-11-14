@@ -1,0 +1,35 @@
+# Local builds and dependencies.
+/chameleon
+/chameleon-desk
+/tools/bin/
+/node_modules/
+/vendor/
+__pycache__/
+/coverage.out
+*.test
+*.exe
+*.dSYM/
+
+# Device captures, card dumps, and local validation output.
+/private-snapshots/
+/backups/
+/reports/
+/card-scan*.json
+/device-info*.json
+/device-regression*.json
+/reader-validation*.json
+/stability-*.json
+*.bin
+*.dump
+*.eml
+*.jsonl
+
+# Local credentials and editor state.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+.idea/
+.vscode/
