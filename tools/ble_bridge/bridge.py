@@ -26,6 +26,8 @@ class Session:
         self.closed = False
         self.queue = asyncio.Queue()
         self.buffered = 0
+        self.incoming = asyncio.Queue()
+        self.incoming_buffered = 0
         self.client = client_factory(
             device, disconnected_callback=self.disconnected, pair=pair,
             timeout=timeout,
@@ -82,21 +84,32 @@ class Session:
                 await self.writer.drain()
             self.buffered -= len(data)
 
-    async def tcp_to_ble(self):
+    async def read_tcp(self):
         while True:
             data = await self.reader.read(4096)
             if not data:
                 return
-            await self.ready.wait()
+            if self.incoming_buffered + len(data) > BUFFER_LIMIT:
+                self.fail("TCP input buffer overflow")
+                return
+            self.incoming_buffered += len(data)
+            self.incoming.put_nowait(data)
+
+    async def tcp_to_ble(self):
+        await self.ready.wait()
+        while True:
+            data = await self.incoming.get()
             for start in range(0, len(data), self.chunk_size):
                 async with asyncio.timeout(self.timeout):
                     await self.client.write_gatt_char(
                         self.rx, data[start:start + self.chunk_size],
                         response=self.response,
                     )
+            self.incoming_buffered -= len(data)
 
     async def run(self):
         tasks = [asyncio.create_task(self.ble_to_tcp()),
+                 asyncio.create_task(self.read_tcp()),
                  asyncio.create_task(self.tcp_to_ble()),
                  asyncio.create_task(self.failed.wait())]
         clean = False

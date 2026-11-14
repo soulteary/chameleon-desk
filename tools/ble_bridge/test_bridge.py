@@ -218,6 +218,28 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         await eventually(lambda: not self.bridge.active)
         self.assertTrue(self.factory.clients[0].disconnected.is_set())
 
+    async def test_eof_discards_bytes_queued_during_connection_setup(self):
+        gate = asyncio.Event()
+        self.factory.configure = lambda c: setattr(c, "connect_gate", gate)
+        _, writer = await self.connect()
+        await eventually(lambda: len(self.factory.clients) == 1)
+        writer.write(b"do not send after the caller has timed out")
+        await writer.drain()
+        writer.close()
+        await eventually(lambda: not self.bridge.active)
+        gate.set()
+        self.assertFalse(self.factory.clients[0].writes)
+        self.assertTrue(self.factory.clients[0].disconnected.is_set())
+
+    async def test_tcp_input_is_bounded_while_connecting(self):
+        self.factory.configure = lambda c: setattr(c, "connect_gate", asyncio.Event())
+        reader, writer = await self.connect()
+        writer.write(b"x" * (bridge.BUFFER_LIMIT + 4096))
+        await writer.drain()
+        self.assertEqual(await asyncio.wait_for(reader.read(), 2), b"")
+        await eventually(lambda: not self.bridge.active)
+        self.assertFalse(self.factory.clients[0].writes)
+
     async def test_connection_timeout_releases_session(self):
         self.factory.configure = lambda c: setattr(c, "connect_gate", asyncio.Event())
         reader, _ = await self.connect()

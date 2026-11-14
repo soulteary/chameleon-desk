@@ -105,12 +105,13 @@ addresses only; it has no authentication or encryption.
   response are preferred; otherwise the characteristic's advertised write
   limit is respected. This is a conservative transport, not a throughput
   optimization.
-- Notifications are queued in order with a 64 KiB byte budget. Overflow,
+- Notifications and pending TCP input each have a 64 KiB byte budget. Overflow,
   disconnect or an I/O timeout closes the TCP session rather than discarding
   bytes or replaying a request. This matters because the application protocol
   has no request identifier for matching late replies after a timeout.
 - A TCP EOF closes its BLE connection before another client is admitted. Old
-  callbacks cannot send into a later session. If disconnect cleanup fails or
+  callbacks cannot send into a later session. Input queued during BLE setup is
+  discarded if the TCP client closes before setup completes. If cleanup fails or
   times out, restart the bridge; subsequent clients are rejected.
 
 Moving BLE into this optional process removes the need to link native BLE into
