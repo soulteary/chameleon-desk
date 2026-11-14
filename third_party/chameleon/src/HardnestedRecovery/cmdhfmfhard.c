@@ -130,9 +130,12 @@ static void print_progress_header(void) {
 
 void hardnested_print_progress(uint32_t nonces, const char *activity, float brute_force, uint64_t min_diff_print_time) {
     static uint64_t last_print_time = 0;
-    if (msclock() - last_print_time > min_diff_print_time) {
-        last_print_time = msclock();
-        uint64_t total_time = msclock() - start_time;
+    static pthread_mutex_t progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&progress_mutex);
+    uint64_t now = msclock();
+    if (now - last_print_time > min_diff_print_time) {
+        last_print_time = now;
+        uint64_t total_time = now - start_time;
         float brute_force_time = brute_force / brute_force_per_second;
         char brute_force_time_string[20];
         if (brute_force_time < 90) {
@@ -148,6 +151,7 @@ void hardnested_print_progress(uint32_t nonces, const char *activity, float brut
         PrintAndLogEx(INFO, " %7.0f | %7u | %-55s | %15.0f | %5s", (float) total_time / 1000.0, nonces, activity,
                       brute_force, brute_force_time_string);
     }
+    pthread_mutex_unlock(&progress_mutex);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////

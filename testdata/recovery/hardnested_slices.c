@@ -108,7 +108,7 @@ static void *parallel_worker(void *arg) {
     struct parallel_search *search = arg;
     visits = expected_even = 0;
     find_key = false;
-    assert(crack_states_bitsliced_NOSIMD(0, NULL, &search->candidate, &search->found, &search->tested, 0, NULL, NULL) == UINT64_MAX);
+    assert(crack_states_bitsliced(0, NULL, &search->candidate, &search->found, &search->tested, 0, NULL, NULL) == UINT64_MAX);
     assert(visits == 65);
     return NULL;
 }

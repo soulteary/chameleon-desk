@@ -677,9 +677,8 @@ uint64_t crack_states_bitsliced_dispatch(uint32_t cuid, uint8_t *best_first_byte
 //            crack_states_bitsliced_function_p = &crack_states_bitsliced_NOSIMD;
 //            break;
 //    }
-    crack_states_bitsliced_function_p = &crack_states_bitsliced_NOSIMD;
-    // call the most optimized function for this CPU
-    return (*crack_states_bitsliced_function_p)(cuid, best_first_bytes, p, keys_found, num_keys_tested, nonces_to_bruteforce, bf_test_nonce_2nd_byte, nonces);
+    // The current build uses the NOSIMD implementation for every instruction setting.
+    return crack_states_bitsliced_NOSIMD(cuid, best_first_bytes, p, keys_found, num_keys_tested, nonces_to_bruteforce, bf_test_nonce_2nd_byte, nonces);
 }
 
 void bitslice_test_nonces_dispatch(uint32_t nonces_to_bruteforce, const uint32_t *bf_test_nonce, const uint8_t *bf_test_nonce_par) {
@@ -713,9 +712,8 @@ void bitslice_test_nonces_dispatch(uint32_t nonces_to_bruteforce, const uint32_t
 //            bitslice_test_nonces_function_p = &bitslice_test_nonces_NOSIMD;
 //            break;
 //    }
-    bitslice_test_nonces_function_p = &bitslice_test_nonces_NOSIMD;
-    // call the most optimized function for this CPU
-    (*bitslice_test_nonces_function_p)(nonces_to_bruteforce, bf_test_nonce, bf_test_nonce_par);
+    // The current build uses the NOSIMD implementation for every instruction setting.
+    bitslice_test_nonces_NOSIMD(nonces_to_bruteforce, bf_test_nonce, bf_test_nonce_par);
 }
 
 // Entries to dispatched function calls
