@@ -147,7 +147,7 @@ test('capability failure is visible and retry enables only authorized writes', a
 
 test('slot validation, cancellation, token, activation refresh, and read-only gating', async (t) => {
   const info = { model: 'Mock', slots: [{ number: 1, active: true }, { number: 2, active: false }] };
-  const p = await page(t, { '/api/info': () => response(info), '/api/slot/load-card': () => response({ ok: true }), '/api/slot/activate': () => response({ ok: true }) }, { writes: true });
+  const p = await page(t, { '/api/info': () => response(info), '/api/slot/load-card': () => response({ plan: { slot: 2, steps: [] }, verified: true, persisted: true, activated: false, completed_steps: 0 }), '/api/slot/activate': () => response({ ok: true }) }, { writes: true });
   p.input('#load-card-json', '{'); await p.click('#load-card-go'); assert.match(summary(p.$, '#load-card-out').textContent, /有效 JSON/);
   p.input('#load-card-json', JSON.stringify(card));
   for (const value of ['', '2.5', '0', '9']) { p.input('#load-slot', value); await p.click('#load-card-go'); assert.match(summary(p.$, '#load-card-out').textContent, /1 至 8/); }
@@ -158,11 +158,13 @@ test('slot validation, cancellation, token, activation refresh, and read-only ga
   assert.equal(p.requests.filter((r) => r.url === '/api/slot/activate').length, 1);
 });
 
-test('NDEF generated card can be reused, errors invalidate exports, and ambiguous records are rejected', async (t) => {
+test('NDEF text and URI records share a generated card that can be reused and exported', async (t) => {
   const p = await page(t, { '/api/ndef/write': () => response(card), '/api/ndef/read': () => response({ records: [{ kind: 'text', value: 'hello' }] }) });
   p.input('#ndef-input', JSON.stringify(card)); p.input('#ndef-text', 'hello'); p.input('#ndef-uri', 'https://example.com');
-  await p.click('#ndef-write-go'); assert.match(summary(p.$, '#ndef-out').textContent, /仅填写/);
-  p.input('#ndef-uri', ''); await p.click('#ndef-write-go'); assert.equal(p.$('#ndef-use-result').hidden, false);
+  p.input('#ndef-language', 'zh');
+  await p.click('#ndef-write-go'); assert.equal(p.$('#ndef-use-result').hidden, false);
+  const body = JSON.parse(p.requests.find(r => r.url === '/api/ndef/write').body);
+  assert.equal(body.text, 'hello'); assert.equal(body.uri, 'https://example.com'); assert.equal(body.language, 'zh');
   await p.click('[data-export="ndef-out"]'); assert.equal(JSON.parse(await p.downloads[0].blob.text()).id, card.id);
   await p.click('#ndef-use-result'); await p.click('#ndef-go'); assert.match(summary(p.$, '#ndef-out').textContent, /hello/);
   p.input('#ndef-input', '{'); await p.click('#ndef-write-go'); await p.click('[data-export="ndef-out"]'); assert.equal(p.downloads.length, 1);
@@ -662,4 +664,95 @@ for (const kind of ['database', 'card', 'dictionary']) test(`successful ${kind} 
   }
   assert.equal(p.downloads.length, 1);
   assert.deepEqual(JSON.parse(await p.downloads[0].blob.text()).error, metadata);
+});
+
+test('NDEF language validation and an in-flight language change cannot publish stale output', async (t) => {
+  const pending = deferred();
+  const p = await page(t, { '/api/ndef/write': () => pending.promise });
+  p.input('#ndef-input', JSON.stringify(card)); p.input('#ndef-text', 'text');
+  for (const language of ['中文', 'a'.repeat(64)]) {
+    p.input('#ndef-language', language); await p.click('#ndef-write-go');
+    assert.match(summary(p.$, '#ndef-out').textContent, /63.*ASCII/);
+  }
+  assert.equal(p.requests.filter(r => r.url === '/api/ndef/write').length, 0);
+  p.input('#ndef-language', 'en'); await p.click('#ndef-write-go');
+  p.input('#ndef-language', 'zh'); pending.resolve(response(card)); await tick();
+  assert.equal(p.$('#ndef-out').dataset.ready, 'false');
+  assert.equal(p.$('#ndef-use-result').hidden, true);
+  await p.click('[data-export="ndef-out"]'); assert.equal(p.downloads.length, 0);
+});
+
+for (const persisted of [false, true]) test(`a failed simulated load retains acknowledged stages (saved=${persisted}) and only offers a state read`, async (t) => {
+  const result = { plan: { slot: 2, steps: [{ name: 'simulated' }] }, completed_steps: 1, verified: true, persisted, activated: true };
+  const info = { model: 'Simulated', slots: [{ number: 1, active: true }, { number: 2, active: false }] };
+  const p = await page(t, { '/api/info': () => response(info), '/api/slot/load-card': () => response({ error: persisted ? 'restore original device mode: failed' : 'save failed', result }, 502) }, { writes: true });
+  await p.click('#refresh-slots'); assert.equal(p.$('#slot-list').dataset.ready, 'true');
+  p.input('#load-card-json', JSON.stringify(card)); p.input('#load-slot', '2');
+  await p.click('#load-card-go');
+  const panel = summary(p.$, '#load-card-out');
+  assert.match(panel.textContent, /加载未完成/); assert.match(panel.textContent, /已通过/);
+  assert.match(panel.textContent, /1 \/ 1/); assert.equal(panel.querySelector('.hardware-state button'), null);
+  assert.deepEqual(JSON.parse(p.$('#load-card-out').textContent).result, result);
+  assert.equal(p.$('#load-card-out').dataset.ready, 'false');
+  assert.equal(p.$('#slot-list').dataset.ready, 'false');
+  await p.click('[data-export="slot-list"]'); assert.equal(p.downloads.length, 0);
+  await p.click('#slots .load-state-check');
+  assert.equal(p.$('#slot-list').dataset.ready, 'true');
+  assert.equal(p.requests.filter(r => r.url === '/api/slot/load-card').length, 1);
+  assert.equal(p.requests.filter(r => r.url === '/api/info').length, 2);
+});
+
+test('an uncertain slot activation invalidates stale exports and recovers by reading without repeating the mutation', async (t) => {
+  const p = await page(t, {
+    '/api/info': () => response({ model: 'Simulated', slots: [{ number: 1, active: true }, { number: 2, active: false }] }),
+    '/api/slot/activate': () => response({ error: 'connection lost after command' }, 502)
+  }, { writes: true });
+  await p.click('#refresh-slots'); await p.click('#slot-list .slot-activate:not(:disabled)');
+  assert.equal(p.$('#slot-list').dataset.ready, 'false');
+  assert.equal(p.$('#slot-list').dataset.exportJson, undefined);
+  assert.match(p.$('#slot-list').textContent, /重新读取/);
+  await p.click('[data-export="slot-list"]'); assert.equal(p.downloads.length, 0);
+  await p.click('#slot-list .hardware-state button');
+  assert.equal(p.$('#slot-list').dataset.ready, 'true');
+  assert.equal(p.requests.filter(r => r.url === '/api/slot/activate').length, 1);
+});
+
+test('a verified load remains distinguishable from a failed follow-up refresh', async (t) => {
+  const result = { plan: { slot: 2, steps: [] }, completed_steps: 0, verified: true, persisted: false, activated: false };
+  const p = await page(t, { '/api/slot/load-card': () => response(result), '/api/info': () => response({ error: 'read unavailable' }, 502) }, { writes: true });
+  p.input('#load-card-json', JSON.stringify(card)); await p.click('#load-card-go');
+  assert.match(summary(p.$, '#load-card-out').textContent, /已回读验证/);
+  assert.match(summary(p.$, '#load-card-out').textContent, /未保存到 Flash/);
+  assert.equal(p.$('#load-card-out').dataset.ready, 'true');
+  assert.equal(p.$('#slot-list').dataset.ready, 'false');
+  assert.match(p.$('#slot-list').textContent, /read unavailable/);
+  assert.equal(p.requests.filter(r => r.url === '/api/slot/load-card').length, 1);
+});
+
+test('malformed load outcomes cannot become a success or hide the original failure', async (t) => {
+  let failed = false;
+  const p = await page(t, {
+    '/api/slot/load-card': () => failed ? response({ error: 'original failure', result: { plan: { slot: 99 } } }, 502) : response({ ok: true }),
+    '/api/info': () => response({ model: 'Simulated', slots: [] })
+  }, { writes: true });
+  p.input('#load-card-json', JSON.stringify(card)); await p.click('#load-card-go');
+  assert.equal(p.$('#load-card-out').dataset.ready, 'false');
+  assert.match(summary(p.$, '#load-card-out').textContent, /结果不完整/);
+  failed = true; await p.click('#load-card-go');
+  assert.equal(p.$('#load-card-out').dataset.ready, 'false');
+  assert.match(summary(p.$, '#load-card-out').textContent, /original failure/);
+  assert.equal(summary(p.$, '#load-card-out').querySelector('.hardware-state button'), null);
+});
+
+for (const [path, button, out, budget] of [
+  ['/api/firmware/check', '#fw-check', '#fw-out', 95000],
+  ['/api/dictionary/download', '#dict-download', '#dict-out', 65000]
+]) test(`${path} allows its server stages to finish before the client timeout`, async (t) => {
+  const p = await page(t, { [path]: opts => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(new p.w.DOMException('Aborted', 'AbortError')))) }, { clock: true });
+  await p.click(button); await p.advance(60000);
+  assert.equal(p.$(button).disabled, true, 'the server still has time to return a bounded result');
+  await p.advance(budget - 60000);
+  assert.equal(p.$(button).disabled, false);
+  assert.match(summary(p.$, out).textContent, /超时/);
+  assert.equal(p.requests.filter(r => r.url === path).length, 1);
 });

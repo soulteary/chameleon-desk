@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -103,6 +104,22 @@ type ndefInputs struct {
 	text, lang, uri, mime, external, value, messageHex, recordsFile string
 }
 
+type ndefRecords []chameleon.NdefRecord
+
+func (records *ndefRecords) UnmarshalJSON(data []byte) error {
+	var decoded []chameleon.NdefRecord
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&decoded); err != nil {
+		return err
+	}
+	if len(decoded) == 0 {
+		return fmt.Errorf("records must contain at least one NDEF record")
+	}
+	*records = decoded
+	return nil
+}
+
 func cardToolNdef(action, input, output string, in ndefInputs) error {
 	b, e := readLimitedFile(input)
 	if e != nil {
@@ -121,6 +138,9 @@ func cardToolNdef(action, input, output string, in ndefInputs) error {
 		if e != nil {
 			return e
 		}
+		if records == nil {
+			records = []chameleon.NdefRecord{}
+		}
 		return result(map[string]any{"mapping": container.Mapping, "capacity": container.Capacity(), "message_hex": strings.ToUpper(hex.EncodeToString(container.Message())), "records": records}, output, false)
 	}
 	if output == "" {
@@ -137,52 +157,17 @@ func cardToolNdef(action, input, output string, in ndefInputs) error {
 }
 
 func buildNdefMessage(in ndefInputs) ([]byte, error) {
+	var records ndefRecords
 	if in.recordsFile != "" {
 		b, e := readLimitedFile(in.recordsFile)
 		if e != nil {
 			return nil, e
 		}
-		var records []chameleon.NdefRecord
 		if e = json.Unmarshal(b, &records); e != nil {
 			return nil, e
 		}
-		return chameleon.EncodeNdefMessage(records)
 	}
-	if in.messageHex != "" {
-		return decodeHex(in.messageHex)
-	}
-	var records []chameleon.NdefRecord
-	add := func(r chameleon.NdefRecord, e error) error {
-		if e != nil {
-			return e
-		}
-		records = append(records, r)
-		return nil
-	}
-	if in.text != "" {
-		if e := add(chameleon.NewNdefText(in.text, in.lang)); e != nil {
-			return nil, e
-		}
-	}
-	if in.uri != "" {
-		if e := add(chameleon.NewNdefURI(in.uri)); e != nil {
-			return nil, e
-		}
-	}
-	if in.mime != "" {
-		if e := add(chameleon.NewNdefMime(in.mime, in.value)); e != nil {
-			return nil, e
-		}
-	}
-	if in.external != "" {
-		if e := add(chameleon.NewNdefExternal(in.external, in.value)); e != nil {
-			return nil, e
-		}
-	}
-	if len(records) == 0 {
-		return nil, fmt.Errorf("ndef write needs --text, --uri, --mime, --external, --message-hex or --records")
-	}
-	return chameleon.EncodeNdefMessage(records)
+	return encodeNdefInputs(records, in.messageHex, in.text, in.lang, in.uri, in.mime, in.external, in.value)
 }
 
 func cardToolACL(action, input, output, access string, sector int, conditions string) error {
@@ -251,7 +236,10 @@ func cardToolVanity(input, output, uid string) error {
 		return fmt.Errorf("use either --uid HEX or --input CARD.json")
 	case uid != "":
 		vanity = chameleon.VanitySAKFromUIDHex(uid)
-		detail = map[string]any{"uid": strings.ToUpper(strings.ReplaceAll(uid, " ", "")), "source": "uid-length"}
+		if vanity == nil {
+			return fmt.Errorf("UID must be 4 or 7 hexadecimal bytes")
+		}
+		detail = map[string]any{"uid": strings.ToUpper(strings.Join(strings.Fields(uid), "")), "source": "uid-length"}
 	case input != "":
 		b, e := readLimitedFile(input)
 		if e != nil {
@@ -308,4 +296,49 @@ func cardToolDictionary(output, name string, list bool, timeout time.Duration) e
 	}
 	fmt.Fprintf(os.Stderr, "Parsed %d keys of %d hex digits\n", len(d.Keys), d.KeyLength)
 	return result(d, output, false)
+}
+
+func encodeNdefInputs(records []chameleon.NdefRecord, messageHex, text, language, uri, mime, external, value string) ([]byte, error) {
+	constructed := text != "" || uri != "" || mime != "" || external != ""
+	if records != nil && (messageHex != "" || constructed) || messageHex != "" && constructed {
+		return nil, fmt.Errorf("use records, message_hex, or record fields as separate input modes")
+	}
+	if records != nil {
+		return chameleon.EncodeNdefMessage(records)
+	}
+	if messageHex != "" {
+		return decodeHex(messageHex)
+	}
+	var built []chameleon.NdefRecord
+	add := func(rec chameleon.NdefRecord, e error) error {
+		if e != nil {
+			return e
+		}
+		built = append(built, rec)
+		return nil
+	}
+	if text != "" {
+		if e := add(chameleon.NewNdefText(text, language)); e != nil {
+			return nil, e
+		}
+	}
+	if uri != "" {
+		if e := add(chameleon.NewNdefURI(uri)); e != nil {
+			return nil, e
+		}
+	}
+	if mime != "" {
+		if e := add(chameleon.NewNdefMime(mime, value)); e != nil {
+			return nil, e
+		}
+	}
+	if external != "" {
+		if e := add(chameleon.NewNdefExternal(external, value)); e != nil {
+			return nil, e
+		}
+	}
+	if len(built) == 0 {
+		return nil, fmt.Errorf("provide text, uri, mime, external, message_hex or records")
+	}
+	return chameleon.EncodeNdefMessage(built)
 }

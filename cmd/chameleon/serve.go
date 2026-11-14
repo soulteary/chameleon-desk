@@ -219,6 +219,12 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		return e
 	})
 	if e != nil {
+		if r.URL.Path == "/api/slot/load-card" && out != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			writeJSON(w, map[string]any{"error": e.Error(), "result": out})
+			return
+		}
 		writeErr(w, http.StatusBadGateway, e)
 		return
 	}
@@ -273,6 +279,10 @@ func (ws *webServer) handleSlotActivate(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
+	if body.Slot < 1 || body.Slot > 8 {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("slot must be 1..8"))
+		return
+	}
 	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
 		if e := c.SetActiveSlot(ctx, body.Slot); e != nil {
 			return nil, e
@@ -305,7 +315,7 @@ func (ws *webServer) handleNdefRead(w http.ResponseWriter, r *http.Request) {
 	if records == nil {
 		records = []chameleon.NdefRecord{}
 	}
-	writeJSON(w, map[string]any{"mapping": container.Mapping, "capacity": container.Capacity(), "records": records})
+	writeJSON(w, map[string]any{"mapping": container.Mapping, "capacity": container.Capacity(), "message_hex": strings.ToUpper(hex.EncodeToString(container.Message())), "records": records})
 }
 
 func (ws *webServer) handleACLDecode(w http.ResponseWriter, r *http.Request) {
@@ -350,13 +360,13 @@ func (ws *webServer) handleVanity(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
-	uid := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(body.UID), " ", ""))
-	decoded, e := hex.DecodeString(uid)
-	if e != nil || (len(decoded) != 4 && len(decoded) != 7) {
+	uid := strings.ToUpper(strings.Join(strings.Fields(body.UID), ""))
+	vanity := chameleon.VanitySAKFromUIDHex(uid)
+	if vanity == nil {
 		writeErr(w, http.StatusUnprocessableEntity, fmt.Errorf("UID must be 4 or 7 hexadecimal bytes"))
 		return
 	}
-	writeJSON(w, map[string]any{"uid": uid, "vanity_sak": chameleon.VanitySAKFromUIDHex(uid)})
+	writeJSON(w, map[string]any{"uid": uid, "vanity_sak": vanity})
 }
 
 func (ws *webServer) handleDictSources(w http.ResponseWriter, r *http.Request) {
@@ -416,6 +426,14 @@ func (ws *webServer) handleFirmwareCheck(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	model, version := body.Model, body.Version
+	if model != "" {
+		var e error
+		model, e = chameleon.FirmwareModel(model)
+		if e != nil {
+			writeErr(w, http.StatusBadRequest, e)
+			return
+		}
+	}
 	if model == "" || version == "" {
 		e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {
 			var e error
@@ -441,7 +459,7 @@ func (ws *webServer) handleFirmwareCheck(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	v, e := chameleon.NewFirmwareUpdater().CheckFirmwareUpdate(ctx, name, version)
+	v, e := newFirmwareUpdater().CheckFirmwareUpdate(ctx, name, version)
 	if e != nil {
 		writeErr(w, http.StatusBadGateway, e)
 		return
@@ -468,6 +486,10 @@ func (ws *webServer) handleSlotLoadCard(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
+	if _, e := chameleon.PlanGUICardLoad(card, body.Slot); e != nil {
+		writeErr(w, http.StatusBadRequest, e)
+		return
+	}
 	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
 		return c.LoadGUICard(ctx, body.Slot, card, chameleon.GUICardLoadOptions{Persist: body.Persist, Activate: body.Activate})
 	})
@@ -475,15 +497,15 @@ func (ws *webServer) handleSlotLoadCard(w http.ResponseWriter, r *http.Request) 
 
 func (ws *webServer) handleNdefWrite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Card       json.RawMessage        `json:"card"`
-		Text       string                 `json:"text"`
-		Language   string                 `json:"language"`
-		URI        string                 `json:"uri"`
-		Mime       string                 `json:"mime"`
-		External   string                 `json:"external"`
-		Value      string                 `json:"value"`
-		MessageHex string                 `json:"message_hex"`
-		Records    []chameleon.NdefRecord `json:"records"`
+		Card       json.RawMessage `json:"card"`
+		Text       string          `json:"text"`
+		Language   string          `json:"language"`
+		URI        string          `json:"uri"`
+		Mime       string          `json:"mime"`
+		External   string          `json:"external"`
+		Value      string          `json:"value"`
+		MessageHex string          `json:"message_hex"`
+		Records    ndefRecords     `json:"records"`
 	}
 	if e := decodeBody(r, &body); e != nil {
 		writeErr(w, http.StatusBadRequest, e)
@@ -494,7 +516,7 @@ func (ws *webServer) handleNdefWrite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
-	message, e := webNdefMessage(body.Records, body.MessageHex, body.Text, body.Language, body.URI, body.Mime, body.External, body.Value)
+	message, e := encodeNdefInputs(body.Records, body.MessageHex, body.Text, body.Language, body.URI, body.Mime, body.External, body.Value)
 	if e != nil {
 		writeErr(w, http.StatusBadRequest, e)
 		return
@@ -509,47 +531,6 @@ func (ws *webServer) handleNdefWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, card)
-}
-
-func webNdefMessage(records []chameleon.NdefRecord, messageHex, text, language, uri, mime, external, value string) ([]byte, error) {
-	if len(records) > 0 {
-		return chameleon.EncodeNdefMessage(records)
-	}
-	if messageHex != "" {
-		return decodeHex(messageHex)
-	}
-	var built []chameleon.NdefRecord
-	add := func(rec chameleon.NdefRecord, e error) error {
-		if e != nil {
-			return e
-		}
-		built = append(built, rec)
-		return nil
-	}
-	if text != "" {
-		if e := add(chameleon.NewNdefText(text, language)); e != nil {
-			return nil, e
-		}
-	}
-	if uri != "" {
-		if e := add(chameleon.NewNdefURI(uri)); e != nil {
-			return nil, e
-		}
-	}
-	if mime != "" {
-		if e := add(chameleon.NewNdefMime(mime, value)); e != nil {
-			return nil, e
-		}
-	}
-	if external != "" {
-		if e := add(chameleon.NewNdefExternal(external, value)); e != nil {
-			return nil, e
-		}
-	}
-	if len(built) == 0 {
-		return nil, fmt.Errorf("provide text, uri, mime, external, message_hex or records")
-	}
-	return chameleon.EncodeNdefMessage(built)
 }
 
 func (ws *webServer) handleDictDownload(w http.ResponseWriter, r *http.Request) {

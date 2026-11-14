@@ -113,6 +113,13 @@ function renderToolResult(sel, value, options = {}) {
     panel=toolPanel("vanity","UID 默认值推断","根据 UID 长度推断编辑器默认值","离线");
     panel.append(valueStrip("UID",value.uid||$("#vanity-uid").value.replace(/\s/g,"")),fieldGrid([["UID 长度",(value.uid||$("#vanity-uid").value.replace(/\s/g,"")).length/2+" 字节"],["Vanity SAK",value.vanity_sak==null?"无法推断":value.vanity_sak?"默认启用":"默认不启用"]]));
     panel.append(el("p","inference-note","这不是实体卡 SAK 验证结果，也不会修改 UID 或卡片内容。"));
+  } else if(sel==="#load-card-out") {
+    if(!value.plan || !Number.isInteger(value.plan.slot) || value.plan.slot<1 || value.plan.slot>8 || [value.verified,value.persisted,value.activated].some((flag)=>typeof flag!=="boolean") || !options.partial&&!value.verified) throw new Error("槽位加载结果不完整，请先重新读取槽位状态");
+    panel=toolPanel("slots",options.partial?"加载未完成":"槽位内容已回读验证","设备返回的执行状态",options.partial?"需核对":"已验证");
+    panel.append(fieldGrid([["目标槽位",value.plan.slot],["已确认写入步骤",Number.isInteger(value.completed_steps)&&Array.isArray(value.plan.steps)?value.completed_steps+" / "+value.plan.steps.length:"未返回"],["回读验证",value.verified?"已通过":"未完成"],["Flash 保存",value.persisted?"已确认":"未确认保存"],["目标槽位激活",value.activated?"已确认":"未确认激活"]]));
+    if(options.partial) panel.append(el("p","inference-note","槽位内容可能已部分更改。请先重新读取状态并核对备份，再决定后续操作。"));
+    else if(!value.persisted) panel.append(el("p","inference-note","本次更改未保存到 Flash，断电后可能丢失。"));
+    panel.append(panelButton("重新读取槽位状态",()=>$("#refresh-slots").click(),"load-state-check"));
   } else {
     panel=toolPanel("device","处理完成","本次操作结果","完成");
     if(value?.latest) panel.append(el("p",null,value.up_to_date?"当前固件已是最新构建":"发现可用构建："+(value.latest.tag||value.latest.commit||value.latest.asset)));

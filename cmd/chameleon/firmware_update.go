@@ -64,6 +64,13 @@ func runFirmwareUpdate(args []string) (retErr error) {
 	} else if *tag != "" || *source != "auto" {
 		return fmt.Errorf("--source and --tag apply to firmware download")
 	}
+	if *model != "" {
+		var e error
+		*model, e = chameleon.FirmwareModel(*model)
+		if e != nil {
+			return e
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	// The device is only read, and only for what the flags left open.

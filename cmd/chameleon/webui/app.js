@@ -24,7 +24,10 @@ async function api(path, opts = {}) {
   if (opts.body != null) headers["Content-Type"] = "application/json";
   if (path.startsWith("/api/slot/")) headers["X-Chameleon-Token"] = csrfToken;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  // Firmware checks allow 30s of device access followed by 60s of HTTP work.
+  // Leave time for the server's error response before the browser aborts.
+  const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
+  const timeout = setTimeout(() => controller.abort(), budget);
   try {
     const r = await fetch(path, { ...opts, headers, signal: controller.signal });
     if (r.status === 403 && path.startsWith("/api/slot/")) {
@@ -40,7 +43,9 @@ async function api(path, opts = {}) {
       throw error;
     }
     if (!r.ok) {
-      throw new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
+      const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
+      if (path === "/api/slot/load-card" && body?.result) error.result = body.result;
+      throw error;
     }
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
     return body;
@@ -176,7 +181,11 @@ async function loadSlots() {
       }
       if (writesEnabled) {
         const button=el("button","slot-activate",slot.active ? "已激活" : "激活此槽位"); button.dataset.slotActive=String(!!slot.active); button.disabled=slot.active || busy.has("hardware");
-        button.addEventListener("click",()=>runTask("hardware",async()=>{ if (!writesEnabled) return; await postJSON("/api/slot/activate",{slot:slot.number}); await loadSlots(); })); row.append(button);
+        button.addEventListener("click",()=>runTask("hardware",async()=>{
+          if (!writesEnabled) return;
+          try { await postJSON("/api/slot/activate",{slot:slot.number}); await loadSlots(); }
+          catch (error) { slotMutationFailure(error); }
+        })); row.append(button);
       }
       grid.append(row);
     }
@@ -184,6 +193,10 @@ async function loadSlots() {
     list.append(grid,el("p","read-stamp",resultStamp()),rawDetails({slots:info.slots}));
     list.dataset.exportJson=JSON.stringify({slots:info.slots}); list.dataset.ready="true";
   } catch (error) { setStatus(false,"设备连接失败"); hardwareFailure(list,"未能读取槽位",error,loadSlots); }
+}
+function slotMutationFailure(error) {
+  const list = $("#slot-list"); list.dataset.ready = "false"; delete list.dataset.exportJson;
+  hardwareFailure(list, "槽位状态需要重新读取", error, loadSlots);
 }
 const hexNumber = (value, digits) => Number.isInteger(value) ? "0x" + value.toString(16).toUpperCase().padStart(digits,"0") : "未返回";
 function renderScanCard(card, kind, index) {
@@ -231,6 +244,10 @@ function resultError(sel,error,retry,group=outputGroups[sel]) {
   const {pre,panel,summary}=resultParts(sel); pre.dataset.ready="false"; pre.textContent="错误："+error.message;
   if(panel) {panel.hidden=false;panel.open=false;}
   if(summary){summary.hidden=false;summary.classList.add("result-error");hardwareState(summary,"error","操作未完成",readableError(error),retry,group);revealResult(pre,summary);}
+  if(sel==="#load-card-out"&&error.result){
+    pre.textContent=JSON.stringify({error:error.message,result:error.result},null,2);
+    try { summary.append(renderToolResult(sel,error.result,{partial:true})); } catch (_) {}
+  }
 }
 async function showPre(sel,action,options={}) {
   const {pre,panel,summary}=resultParts(sel),group=options.group||outputGroups[sel];
@@ -331,16 +348,19 @@ function wire() {
     const card = parseObject("#load-card-json", "卡片"), slot = Number($("#load-slot").value);
     if (!Number.isInteger(slot) || slot < 1 || slot > 8) throw new Error("槽位必须是 1 至 8 的整数");
     if (!window.confirm("加载将替换槽位 " + slot + " 的内容。确认已备份并继续？")) throw new Error("已取消，槽位内容未更改");
-    const result = await postJSON("/api/slot/load-card", { slot, card, persist: $("#load-persist").checked, activate: $("#load-activate").checked });
+    let result;
+    try { result = await postJSON("/api/slot/load-card", { slot, card, persist: $("#load-persist").checked, activate: $("#load-activate").checked }); }
+    catch (error) { slotMutationFailure(error); throw error; }
     await loadSlots(); return result;
   });
   bindOutput("#ndef-write-go", "#ndef-out", "ndef", async () => {
-    const snapshot=[$("#ndef-input").value,$("#ndef-text").value,$("#ndef-uri").value];
-    const body = { card: parseObject("#ndef-input", "卡片"), text: $("#ndef-text").value, uri: $("#ndef-uri").value };
+    const inputs=["#ndef-input","#ndef-text","#ndef-uri","#ndef-language"];
+    const snapshot=inputs.map((id)=>$(id).value);
+    const body = { card: parseObject("#ndef-input", "卡片"), text: $("#ndef-text").value, uri: $("#ndef-uri").value, language: $("#ndef-language").value };
     if (!body.text && !body.uri) throw new Error("请填写文本或网址，再生成卡片文件");
-    if (body.text && body.uri) throw new Error("请仅填写文本或网址中的一项；同时填写会产生歧义");
+    if (body.text && (!/^[\x00-\x7F]*$/.test(body.language) || body.language.length>63)) throw new Error("语言代码最多为 63 个 ASCII 字符");
     const value=await postJSON("/api/ndef/write",body);
-    if(snapshot.some((value,i)=>value!==[$("#ndef-input").value,$("#ndef-text").value,$("#ndef-uri").value][i])) throw new Error("输入已变化，请重新生成");
+    if(snapshot.some((value,i)=>value!==$(inputs[i]).value)) throw new Error("输入已变化，请重新生成");
     return value;
   }, {generated:true});
   $("#ndef-use-result").addEventListener("click", () => {
@@ -391,7 +411,7 @@ function wire() {
   $("#db-add").addEventListener("click", () => dbCall({ op: "add" }));
   $("#db-delete").addEventListener("click", () => { if (!busy.has("database") && window.confirm("从当前数据库中移除这张卡片？导出保存后才会更改磁盘文件。")) dbCall({ op: "delete", id: $("#db-id").value.trim() }); });
   $("#db-json").addEventListener("input", () => { $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out"); $("#db-save-state").textContent="当前输入已变化 · 搜索确认后可导出保存"; });
-  for (const id of ["#ndef-input", "#ndef-text", "#ndef-uri"]) $(id).addEventListener("input", () => { generatedCard = null; $("#ndef-use-result").hidden = true; invalidate("#ndef-out"); updateNdefSource(); });
+  for (const id of ["#ndef-input", "#ndef-text", "#ndef-uri", "#ndef-language"]) $(id).addEventListener("input", () => { generatedCard = null; $("#ndef-use-result").hidden = true; invalidate("#ndef-out"); updateNdefSource(); });
   $("#db-card").addEventListener("input",()=>updateCardSource("#db-card","#db-card-source"));
   $("#db-id").addEventListener("input",()=>invalidate("#db-out"));
   for(const [input,output] of [["#acl-hex","#acl-out"],["#acl-cond","#acl-out"],["#vanity-uid","#vanity-out"],["#dict-name","#dict-out"]]) $(input).addEventListener("input",()=>invalidate(output));
