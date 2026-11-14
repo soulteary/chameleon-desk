@@ -32,7 +32,11 @@ jobs:
       - run: python -m pip check
       - run: python -c "from bleak import BleakClient, BleakScanner"
       - run: go mod download
-      - run: go test -mod=readonly ./...
+      # Existing recovery fixtures require a POSIX shell and file semantics.
+      # Windows still builds and runs the CLI through the bridge below.
+      - name: Run existing Go tests on Unix
+        if: runner.os != 'Windows'
+        run: go test -mod=readonly ./...
       - run: go build -mod=readonly -trimpath -o chameleon-nocgo.exe ./cmd/chameleon
       - run: ./chameleon-nocgo.exe version
       - name: Run offline bridge and CLI integration tests

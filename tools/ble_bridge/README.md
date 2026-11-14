@@ -135,6 +135,9 @@ The optional binary test runs `info` through Desk's TCP transport, this bridge,
 and a simulated BLE device that returns fragmented protocol replies. It checks
 the CLI output; it does not establish hardware compatibility. CI runs this
 test on Linux, macOS and Windows with a cgo-disabled binary.
+The existing Go test suite also runs on Linux and macOS. It is not run by the
+Windows bridge job because recovery fixtures use POSIX shell helpers and file
+semantics; that job covers the native CLI build and the Python bridge tests.
 
 ## Hardware checks
 
