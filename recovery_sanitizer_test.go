@@ -61,6 +61,8 @@ func TestRecoveryHelpersMemorySafety(t *testing.T) {
 
 	harness := build("nested-candidates", "testdata/recovery/nested_candidates.c", filepath.Join(src, "parity.c"))
 	run(harness, 0)
+	buckets := build("hardnested-buckets", "testdata/recovery/hardnested_buckets.c", filepath.Join(src, "parity.c"), "-lm")
+	run(buckets, 0)
 	common := []string{filepath.Join(src, "crapto1.c"), filepath.Join(src, "crypto1.c"), filepath.Join(src, "bucketsort.c"), filepath.Join(src, "parity.c")}
 	staticFiles := append([]string{filepath.Join(src, "staticnested.c"), filepath.Join(src, "nested_util.c"), filepath.Join(src, "common.c")}, common...)
 	static := build("staticnested", staticFiles...)
