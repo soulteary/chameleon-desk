@@ -55,15 +55,17 @@
     target?.focus({ preventScroll: true });
   }
   function maximize(win) {
-    viewportRects.delete(win);
     if (win.classList.contains("maximized")) {
       win.classList.remove("maximized");
-      Object.assign(win.style, restoreRects.get(win) || {});
+      const saved = restoreRects.get(win);
+      if (saved) viewportRects.set(win, saved);
+      restoreViewport(win);
     } else {
-      restoreRects.set(win, rectangle(win));
+      restoreRects.set(win, viewportRects.get(win) || rectangle(win));
+      viewportRects.delete(win);
       win.classList.add("maximized");
+      clampWindow(win);
     }
-    clampWindow(win);
   }
   function open(id) {
     const win = windows.find((w) => w.id === id);
@@ -130,22 +132,34 @@
   document.querySelector("#about-button").addEventListener("click", () => document.querySelector("#about-dialog").showModal());
   const tick = () => { document.querySelector("#clock").textContent = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()); };
   tick(); setInterval(tick, 30000);
-  document.querySelectorAll("[data-import]").forEach((b) => b.addEventListener("click", () => {
-    const target = document.getElementById(b.dataset.import), original = target.value;
-    const input = document.createElement("input"); input.type = "file"; input.accept = ".json,application/json";
-    input.addEventListener("change", async () => {
-      const f = input.files[0]; if (!f) return;
-      try {
-        if (f.size > (b.dataset.import === "db-json" ? 32 : 4) * 1024 * 1024) throw new Error("文件超过大小限制");
-        const text = await f.text(); const value = JSON.parse(text);
-        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("请选择 JSON 对象文件");
-        if (b.disabled || target.disabled || target.value !== original) throw new Error("工作区正在处理或输入已变化，请重新导入");
-        target.value = text; target.dispatchEvent(new Event("input", { bubbles: true }));
-        const details = target.closest("details"); if (details && target.id === "db-json") details.open = true;
-        window.desktopToast("已导入 " + f.name);
-      } catch (e) { window.desktopToast("导入失败：" + e.message); }
-    }); input.click();
-  }));
+  const importRequests = new WeakMap(), inputRevisions = new WeakMap();
+  document.querySelectorAll("[data-import]").forEach((b) => {
+    const target = document.getElementById(b.dataset.import);
+    if (!inputRevisions.has(target)) {
+      inputRevisions.set(target, 0);
+      target.addEventListener("input", () => inputRevisions.set(target, inputRevisions.get(target) + 1));
+    }
+    b.addEventListener("click", () => {
+      const original = target.value;
+      const request = {}, revision = inputRevisions.get(target);
+      importRequests.set(target, request);
+      const input = document.createElement("input"); input.type = "file"; input.accept = ".json,application/json";
+      input.addEventListener("change", async () => {
+        const f = input.files[0]; if (!f) return;
+        try {
+          if (f.size > (b.dataset.import === "db-json" ? 32 : 4) * 1024 * 1024) throw new Error("文件超过大小限制");
+          const text = await f.text();
+          if (importRequests.get(target) !== request) return;
+          const value = JSON.parse(text);
+          if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("请选择 JSON 对象文件");
+          if (b.disabled || target.disabled || inputRevisions.get(target) !== revision || target.value !== original) throw new Error("工作区正在处理或输入已变化，请重新导入");
+          target.value = text; target.dispatchEvent(new Event("input", { bubbles: true }));
+          const details = target.closest("details"); if (details && target.id === "db-json") details.open = true;
+          window.desktopToast("已导入 " + f.name);
+        } catch (e) { if (importRequests.get(target) === request) window.desktopToast("导入失败：" + e.message); }
+      }); input.click();
+    });
+  });
   document.querySelectorAll("[data-export]").forEach((b) => b.addEventListener("click", () => {
     try {
       const result = document.getElementById(b.dataset.export);
