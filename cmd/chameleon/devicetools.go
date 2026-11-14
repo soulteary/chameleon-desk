@@ -325,7 +325,7 @@ func t55Candidates(dictPath, passwordsCSV string) ([][]byte, error) {
 	if dictPath == "" {
 		return nil, fmt.Errorf("t55 clean needs --dictionary DICT.json or --passwords A,B,...")
 	}
-	b, e := readLimitedFile(dictPath)
+	b, e := readDictionaryFile(dictPath)
 	if e != nil {
 		return nil, e
 	}

@@ -182,7 +182,11 @@ func runLibrary(args []string) error {
 		}
 		return result(v, *output, false)
 	case "add":
-		b, err := readLimitedFile(*source)
+		readSource := readLimitedFile
+		if *dictionaries {
+			readSource = readDictionaryFile
+		}
+		b, err := readSource(*source)
 		if err != nil {
 			return err
 		}
