@@ -3,7 +3,9 @@
 This optional Python process connects to one Chameleon Ultra or Lite over BLE
 and exposes its application protocol on a loopback TCP port. Desk uses its
 existing `tcp:HOST:PORT` transport. The Go workbench does not need Python, Bleak
-or cgo to use that transport. Native macOS BLE remains available separately.
+or cgo to use that transport. All Desk BLE access uses this bridge; the native
+macOS backend has been removed. See the [migration guide](../../docs/ble-migration.md)
+for former native BLE commands and SDK calls.
 
 Device commands, firmware capabilities and card operations remain in Desk.
 The optional management API provides scanning, selection, connection state and
@@ -117,12 +119,23 @@ replace an active connection. A data connection is admitted only after an
 explicit management connect; closing it also ends the BLE link. The API
 token controls management operations, not access to the separate data port.
 
+For command-line scanning against the managed bridge, use:
+
+```sh
+./chameleon ble scan --ble-bridge http://127.0.0.1:12346 \
+  --bridge-token-file tools/ble_bridge/bridge.key
+```
+
+The scan duration is configured by the bridge's `--timeout`; Desk's former
+native `ble scan --duration` option has been removed. Scanning does not select
+or connect a device and requires the bridge to be disconnected.
+
 The SDK exposes the same API through `NewBLEBridge`, `Scan`, `Select`,
 `Connect`, `Status`, `OpenSession` and `Disconnect`. `OpenSession` verifies
 that the data connection declares the selected device and managed BLE
 transport before returning a client.
 
-## Use Desk without cgo
+## Use Desk over TCP
 
 ```sh
 CGO_ENABLED=0 ./scripts/build.sh
@@ -191,9 +204,10 @@ unidentified wrapper.
   by an older or custom client; such a client could write some slot data before
   a restricted command is rejected. Do not use it for restore.
 - BLE DFU uses separate control and packet characteristics. The application
-  UART stream cannot upload firmware, and `FlashFirmware` rejects `tcp:`.
+  UART stream cannot upload firmware, and `FlashFirmware` rejects `ble:` and `tcp:`.
   Entering bootloader ends the application connection; use the existing USB
-  or native BLE DFU path for upload.
+  DFU path for upload. Native BLE DFU has been removed; the Python bridge does
+  not replace it.
 - GATT writes are serialized in chunks of at most 20 bytes. Writes with a GATT
   response are preferred; otherwise the characteristic's advertised write
   limit is respected. This is a conservative transport, not a throughput
@@ -207,9 +221,10 @@ unidentified wrapper.
   discarded if the TCP client closes before setup completes. If cleanup fails or
   times out, restart the bridge; subsequent clients are rejected.
 
-Moving BLE into this optional process removes the need to link native BLE into
-a cgo-disabled Desk binary. It does not remove `cbgo` from the Go module or
-remove the separate C recovery workers' build dependencies.
+The Go module no longer depends on `cbgo` or its transitive logging packages.
+The build script defaults to cgo disabled and no longer embeds macOS Bluetooth
+permission metadata. Bluetooth permission belongs to the Python process. The
+separate C recovery workers retain their compiler and library requirements.
 
 ## Offline tests
 

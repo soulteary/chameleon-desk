@@ -32,6 +32,14 @@ jobs:
       - run: python -m pip check
       - run: python -c "from bleak import BleakClient, BleakScanner"
       - run: go mod download
+      - name: Check Go dependencies for native cgo code
+        shell: bash
+        run: |
+          cgo_packages=$(CGO_ENABLED=1 go list -mod=readonly -deps -f '{{if not .Standard}}{{if .CgoFiles}}{{.ImportPath}}{{end}}{{end}}' ./cmd/chameleon)
+          if [ -n "$cgo_packages" ]; then
+            echo "Non-standard Go packages require cgo: $cgo_packages" >&2
+            exit 1
+          fi
       # Existing recovery fixtures require a POSIX shell and file semantics.
       # Windows still builds and runs the CLI through the bridge below.
       - name: Run existing Go tests on Unix

@@ -226,6 +226,42 @@ class ManagementTests(unittest.IsolatedAsyncioTestCase):
                 await eventually(lambda: not self.owner.bridge.active)
                 self.assertFalse(client.writes)
 
+    @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a CLI binary")
+    async def test_desk_cli_scans_through_managed_bridge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory)/"bridge.key"
+            key.write_text(self.token)
+            key.chmod(0o600)
+            process = await asyncio.create_subprocess_exec(
+                os.path.abspath(os.environ["CHAMELEON_BRIDGE_TEST_BINARY"]),
+                "ble", "scan", "--ble-bridge", "http://" + self.api.authority,
+                "--bridge-token-file", str(key),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            output, errors = await asyncio.wait_for(process.communicate(), 10)
+            self.assertEqual(process.returncode, 0, errors)
+            scan = json.loads(output)
+            self.assertEqual(scan["api_version"], 1)
+            self.assertEqual(scan["devices"][0]["id"], "first-id")
+            self.assertNotIn(self.token.encode(), output + errors)
+            self.assertFalse(self.factory.clients)
+            self.assertEqual(self.owner.state, "disconnected")
+
+    @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a CLI binary")
+    async def test_desk_native_addresses_have_migration_errors(self):
+        binary = os.path.abspath(os.environ["CHAMELEON_BRIDGE_TEST_BINARY"])
+        for args, message in [
+            (["info", "--port", "ble:old-peripheral"], b"native BLE has been removed"),
+            (["ble", "scan"], b"--bridge-token-file"),
+            (["firmware", "flash", "--port", "ble:old-peripheral", "--input", "missing.zip", "--yes"], b"USB DFU serial"),
+        ]:
+            with self.subTest(args=args):
+                process = await asyncio.create_subprocess_exec(
+                    binary, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                output, errors = await asyncio.wait_for(process.communicate(), 10)
+                self.assertNotEqual(process.returncode, 0)
+                self.assertIn(message, errors)
+        self.assertFalse(self.factory.clients)
+
     @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a cgo-disabled CLI binary")
     async def test_desk_web_manages_and_reuses_a_ble_session(self):
         self.factory.configure = configure_info_device

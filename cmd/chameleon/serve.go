@@ -49,7 +49,7 @@ type webServer struct {
 func runServe(args []string) error {
 	f := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := f.String("addr", "127.0.0.1:8088", "loopback listen address (localhost, 127.0.0.1 or ::1)")
-	port := f.String("port", "", "device USB/BLE/TCP port; otherwise one USB device is auto-selected per request")
+	port := f.String("port", "", "USB serial or TCP port; otherwise one USB device is auto-selected per request")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
 	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")

@@ -105,7 +105,7 @@ func runLibrary(args []string) error {
 	activate := f.Bool("activate", false, "slot load-card: leave the loaded slot active (GUI behaviour)")
 	save := f.Bool("save", true, "slot load-card: save slot data to flash after verification")
 	yes := f.Bool("yes", false, "confirm replacing the slot content")
-	port := f.String("port", "", "application USB/BLE/TCP port; otherwise select one USB device")
+	port := f.String("port", "", "USB serial or TCP application port (Python bridge for BLE); otherwise select one USB device")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
 	if e := f.Parse(args[2:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {

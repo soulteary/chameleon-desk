@@ -127,8 +127,11 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		rest = rest[1:]
 	}
 	f := flag.NewFlagSet(group, flag.ContinueOnError)
-	port := f.String("port", "", "USB serial path, ble:UUID (macOS), or tcp:HOST:PORT")
+	port := f.String("port", "", "USB serial path or tcp:HOST:PORT (Python bridge for BLE)")
 	defaultTimeout := 3 * time.Second
+	if group == "ble" {
+		defaultTimeout = 30 * time.Second
+	}
 	if group == "mfc" && (action == "recover" || action == "senested" || action == "collect") {
 		defaultTimeout = 40 * time.Second
 	}
@@ -152,6 +155,7 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 	var targetType string
 	var readerMode bool
 	var rfTimeout time.Duration
+	var bridgeURL, bridgeTokenFile string
 	var appendCRC, autoSelect, keepField, checkCRC bool
 	switch group {
 	case "commands":
@@ -221,7 +225,8 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 	case "sniff":
 		f.DurationVar(&rfTimeout, "duration", time.Second, "capture duration (1ms..30s); use --timeout longer than duration")
 	case "ble":
-		f.DurationVar(&rfTimeout, "duration", 5*time.Second, "BLE scan duration (up to 2m)")
+		f.StringVar(&bridgeURL, "ble-bridge", "", "HTTP loopback origin of the Python BLE bridge")
+		f.StringVar(&bridgeTokenFile, "bridge-token-file", "", "private token file shared with the Python BLE bridge")
 	case "recover":
 		f.StringVar(&kind, "tool", "", "offline recovery tool name")
 		f.StringVar(&name, "tools-dir", "tools/bin", "trusted tool directory")
@@ -267,7 +272,23 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		if action != "scan" {
 			return fmt.Errorf("BLE action: scan")
 		}
-		v, e := chameleon.ScanBLE(ctx, rfTimeout)
+		if bridgeURL == "" || bridgeTokenFile == "" {
+			return fmt.Errorf("BLE scanning requires --ble-bridge and --bridge-token-file; start tools/ble_bridge/bridge.py with --control-port and --token-file, or use its --scan option")
+		}
+		if *port != "" {
+			return fmt.Errorf("BLE scanning uses --ble-bridge, not --port")
+		}
+		token, e := readBridgeToken(bridgeTokenFile)
+		if e != nil {
+			return e
+		}
+		bridge, e := chameleon.NewBLEBridge(bridgeURL, token)
+		if e != nil {
+			return e
+		}
+		scanCtx, stop := context.WithTimeout(ctx, *timeout)
+		defer stop()
+		v, e := bridge.Scan(scanCtx)
 		if e != nil {
 			return e
 		}
@@ -275,7 +296,7 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 	}
 	if group == "firmware" && action == "flash" {
 		if !*yes {
-			return fmt.Errorf("firmware flash requires --yes and an explicit USB or ble:UUID bootloader --port")
+			return fmt.Errorf("firmware flash requires --yes and an explicit USB DFU serial --port")
 		}
 		defer func() { retErr = reportDeviceOutputError(retErr) }()
 		v, e := chameleon.FlashFirmware(ctx, *port, *input, dfu.Options{Timeout: *timeout})
