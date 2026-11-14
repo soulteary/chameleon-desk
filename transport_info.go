@@ -44,12 +44,16 @@ func (c *Client) IsClosed() bool {
 }
 
 func (c *Client) checkTransportCommand(command uint16) error {
-	if c.transportInfo.AllowsPairingChanges {
+	return checkTransportCommand(c.transportInfo, command)
+}
+
+func checkTransportCommand(info TransportInfo, command uint16) error {
+	if info.AllowsPairingChanges {
 		return nil
 	}
 	switch Command(command) {
 	case CmdSetBlePairingKey, CmdSetBlePairingEnable, CmdDeleteAllBleBonds, CmdResetSettings, CmdWipeFds:
-		return fmt.Errorf("%s is unavailable over %s/%s: pairing state requires a direct serial connection", Command(command), c.transportInfo.Connection, c.transportInfo.Medium)
+		return fmt.Errorf("%s is unavailable over %s/%s: pairing state requires a direct serial connection", Command(command), info.Connection, info.Medium)
 	}
 	return nil
 }

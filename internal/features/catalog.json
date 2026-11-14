@@ -1,0 +1,3662 @@
+{
+  "schema_version": 1,
+  "features": [
+    {
+      "id": "device.info",
+      "title": "Device information",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1000,
+        1033,
+        1017,
+        1035,
+        1002,
+        1025,
+        1019,
+        1023,
+        1018
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/info"
+        ],
+        "controls": [
+          "#refresh-info",
+          "#refresh-slots"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "info",
+          "slots"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Info",
+          "Client.Slots"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "device.go"
+      ],
+      "effect": "read"
+    },
+    {
+      "id": "device.features",
+      "title": "Feature discovery",
+      "device": true,
+      "write": false,
+      "models": [
+        "any"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1033,
+        1035
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/features/device",
+          "GET /api/capabilities"
+        ],
+        "controls": [
+          "#refresh-features"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "features"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Features",
+          "EvaluateFeatures",
+          "Client.FeatureDevice"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "features.go"
+      ],
+      "effect": "read"
+    },
+    {
+      "id": "device.commands",
+      "title": "Firmware command catalog",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "commands"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Commands",
+          "DescribeCommand"
+        ]
+      },
+      "notes": [
+        "Catalog/Wire entries do not imply typed workflows. Listing the catalog does not access a device."
+      ],
+      "sources": [
+        "execute.go",
+        "catalog_details.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "device.command-support",
+      "title": "Advertised firmware commands",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1035
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "commands --supported"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Capabilities"
+        ]
+      },
+      "notes": [
+        "Catalog/Wire entries do not imply typed workflows. Listing the catalog does not access a device."
+      ],
+      "sources": [
+        "execute.go",
+        "catalog_details.go"
+      ],
+      "effect": "read"
+    },
+    {
+      "id": "device.settings",
+      "title": "Read device settings",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1034
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "settings view",
+          "settings get"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SettingsView",
+          "Client.Settings"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "settings_view.go",
+        "settings.go"
+      ],
+      "effect": "read"
+    },
+    {
+      "id": "device.configure",
+      "title": "Configure device settings",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "animation",
+          "commands": [
+            1016,
+            1015
+          ]
+        },
+        {
+          "when": "sleep",
+          "commands": [
+            1039,
+            1040
+          ]
+        },
+        {
+          "when": "long-press threshold",
+          "commands": [
+            1041,
+            1042
+          ]
+        },
+        {
+          "when": "short/long buttons",
+          "commands": [
+            1026,
+            1027,
+            1028,
+            1029
+          ]
+        },
+        {
+          "when": "save",
+          "commands": [
+            1013
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "settings configure",
+          "settings set"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ConfigureSettings"
+        ]
+      },
+      "notes": [
+        "Only the selected fields and getters are required. Pairing fields additionally require direct serial."
+      ],
+      "sources": [
+        "settings_workflow.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "device.pairing",
+      "title": "Pairing PIN, policy and bonds",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "pairing",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "PIN",
+          "commands": [
+            1030
+          ]
+        },
+        {
+          "when": "pairing policy",
+          "commands": [
+            1037
+          ]
+        },
+        {
+          "when": "delete bonds",
+          "commands": [
+            1032
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "settings set --name ble-key",
+          "settings set --name ble-pairing",
+          "settings clear-bonds"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SetBLEKey",
+          "Client.SetBLEPairing",
+          "Client.ClearBLEBonds"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "settings.go",
+        "transport_info.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "device.reset",
+      "title": "Reset settings or device",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "pairing",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "settings reset",
+          "commands": [
+            1014
+          ]
+        },
+        {
+          "when": "factory reset",
+          "commands": [
+            1020
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "settings reset",
+          "settings factory-reset"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ResetSettings",
+          "Client.FactoryReset"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "settings.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "device.mode",
+      "title": "Reader/emulator mode",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1001
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SetReaderMode"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "settings.go"
+      ],
+      "effect": "device-write"
+    },
+    {
+      "id": "slot.activate",
+      "title": "Activate a slot",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1003
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/activate"
+        ],
+        "controls": [
+          "[data-slot-active]"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot select"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SetActiveSlot"
+        ]
+      },
+      "notes": [
+        "Activating a slot may persist the previous slot RAM in firmware."
+      ],
+      "sources": [
+        "settings.go"
+      ],
+      "effect": "device-write"
+    },
+    {
+      "id": "slot.configure",
+      "title": "Slot types, defaults and enable state",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "type",
+          "commands": [
+            1004
+          ]
+        },
+        {
+          "when": "initialize",
+          "commands": [
+            1005
+          ]
+        },
+        {
+          "when": "enable",
+          "commands": [
+            1006
+          ]
+        },
+        {
+          "when": "delete",
+          "commands": [
+            1024
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot type",
+          "slot init",
+          "slot enable",
+          "slot delete"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SetSlotType",
+          "Client.InitializeSlot",
+          "Client.EnableSlot",
+          "Client.DeleteSlot"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "settings.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.details",
+      "title": "Slot detail and nicknames",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "list",
+          "commands": [
+            1019,
+            1023,
+            1018,
+            1008
+          ]
+        },
+        {
+          "when": "nickname read",
+          "commands": [
+            1008
+          ]
+        },
+        {
+          "when": "nickname write",
+          "commands": [
+            1007
+          ]
+        },
+        {
+          "when": "nickname delete",
+          "commands": [
+            1021
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot list",
+          "slot nickname-get",
+          "slot nickname-set",
+          "slot nickname-delete"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SlotDetails",
+          "Client.ReadSlotNickname",
+          "Client.UpdateSlotNickname"
+        ]
+      },
+      "notes": [
+        "Nickname writes require explicit CLI authorization; list/read do not."
+      ],
+      "sources": [
+        "slot_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.initialize",
+      "title": "Initialize all slots",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "selected types and backup",
+          "commands": [
+            1004,
+            1005,
+            1006,
+            1003,
+            1018,
+            1019,
+            1023
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot openall"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.InitializeAllSlots"
+        ]
+      },
+      "notes": [
+        "Requires a pre-backup in the CLI; type/model support is checked at runtime."
+      ],
+      "sources": [
+        "slot_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.prng",
+      "title": "Slot PRNG configuration",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "query/set",
+          "commands": [
+            1018,
+            1003,
+            1019,
+            4040,
+            4041
+          ]
+        },
+        {
+          "when": "save",
+          "commands": [
+            1009
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot prng"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SlotPRNG"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "slot_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.load-card",
+      "title": "Load and verify a saved card",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "card-plan",
+      "commands": [
+        1001,
+        1002,
+        1035,
+        1018,
+        1008
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/load-card",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#load-card-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot load-card"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "PlanGUICardLoad",
+          "GUICardLoadRequirements",
+          "Client.LoadGUICard"
+        ]
+      },
+      "notes": [
+        "An exact plan expands writes and readback for card type, metadata and save options. This is emulator loading, not physical card writing."
+      ],
+      "sources": [
+        "gui_slot.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.memory",
+      "title": "Emulator memory import/export",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "Classic",
+          "commands": [
+            4008,
+            4000
+          ]
+        },
+        {
+          "when": "Type2",
+          "commands": [
+            4021,
+            4022
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc eload",
+          "mfc esave",
+          "mfc eview",
+          "type2 eload",
+          "type2 esave",
+          "type2 eview",
+          "image save",
+          "image load"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ExportSlotMemory",
+          "Client.LoadSlotMemory"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "memory_files.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "slot.emulator",
+      "title": "Emulator flags and Type2 extras",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            4009,
+            4018,
+            4023,
+            4025,
+            4027,
+            4028,
+            4029,
+            4034,
+            4035,
+            4037,
+            4039,
+            4040
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "emulator config",
+          "emulator configure",
+          "emulator counter",
+          "emulator reset-auth",
+          "emulator password-log"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SlotEmulatorConfig",
+          "Client.ConfigureSlotEmulator",
+          "Client.SlotCounter",
+          "Client.ResetSlotAuthAttempts",
+          "Client.Type2DetectionLogs"
+        ]
+      },
+      "notes": [
+        "Selected flags, tag family, counters and persistence determine exact getters/setters."
+      ],
+      "sources": [
+        "emulator_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "reader.hf-scan",
+      "title": "ISO14443-A discovery",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1035,
+        1001,
+        1002,
+        2000
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/scan/hf"
+        ],
+        "controls": [
+          "#scan-hf"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "scan"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ScanISO14443A"
+        ]
+      },
+      "notes": [
+        "Temporarily changes mode and restores it; scans identity, not card memory."
+      ],
+      "sources": [
+        "reader.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.lf-scan",
+      "title": "EM410x discovery",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1001,
+        1002,
+        3000
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/scan/lf"
+        ],
+        "controls": [
+          "#scan-lf"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "lf"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ScanLF"
+        ]
+      },
+      "notes": [
+        "Web currently selects EM410x only; other protocols use reader.lf."
+      ],
+      "sources": [
+        "cards.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.lf",
+      "title": "LF protocol reading",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "EM410X_SCAN",
+          "commands": [
+            3000
+          ]
+        },
+        {
+          "when": "HIDPROX_SCAN",
+          "commands": [
+            3002
+          ]
+        },
+        {
+          "when": "IOPROX_SCAN",
+          "commands": [
+            3010
+          ]
+        },
+        {
+          "when": "VIKING_SCAN",
+          "commands": [
+            3004
+          ]
+        },
+        {
+          "when": "PAC_SCAN",
+          "commands": [
+            3014
+          ]
+        },
+        {
+          "when": "JABLOTRON_SCAN",
+          "commands": [
+            3019
+          ]
+        },
+        {
+          "when": "PYRAMID_SCAN",
+          "commands": [
+            3021
+          ]
+        },
+        {
+          "when": "EM4X05_SCAN",
+          "commands": [
+            3030
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "lf read"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReadLFRecord"
+        ]
+      },
+      "notes": [
+        "Select one protocol; the union is not required. Generic read commands absent from pinned registration are not advertised as workflows."
+      ],
+      "sources": [
+        "lf_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "reader.config",
+      "title": "HF inspection and RF configuration",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "RF configuration",
+          "commands": [
+            2200,
+            2201
+          ]
+        },
+        {
+          "when": "inspection",
+          "commands": [
+            2000,
+            2010
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "rf info",
+          "rf config",
+          "rf config-set"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.InspectHFCard",
+          "Client.ReaderConfig",
+          "Client.SetReaderConfig"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.read",
+      "title": "Classic authentication and block reading",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "authenticate",
+          "commands": [
+            2007
+          ]
+        },
+        {
+          "when": "read/dump",
+          "commands": [
+            2008
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc auth",
+          "mfc read",
+          "mfc dump",
+          "mfc dump-keys"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.AuthenticateClassic",
+          "Client.ReadClassicBlock",
+          "Client.DumpClassic",
+          "Client.DumpClassicWithKeys"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "cards.go",
+        "classic_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.write",
+      "title": "Classic block writing and cloning",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "write",
+          "commands": [
+            2009
+          ]
+        },
+        {
+          "when": "verify clone",
+          "commands": [
+            2008,
+            2009
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc write",
+          "mfc clone"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.WriteClassicBlock",
+          "Client.CloneClassic"
+        ]
+      },
+      "notes": [
+        "Manufacturer/trailer blocks have explicit options; failed writes are not replayed."
+      ],
+      "sources": [
+        "classic_clone.go",
+        "cards.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.value",
+      "title": "Classic value blocks",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "read",
+          "commands": [
+            2008
+          ]
+        },
+        {
+          "when": "set",
+          "commands": [
+            2009
+          ]
+        },
+        {
+          "when": "manipulate",
+          "commands": [
+            2011
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc value-get",
+          "mfc value-set",
+          "mfc value-inc",
+          "mfc value-dec",
+          "mfc value-copy",
+          "mfc value-decode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReadClassicValue",
+          "Client.WriteClassicValue",
+          "Client.ManipulateClassicValue"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "classic_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.dictionary",
+      "title": "Classic dictionary checking",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "firmware dictionary",
+          "commands": [
+            2012,
+            2015
+          ]
+        },
+        {
+          "when": "recovery fallback",
+          "commands": [
+            2007
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc dictionary",
+          "mfc autopwn"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CheckClassicDictionary",
+          "Client.Autopwn"
+        ]
+      },
+      "notes": [
+        "Autopwn may require recovery workers and selected acquisition strategies."
+      ],
+      "sources": [
+        "classic_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.recover",
+      "title": "Classic recovery strategies",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "staticnested",
+          "commands": [
+            2003
+          ]
+        },
+        {
+          "when": "nested",
+          "commands": [
+            2006,
+            2005
+          ]
+        },
+        {
+          "when": "darkside",
+          "commands": [
+            2004
+          ]
+        },
+        {
+          "when": "hardnested",
+          "commands": [
+            2013
+          ]
+        },
+        {
+          "when": "encrypted static",
+          "commands": [
+            2014
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc recover",
+          "mfc senested"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.RecoverClassic",
+          "Client.RecoverStaticEncrypted"
+        ]
+      },
+      "notes": [
+        "Requires matching trusted C workers; a capability result does not verify installed tools or card susceptibility."
+      ],
+      "sources": [
+        "recovery_advanced.go",
+        "recovery_senested.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.recovery-bundle",
+      "title": "Recovery collection, offline compute and verification",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            2004,
+            2007,
+            2013
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc recover-collect",
+          "mfc recover-compute",
+          "mfc recover-verify"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CollectRecoveryBundle",
+          "ComputeRecovery",
+          "Client.VerifyRecoveryCandidate"
+        ]
+      },
+      "notes": [
+        "Acquisition strategy supplies commands; compute is offline and needs its worker. The bundle preserves partial/checkpoint results."
+      ],
+      "sources": [
+        "recovery_bundle.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "classic.logs",
+      "title": "Detection logs and mfkey32 recovery",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "device logs",
+          "commands": [
+            4005,
+            4006
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc auth-log",
+          "mfc recover-log"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ClassicDetectionLogs",
+          "RecoverDetectionLogs"
+        ]
+      },
+      "notes": [
+        "Log recovery can be offline and needs the mfkey32 worker."
+      ],
+      "sources": [
+        "detection_recovery.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "type2.memory",
+      "title": "Type2 page access and password authentication",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1010,
+            2000,
+            2001,
+            2002,
+            2007,
+            2008,
+            2009,
+            2017,
+            2018,
+            2019,
+            2021,
+            2022,
+            2101,
+            2200,
+            2201,
+            3000,
+            3002,
+            3004,
+            3009,
+            3010,
+            3012,
+            3013,
+            3014,
+            3019,
+            3021,
+            3030,
+            3031
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "type2 read",
+          "type2 write",
+          "type2 password-read",
+          "type2 password-write"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReadType2Pages",
+          "Client.WriteType2Page",
+          "Client.ReadType2Authenticated",
+          "Client.WriteType2Authenticated"
+        ]
+      },
+      "notes": [
+        "Page/count/password and card type constrain the operation; no automatic full-dump workflow is implied."
+      ],
+      "sources": [
+        "cards.go",
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "type2.inspect",
+      "title": "Type2 version, signature, counters and nonce",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            2000,
+            2001,
+            2002,
+            2017,
+            2018,
+            2019,
+            2021,
+            2022,
+            2101,
+            2200,
+            2201,
+            3009,
+            3012,
+            3013,
+            3031
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "type2 version",
+          "type2 signature",
+          "type2 counter",
+          "type2 authnonce"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Type2Info"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "type2.auto-dump",
+      "title": "Automatic Type2 capacity/full dump",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "missing",
+        "entries": []
+      },
+      "notes": [
+        "No dedicated end-to-end workflow; page APIs can be composed by callers."
+      ],
+      "sources": [
+        "reader_extras.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "ulc.memory",
+      "title": "Ultralight-C access and key changes",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "auth",
+          "commands": [
+            2018
+          ]
+        },
+        {
+          "when": "read",
+          "commands": [
+            2019
+          ]
+        },
+        {
+          "when": "write",
+          "commands": [
+            2021
+          ]
+        },
+        {
+          "when": "key",
+          "commands": [
+            2022
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "ulc auth",
+          "ulc read",
+          "ulc write",
+          "ulc set-key"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.AuthenticateULC",
+          "Client.ReadULC",
+          "Client.WriteULCPage",
+          "Client.SetULCKey"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "ulc.recover",
+      "title": "ULCG acquisition and recovery",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "ulc ulcg-collect",
+          "ulc ulcg-recover"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CollectULCG",
+          "RecoverULCG"
+        ]
+      },
+      "notes": [
+        "Acquisition can erase data and requires explicit authorization. Compute needs the trusted ULCG worker."
+      ],
+      "sources": [
+        "ulcg.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "gen1a.tools",
+      "title": "GEN1A card tools",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "gen1a detect",
+          "gen1a read",
+          "gen1a write-block",
+          "gen1a set-uid"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.DetectGen1A",
+          "Client.Gen1AReadBlock",
+          "Client.Gen1AWriteBlock",
+          "Client.Gen1ASetUID"
+        ]
+      },
+      "notes": [
+        "Raw HF protocol sequences are type-specific. Mutation/irreversible lock confirmations remain in their workflows."
+      ],
+      "sources": [
+        "gen1a.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "gen3.tools",
+      "title": "GEN3 card tools",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "gen3 detect",
+          "gen3 block0",
+          "gen3 set-uid",
+          "gen3 lock"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.DetectGen3",
+          "Client.Gen3WriteBlock0",
+          "Client.Gen3SetUID",
+          "Client.Gen3Lock"
+        ]
+      },
+      "notes": [
+        "Raw HF protocol sequences are type-specific. Mutation/irreversible lock confirmations remain in their workflows."
+      ],
+      "sources": [
+        "gen3.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "gen4.tools",
+      "title": "GEN4 card tools",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "gen4 config",
+          "gen4 dump",
+          "gen4 write-block",
+          "gen4 write-config",
+          "gen4 set-uid",
+          "gen4 set-password"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Gen4ReadConfig",
+          "Client.Gen4Dump",
+          "Client.Gen4WriteBlock"
+        ]
+      },
+      "notes": [
+        "Raw HF protocol sequences are type-specific. Mutation/irreversible lock confirmations remain in their workflows."
+      ],
+      "sources": [
+        "gen4.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "lf.clone",
+      "title": "LF encoding and physical T55xx cloning",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1018,
+            1019,
+            3030,
+            5001
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "lf clone",
+          "lf encode",
+          "lf decode",
+          "lf formats"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CloneLF",
+          "Client.EncodeLFIdentity",
+          "HIDFormats"
+        ]
+      },
+      "notes": [
+        "Protocol determines the write command; encoding/decoding is offline and must not be confused with writing a physical card."
+      ],
+      "sources": [
+        "lf_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "lf.emulator",
+      "title": "LF emulator identity",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1018,
+            1019,
+            3030,
+            5001
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "lf econfig"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SlotLFIdentity"
+        ]
+      },
+      "notes": [
+        "Selected LF protocol determines the get/set identity command. Optional save and slot switching require authorization."
+      ],
+      "sources": [
+        "lf_workflows.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "t55.clean",
+      "title": "T55xx password cleaner",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "t55 clean"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CleanT55Password"
+        ]
+      },
+      "notes": [
+        "Requires explicit probe identity and new password; command depends on the supported probe/write workflow."
+      ],
+      "sources": [
+        "t55_cleaner.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "t55.raw-block",
+      "title": "T55xx arbitrary block write",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "raw",
+      "commands": [
+        3016
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "raw",
+        "entries": [
+          "call LF_T55XX_WRITE"
+        ]
+      },
+      "sdk": {
+        "status": "raw",
+        "entries": [
+          "Client.WireLfT55xxWrite"
+        ]
+      },
+      "notes": [
+        "Raw payload only; no typed arbitrary block editor."
+      ],
+      "sources": [
+        "wire_gen.go"
+      ],
+      "effect": "device-write"
+    },
+    {
+      "id": "protocol.raw",
+      "title": "Raw firmware command",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "command",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "call"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Execute",
+          "Client.ExecuteWithOptions"
+        ]
+      },
+      "notes": [
+        "Command ID/payload must be selected. Unknown IDs are rejected; unregistered commands require an explicit override. Transport restrictions still apply."
+      ],
+      "sources": [
+        "execute.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "protocol.hf-raw",
+      "title": "Raw ISO14443-A exchange",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "raw"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Raw14A"
+        ]
+      },
+      "notes": [
+        "RF flags and response handling remain caller responsibilities.",
+        "The payload may mutate a physical card; advertised commands do not authorize its contents."
+      ],
+      "sources": [
+        "cards.go"
+      ],
+      "effect": "raw-exchange"
+    },
+    {
+      "id": "protocol.apdu",
+      "title": "ISO14443-4 APDU exchange",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        6004
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "apdu"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReaderAPDU"
+        ]
+      },
+      "notes": [
+        "The payload may mutate a physical card; advertised commands do not authorize its contents."
+      ],
+      "sources": [
+        "advanced.go"
+      ],
+      "effect": "raw-exchange"
+    },
+    {
+      "id": "emv.tools",
+      "title": "EMV analysis and response profiles",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1018,
+            1019,
+            6002,
+            6003,
+            6005,
+            6010
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "emv scan",
+          "emv debug",
+          "emv load",
+          "emv tlv"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ScanEMV",
+          "Client.LoadISO4Profile",
+          "ParseBERTLV"
+        ]
+      },
+      "notes": [
+        "Selected protocol/action supplies exact commands; raw exchanges do not imply complete protocol semantics."
+      ],
+      "sources": [
+        "emv.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "desfire.tools",
+      "title": "DESFire inspection and dictionary",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "des info",
+          "des auth",
+          "des check"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.DESFireInfo",
+          "Client.AuthenticateDESFire",
+          "Client.CheckDESFireDictionary"
+        ]
+      },
+      "notes": [
+        "Selected protocol/action supplies exact commands; raw exchanges do not imply complete protocol semantics."
+      ],
+      "sources": [
+        "desfire.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "seos.tools",
+      "title": "SEOS emulator data/keys",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1018,
+            1019,
+            4042,
+            4043,
+            4044
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "seos get",
+          "seos set",
+          "seos keys"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SEOSData",
+          "Client.SetSEOSData",
+          "Client.SetSEOSKeys"
+        ]
+      },
+      "notes": [
+        "Selected protocol/action supplies exact commands; raw exchanges do not imply complete protocol semantics."
+      ],
+      "sources": [
+        "seos.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "rf.hf-trace",
+      "title": "HF sniff and authentication trace",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "sniff",
+          "commands": [
+            2020
+          ]
+        },
+        {
+          "when": "auth trace",
+          "commands": [
+            2017
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "sniff",
+          "rf auth-trace"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SniffHF",
+          "Client.AuthTrace"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "advanced.go",
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "rf.lf-samples",
+      "title": "LF samples and ADC",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002
+      ],
+      "conditional": [
+        {
+          "when": "capture",
+          "commands": [
+            3031
+          ]
+        },
+        {
+          "when": "ADC",
+          "commands": [
+            3009
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "rf lf-samples",
+          "rf adc"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.CaptureLF",
+          "Client.ReadLFADC"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_extras.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "files.samples",
+      "title": "Offline sample analysis",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "data csv",
+          "data plot",
+          "data modulation",
+          "data manrawdecode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "AnalyzeLFSamples",
+          "DecodeManchester"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "samples.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "library.database",
+      "title": "Card database operations",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "partial",
+        "entries": [
+          "POST /api/database"
+        ],
+        "controls": [
+          "#db-list",
+          "#db-show",
+          "#db-add",
+          "#db-delete"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "database list",
+          "database show",
+          "database add",
+          "database edit",
+          "database delete",
+          "database merge",
+          "database import-folder",
+          "database export-folder"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ParseGUIDatabase",
+          "GUIDatabase.AddCard",
+          "GUIDatabase.ReplaceCard",
+          "GUIDatabase.DeleteRecord",
+          "GUIDatabase.Merge"
+        ]
+      },
+      "notes": [
+        "Web supports list/show/add/delete/validate, not edit/merge/folder workflows."
+      ],
+      "sources": [
+        "gui_database.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.card",
+      "title": "Saved-card file conversion",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "cardfile inspect",
+          "cardfile to-image",
+          "cardfile from-image",
+          "cardfile to-bin",
+          "cardfile from-bin"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ParseGUICard",
+          "NewGUICardFromDump"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "gui_card.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.ndef",
+      "title": "Offline NDEF read/edit",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/ndef/read"
+        ],
+        "controls": [
+          "#ndef-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "ndef read",
+          "ndef write"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "DetectNdef",
+          "EncodeNdefMessage",
+          "NdefContainer.WriteMessage"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "ndef.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.ndef-write",
+      "title": "Generate an NDEF card file",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/ndef/write"
+        ],
+        "controls": [
+          "#ndef-write-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "ndef write"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "EncodeNdefMessage",
+          "NdefContainer.WriteMessage"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "ndef.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.acl-decode",
+      "title": "Decode Classic access bits",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/acl/decode"
+        ],
+        "controls": [
+          "#acl-decode-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "acl decode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "DecodeClassicAccess"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "access.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.acl-encode",
+      "title": "Encode Classic access bits",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/acl/encode"
+        ],
+        "controls": [
+          "#acl-encode-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "acl encode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "EncodeClassicAccess"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "access.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.vanity",
+      "title": "Vanity SAK inference",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/vanity"
+        ],
+        "controls": [
+          "#vanity-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "vanity sak"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "VanitySAKFromUIDHex",
+          "VanitySAKFromData"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "vanity.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.dictionary",
+      "title": "Dictionary sources/download",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/dictionary/download"
+        ],
+        "controls": [
+          "#dict-download"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "dictionary download"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "DictionarySources",
+          "DownloadDictionary"
+        ]
+      },
+      "notes": [
+        "Offline data operation; dictionary download requires network. Existing file/schema validation still applies."
+      ],
+      "sources": [
+        "dictionary_download.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "files.dictionary-sources",
+      "title": "List dictionary sources",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/dictionary/sources"
+        ],
+        "controls": [
+          "#dict-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "dictionary download --list"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "DictionarySources"
+        ]
+      },
+      "notes": [
+        "Offline data operation; dictionary download requires network. Existing file/schema validation still applies."
+      ],
+      "sources": [
+        "dictionary_download.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "library.persistence",
+      "title": "Browser-local library saving/recovery",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "browser IndexedDB"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "missing",
+        "entries": []
+      },
+      "notes": [
+        "Browser profile/origin scoped; independent exported backups are still needed."
+      ],
+      "sources": [
+        "cmd/chameleon/webui/library-persistence.js"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "backup.create",
+      "title": "Device snapshot backup",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        1003,
+        1017,
+        1018,
+        1019,
+        1023,
+        1033,
+        1034,
+        1041
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1013
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "backup create"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.BackupDevice"
+        ]
+      },
+      "notes": [
+        "Slot switching can persist RAM to flash. Commands depend on all selected slot types; snapshot includes secrets."
+      ],
+      "sources": [
+        "backup.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "backup.restore",
+      "title": "Device snapshot restore",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "restore",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        1003,
+        1017,
+        1018,
+        1019,
+        1023,
+        1033,
+        1034,
+        1041
+      ],
+      "conditional": [
+        {
+          "when": "parameter-dependent command vocabulary; not an all-of requirement",
+          "commands": [
+            1013
+          ]
+        }
+      ],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "backup restore"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.RestoreDevice",
+          "DeviceBackup.RestorePlan"
+        ]
+      },
+      "notes": [
+        "Requires a valid snapshot, pre-restore backup and direct serial. Non-atomic; exact commands come from the snapshot."
+      ],
+      "sources": [
+        "backup.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "firmware.check",
+      "title": "Firmware update check",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1033,
+        1017
+      ],
+      "conditional": [
+        {
+          "when": "explicit model and version: no device commands",
+          "commands": []
+        }
+      ],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/firmware/check"
+        ],
+        "controls": [
+          "#fw-check"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "firmware check"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "FirmwareUpdater.CheckFirmwareUpdate"
+        ]
+      },
+      "notes": [
+        "With explicit model/version this is device independent; Web obtains missing fields from the device. Requires network."
+      ],
+      "sources": [
+        "firmware_update.go"
+      ],
+      "effect": "read"
+    },
+    {
+      "id": "firmware.download",
+      "title": "Firmware download and inspection",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "firmware download",
+          "firmware inspect"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "FirmwareUpdater.DownloadFirmware",
+          "InspectFirmware"
+        ]
+      },
+      "notes": [
+        "Download requires network; package inspection is offline."
+      ],
+      "sources": [
+        "firmware_update.go",
+        "firmware.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "firmware.enter",
+      "title": "Enter the bootloader",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "firmware enter"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.EnterBootloader"
+        ]
+      },
+      "notes": [
+        "Send-only; disconnect is expected."
+      ],
+      "sources": [
+        "execute.go"
+      ],
+      "effect": "device-write"
+    },
+    {
+      "id": "firmware.flash",
+      "title": "USB application DFU upload",
+      "device": false,
+      "write": true,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "usb-dfu",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "firmware flash"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "FlashFirmware"
+        ]
+      },
+      "notes": [
+        "Explicit USB DFU serial port and application-only package required. App capability lists cannot certify bootloader/ZIP compatibility."
+      ],
+      "sources": [
+        "firmware_flash.go"
+      ],
+      "effect": "device-write"
+    },
+    {
+      "id": "firmware.ble-dfu",
+      "title": "BLE DFU helper only",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "raw",
+        "entries": [
+          "dfu.UploadBLE"
+        ]
+      },
+      "notes": [
+        "No built-in BLE DFU backend or bridge support. Caller must supply a separate DFU transport."
+      ],
+      "sources": [
+        "dfu/upload.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "diagnostics.device",
+      "title": "Diagnostics and transport stress",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "doctor",
+          "stress"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.Diagnose",
+          "Client.Stats"
+        ]
+      },
+      "notes": [
+        "Probe and optional reader checks depend on firmware; CLI stress is orchestration, not a separate SDK workflow."
+      ],
+      "sources": [
+        "diagnostics.go"
+      ],
+      "effect": "parameter-dependent"
+    },
+    {
+      "id": "recovery.offline",
+      "title": "Offline recovery workers",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "recover"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "RunRecovery",
+          "RecoveryTools"
+        ]
+      },
+      "notes": [
+        "Requires explicitly installed trusted C helpers; availability does not verify filesystem executables."
+      ],
+      "sources": [
+        "recovery.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.scan",
+      "title": "Managed BLE scan",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-ble",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/scan"
+        ],
+        "controls": [
+          "#bridge-scan"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "ble scan"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Scan"
+        ]
+      },
+      "notes": [
+        "Bridge configuration/token and connection state are additional runtime prerequisites."
+      ],
+      "sources": [
+        "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.select",
+      "title": "Managed BLE select",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-ble",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/select"
+        ],
+        "controls": [
+          "#bridge-select"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Select"
+        ]
+      },
+      "notes": [
+        "Bridge configuration/token and connection state are additional runtime prerequisites."
+      ],
+      "sources": [
+        "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.connect",
+      "title": "Managed BLE connect",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-ble",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/connect"
+        ],
+        "controls": [
+          "#bridge-connect"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Connect"
+        ]
+      },
+      "notes": [
+        "Bridge configuration/token and connection state are additional runtime prerequisites."
+      ],
+      "sources": [
+        "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.status",
+      "title": "Managed BLE status",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-ble",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/bridge/status"
+        ],
+        "controls": [
+          "#bridge-refresh"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Status"
+        ]
+      },
+      "notes": [
+        "Bridge configuration/token and connection state are additional runtime prerequisites."
+      ],
+      "sources": [
+        "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.disconnect",
+      "title": "Managed BLE disconnect",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-ble",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/disconnect"
+        ],
+        "controls": [
+          "#bridge-disconnect"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Disconnect"
+        ]
+      },
+      "notes": [
+        "Bridge configuration/token and connection state are additional runtime prerequisites."
+      ],
+      "sources": [
+        "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "transport.native-ble",
+      "title": "Removed native BLE",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "removed",
+        "entries": [
+          "OpenBLE",
+          "ScanBLE"
+        ]
+      },
+      "notes": [
+        "Compatibility calls return ErrBLEUnavailable. Use the Python bridge."
+      ],
+      "sources": [
+        "ble.go"
+      ],
+      "effect": "offline"
+    }
+  ]
+}

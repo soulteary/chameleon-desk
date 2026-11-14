@@ -6,11 +6,14 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const { IDBFactory } = require('fake-indexeddb');
 const assets = path.join(__dirname, '../cmd/chameleon/webui');
 const source = (file) => fs.readFileSync(path.join(assets, file), 'utf8');
+const featureCatalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../internal/features/catalog.json'), 'utf8')).features;
+const fixtureDevice = {model_id:0, capabilities: JSON.parse(fs.readFileSync(path.join(__dirname, '../internal/catalog/upstream.json'), 'utf8')).commands.map(c=>c.id), transport:{connection:'serial',medium:'serial',allows_pairing_changes:true,allows_device_restore:true,supports_dfu:true}};
+const fixtureStates = (writes, ready=true) => featureCatalog.map(f=>({id:f.id,state:f.web.status==='missing'||f.web.status==='removed'?'unavailable':f.write&&!writes?'unavailable':f.device&&!ready?'unknown':'available',reasons:f.write&&!writes?[{code:'writes_disabled',message:'writes disabled'}]:f.device&&!ready?[{code:'device_unknown',message:'unknown device'}]:[],required_commands:f.commands}));
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const response = (body, status = 200, type = 'application/json') => ({ ok: status < 400, status, headers: { get: () => type }, json: async () => body, text: async () => String(body) });
 
-async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false, indexedDB = new IDBFactory() } = {}) {
+async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false, indexedDB = new IDBFactory(), featureMode = "ready" } = {}) {
   const errors = [], requests = [], downloads = [], imports = [], persistence = [];
   const virtualConsole = new VirtualConsole(); virtualConsole.on('jsdomError', (e) => errors.push(e));
   const dom = new JSDOM(source('index.html'), { url: 'http://127.0.0.1:8099/', runScripts: 'outside-only', virtualConsole });
@@ -42,15 +45,24 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.fetch = async (url, opts) => {
     requests.push({ url, ...opts });
     if (url === '/api/database' && JSON.parse(opts.body).op === 'validate') return routes.validateDatabase ? routes.validateDatabase(opts) : response({ valid: true });
-    if (routes[url]) return routes[url](opts);
-    if (url === '/api/capabilities') return response({ writes_enabled: writes, csrf_token: 'test-session-token' });
-    throw new Error('Unexpected offline request: ' + url);
+    let result;
+    if (routes[url]) result = await routes[url](opts);
+    else if (url === '/api/capabilities') result = response({ writes_enabled: writes, csrf_token: 'test-session-token' });
+    else if (url === '/api/features/check') result = response({schema_version:1,state:{id:'slot.load-card',state:'available',reasons:[],required_commands:[]}});
+    else if (url === '/api/features/device') result = response({schema_version:1,device:fixtureDevice,states:fixtureStates(writes)});
+    else throw new Error('Unexpected offline request: ' + url);
+    if (result.ok && result.headers.get('content-type')?.includes('json') && ['/api/info','/api/capabilities'].includes(url)) {
+      let body;try{body=await result.json();}catch{return result;}
+      if (url === '/api/capabilities') return response({feature_schema_version:1,feature_catalog:featureCatalog,feature_states:fixtureStates(body.writes_enabled===true,featureMode==='ready'),feature_device:featureMode==='ready'?fixtureDevice:null,...body});
+      if (body && typeof body==='object' && !Array.isArray(body)) return response({model_id:0,capabilities:fixtureDevice.capabilities,transport:fixtureDevice.transport,feature_schema_version:1,feature_states:fixtureStates(writes),...body});
+    }
+    return result;
   };
   w.URL.createObjectURL = (blob) => { downloads.push({ blob }); return 'blob:test'; }; w.URL.revokeObjectURL = () => {};
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
@@ -65,7 +77,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   });
   await w.libraryReady;
   await tick();
-  return { w, d, $, requests, downloads, imports, advance, timers, click: async (selector) => { $(selector).click(); await tick(); }, input: (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new w.Event('input', { bubbles: true })); } };
+  return { w, d, $, requests, downloads, imports, advance, timers, click: async (selector) => { await w.featureCheckReady; $(selector).click(); await tick(); }, input: (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new w.Event('input', { bubbles: true })); } };
 }
 const open = (id) => `.dock [data-open="${id}"]`;
 const summary = ($, id) => $(id).closest('details').previousElementSibling;
@@ -149,22 +161,22 @@ test('hardware reads serialize across windows and handle no-card and disconnecte
   await p.click('#scan-lf'); assert.match(p.$('#scan-out').textContent, /1122334455/);
   await p.click('#refresh-info'); assert.match(p.$('#info-cards').textContent, /device unplugged/);
   assert.equal(p.$('#menu-connection').classList.contains('connected'), false);
-  assert.equal(p.$('#scan-hf').disabled, false);
+  assert.equal(p.$('#scan-hf').disabled, true);
 });
 
 test('capability failure is visible and retry enables only authorized writes', async (t) => {
   let attempts = 0;
   const p = await page(t, { '/api/capabilities': () => ++attempts === 1 ? response({ error: 'service unavailable' }, 503) : response({ writes_enabled: true, csrf_token: 'new-token' }) });
   assert.equal(p.$('#retry-capabilities').hidden, false); assert.equal(p.$('#load-card-go').disabled, true);
-  await p.click('#retry-capabilities'); assert.equal(p.$('#load-card-go').disabled, false); assert.equal(p.$('#retry-capabilities').hidden, true);
+  await p.click('#retry-capabilities'); p.input('#load-card-json', JSON.stringify(card)); await p.w.featureCheckReady; assert.equal(p.$('#load-card-go').disabled, false); assert.equal(p.$('#retry-capabilities').hidden, true);
 });
 
 test('slot validation, cancellation, token, activation refresh, and read-only gating', async (t) => {
   const info = { model: 'Mock', slots: [{ number: 1, active: true }, { number: 2, active: false }] };
   const p = await page(t, { '/api/info': () => response(info), '/api/slot/load-card': () => response({ plan: { slot: 2, steps: [] }, verified: true, persisted: true, activated: false, completed_steps: 0 }), '/api/slot/activate': () => response({ ok: true }) }, { writes: true });
-  p.input('#load-card-json', '{'); await p.click('#load-card-go'); assert.match(summary(p.$, '#load-card-out').textContent, /有效 JSON/);
+  p.input('#load-card-json', '{'); await p.click('#load-card-go'); assert.equal(p.$('#load-card-go').disabled, true); assert.match(p.$('#load-card-go').nextElementSibling.textContent, /有效 JSON/);
   p.input('#load-card-json', JSON.stringify(card));
-  for (const value of ['', '2.5', '0', '9']) { p.input('#load-slot', value); await p.click('#load-card-go'); assert.match(summary(p.$, '#load-card-out').textContent, /1 至 8/); }
+  for (const value of ['', '2.5', '0', '9']) { p.input('#load-slot', value); await p.click('#load-card-go'); assert.equal(p.$('#load-card-go').disabled, true); assert.match(p.$('#load-card-go').nextElementSibling.textContent, /1 至 8/); }
   p.input('#load-slot', '2'); p.w.confirm = () => false; await p.click('#load-card-go'); assert.equal(p.requests.filter((r) => r.url.startsWith('/api/slot/')).length, 0);
   p.w.confirm = () => true; await p.click('#load-card-go');
   const request = p.requests.find((r) => r.url === '/api/slot/load-card'); assert.equal(request.headers['X-Chameleon-Token'], 'test-session-token'); assert.equal(JSON.parse(request.body).slot, 2);
@@ -949,4 +961,59 @@ test('a pending library mutation warns on exit until its result is committed', a
   await p.click('#db-add'); assert(unloadPrevented(p));
   pending.resolve(response({ 'flutter.cards': [JSON.stringify(card)] })); await tick();
   assert(unloadPrevented(p)); await p.click('#db-save-now'); await waitForLibrary(p, () => !unloadPrevented(p));
+});
+
+test('unknown device abilities disable hardware workflows with accessible reasons but leave offline tools usable', async t => {
+  const p = await page(t, {}, { featureMode:'unknown' });
+  for(const selector of ['#scan-hf','#scan-lf','#load-card-go']) {
+    assert(p.$(selector).disabled); const reason=p.d.getElementById(p.$(selector).getAttribute('aria-describedby'));
+    assert(reason && !reason.hidden); assert(reason.textContent.length>0);
+  }
+  assert(!p.$('#ndef-go').disabled); assert(!p.$('#db-list').disabled); assert(!p.$('#refresh-features').disabled);
+  assert.equal(p.d.querySelectorAll('#feature-list>details').length, featureCatalog.length);
+  assert.deepEqual(p.requests.map(r=>r.url),['/api/capabilities']);
+});
+
+test('explicit feature refresh applies missing-command and model decisions without issuing scan requests', async t => {
+  let states=fixtureStates(false).map(s=>s.id==='reader.hf-scan'?{...s,state:'unavailable',reasons:[{code:'missing_commands',message:'missing',commands:[2000]}]}:s);
+  const p=await page(t,{'/api/features/device':()=>response({schema_version:1,device:fixtureDevice,states})},{featureMode:'unknown'});
+  await p.click('#refresh-features'); assert(p.$('#scan-hf').disabled); assert.match(p.$('#scan-hf').nextElementSibling.textContent,/2000/);
+  states=states.map(s=>s.id==='reader.hf-scan'?{...s,reasons:[{code:'unsupported_model',message:'unsupported'}]}:s);
+  await p.click('#refresh-features'); assert.match(p.$('#scan-hf').nextElementSibling.textContent,/型号/);
+  assert.equal(p.requests.filter(r=>r.url==='/api/scan/hf').length,0);
+});
+
+test('a newer or malformed catalog clears previously available hardware states',async t=>{
+  let version=1;
+  const p=await page(t,{'/api/capabilities':()=>response({writes_enabled:false,csrf_token:'token',feature_schema_version:version})});
+  assert(!p.$('#scan-hf').disabled);version=2;
+  await p.click('#retry-capabilities');assert(p.$('#scan-hf').disabled);assert(!p.$('#ndef-go').disabled);
+  assert(!p.$('#retry-capabilities').hidden);
+  await p.click('#refresh-features');assert(p.$('#scan-hf').disabled);
+  assert.match(p.$('#feature-summary').textContent,/功能清单/);
+});
+
+test('an obsolete card preview cannot enable a write after a device capability failure',async t=>{
+  const pending=deferred();
+  const p=await page(t,{'/api/features/check':()=>pending.promise,'/api/features/device':()=>response({error:'disconnected'},502)},{writes:true});
+  p.input('#load-card-json',JSON.stringify(card));await tick();assert(p.$('#load-card-go').disabled);
+  p.$('#refresh-features').click();await tick();
+  pending.resolve(response({schema_version:1,state:{id:'slot.load-card',state:'available',reasons:[],required_commands:[]}}));await tick();
+  assert(p.$('#load-card-go').disabled);assert.equal(p.requests.filter(r=>r.url==='/api/slot/load-card').length,0);
+});
+
+test('failed card previews stay disabled and untrusted reason text never becomes markup',async t=>{
+  const text='<img src=x onerror=alert(1)>';
+  const p=await page(t,{'/api/features/check':()=>response({schema_version:1,state:{id:'slot.load-card',state:'unavailable',reasons:[{code:'invalid_parameters',message:text}],required_commands:[]}})},{writes:true});
+  p.input('#load-card-json',JSON.stringify(card));await p.w.featureCheckReady;
+  assert(p.$('#load-card-go').disabled);assert(p.$('#load-card-go').nextElementSibling.textContent.includes(text));assert.equal(p.d.querySelectorAll('#feature-list img').length,0);
+});
+
+
+test('catalog controls refer to existing static controls or the dynamic slot activation selector', async t => {
+  const p=await page(t);
+  for(const f of featureCatalog) for(const selector of f.web.controls || []) {
+    if(selector==='[data-slot-active]')continue;
+    assert(p.d.querySelector(selector),f.id+': '+selector);
+  }
 });

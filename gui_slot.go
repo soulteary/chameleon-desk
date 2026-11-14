@@ -314,34 +314,7 @@ func (c *Client) LoadGUICard(ctx context.Context, slot int, card GUICard, o GUIC
 		for i := 0; i < len(caps); i += 2 {
 			available[Command(binary.BigEndian.Uint16(caps[i:]))] = true
 		}
-		required := []Command{CmdGetActiveSlot, CmdGetSlotTagNick}
-		if o.Persist {
-			required = append(required, CmdSlotDataConfigSave)
-		}
-		for _, step := range plan.Steps {
-			required = append(required, step.Command)
-		}
-		if plan.identity != nil {
-			required = append(required, CmdHf14aGetAntiCollData)
-		}
-		if plan.width == 16 {
-			required = append(required, CmdMf1ReadEmuBlockData)
-		}
-		if plan.width == 4 {
-			required = append(required, CmdMf0NtagReadEmuPageData)
-		}
-		if plan.lfGet != 0 {
-			required = append(required, plan.lfGet)
-		}
-		if len(plan.counters) != 0 {
-			required = append(required, CmdMf0NtagGetCounterData)
-		}
-		if plan.version != nil {
-			required = append(required, CmdMf0NtagGetVersionData)
-		}
-		if plan.signature != nil {
-			required = append(required, CmdMf0NtagGetSignatureData)
-		}
+		required := plan.commandRequirements(o)
 		for _, cmd := range required {
 			if !available[cmd] {
 				return fmt.Errorf("device does not support %s; nothing written", cmd)
@@ -452,4 +425,45 @@ func (c *Client) LoadGUICard(ctx context.Context, slot int, card GUICard, o GUIC
 		return nil
 	})
 	return out, err
+}
+
+// GUICardLoadRequirements expands the same plan used by LoadGUICard, including
+// mode management and option-dependent verification. It performs no device I/O.
+func GUICardLoadRequirements(card GUICard, slot int, options GUICardLoadOptions) ([]Command, error) {
+	p, err := PlanGUICardLoad(card, slot)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueCommands(append([]Command{CmdGetDeviceCapabilities, CmdGetDeviceMode, CmdChangeDeviceMode}, p.commandRequirements(options)...)), nil
+}
+func (plan GUICardLoadPlan) commandRequirements(o GUICardLoadOptions) []Command {
+	required := []Command{CmdGetActiveSlot, CmdGetSlotTagNick}
+	if o.Persist {
+		required = append(required, CmdSlotDataConfigSave)
+	}
+	for _, step := range plan.Steps {
+		required = append(required, step.Command)
+	}
+	if plan.identity != nil {
+		required = append(required, CmdHf14aGetAntiCollData)
+	}
+	if plan.width == 16 {
+		required = append(required, CmdMf1ReadEmuBlockData)
+	}
+	if plan.width == 4 {
+		required = append(required, CmdMf0NtagReadEmuPageData)
+	}
+	if plan.lfGet != 0 {
+		required = append(required, plan.lfGet)
+	}
+	if len(plan.counters) != 0 {
+		required = append(required, CmdMf0NtagGetCounterData)
+	}
+	if plan.version != nil {
+		required = append(required, CmdMf0NtagGetVersionData)
+	}
+	if plan.signature != nil {
+		required = append(required, CmdMf0NtagGetSignatureData)
+	}
+	return required
 }
