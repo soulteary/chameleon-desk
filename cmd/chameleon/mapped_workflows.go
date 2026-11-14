@@ -405,7 +405,11 @@ func runMappedWorkflow(args []string) (retErr error) {
 			out = map[string]any{"previous": old, "reset": err == nil}
 			e = err
 		case "edetect", "password-log":
-			out, e = c.Type2DetectionLogs(ctx, *slot, uint32(*start), *limit)
+			if group == "mfc" {
+				out, e = c.ClassicDetectionLogs(ctx, *slot, uint32(*start), *limit)
+			} else {
+				out, e = c.Type2DetectionLogs(ctx, *slot, uint32(*start), *limit)
+			}
 		default:
 			return fmt.Errorf("unsupported workflow action")
 		}
