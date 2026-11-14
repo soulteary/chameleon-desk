@@ -63,6 +63,14 @@ func TestRecoveryHelpersMemorySafety(t *testing.T) {
 	run(harness, 0)
 	buckets := build("hardnested-buckets", "testdata/recovery/hardnested_buckets.c", filepath.Join(src, "parity.c"), "-lm")
 	run(buckets, 0)
+	allocationFiles := []string{"testdata/recovery/recovery32_allocations.c", filepath.Join(src, "crypto1.c"), filepath.Join(src, "bucketsort.c"), filepath.Join(src, "parity.c")}
+	allocations := build("recovery32-allocations", allocationFiles...)
+	run(allocations, 0)
+	allocationCommand := append([]string{"-DRECOVERY_ALLOC_COMMAND", filepath.Join(src, "staticnested.c"), filepath.Join(src, "nested_util.c"), filepath.Join(src, "common.c")}, allocationFiles...)
+	failedStatic := build("staticnested-allocation-failure", allocationCommand...)
+	if output := run(failedStatic, 1, "1", "96", "18874693", "12345678"); !strings.Contains(output, "Nested recovery failed:") {
+		t.Fatal("recovery allocation failure was reported as an empty successful result")
+	}
 	common := []string{filepath.Join(src, "crapto1.c"), filepath.Join(src, "crypto1.c"), filepath.Join(src, "bucketsort.c"), filepath.Join(src, "parity.c")}
 	staticFiles := append([]string{filepath.Join(src, "staticnested.c"), filepath.Join(src, "nested_util.c"), filepath.Join(src, "common.c")}, common...)
 	static := build("staticnested", staticFiles...)

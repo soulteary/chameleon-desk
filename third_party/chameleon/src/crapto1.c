@@ -18,6 +18,7 @@
     Copyright (C) 2008-2014 bla <blapost@gmail.com>
 */
 #include <stdlib.h>
+#include <errno.h>
 #include "parity.h"
 
 #include "crapto1.h"
@@ -132,7 +133,8 @@ recover(uint32_t *o_head, uint32_t *o_tail, uint32_t oks,
  * that was fed into the lfsr at the time the keystream was generated
  */
 struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
-    struct Crypto1State *statelist;
+    struct Crypto1State *statelist = NULL;
+    bucket_array_t bucket = {0};
     uint32_t *odd_head = 0, *odd_tail = 0, oks = 0;
     uint32_t *even_head = 0, *even_tail = 0, eks = 0;
     int i;
@@ -146,22 +148,18 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
     odd_head = odd_tail = malloc(sizeof(uint32_t) << 21);
     even_head = even_tail = malloc(sizeof(uint32_t) << 21);
     statelist =  malloc(sizeof(struct Crypto1State) << 18);
-    if (!odd_tail-- || !even_tail-- || !statelist) {
-        free(statelist);
-        statelist = 0;
-        goto out;
-    }
+    if (!odd_head || !even_head || !statelist) goto allocation_failure;
+    odd_tail--;
+    even_tail--;
 
     statelist->odd = statelist->even = 0;
 
     // allocate memory for out of place bucket_sort
-    bucket_array_t bucket;
-
     for (i = 0; i < 2; i++) {
         for (uint32_t j = 0; j <= 0xff; j++) {
             bucket[i][j].head = malloc(sizeof(uint32_t) << 14);
             if (!bucket[i][j].head) {
-                goto out;
+                goto allocation_failure;
             }
         }
     }
@@ -185,13 +183,18 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
     // parameter into account.
     in = (in >> 16 & 0xff) | (in << 16) | (in & 0xff00); // Byte swapping
     recover(odd_head, odd_tail, oks, even_head, even_tail, eks, 11, statelist, in << 1, bucket);
+    goto out;
 
+allocation_failure:
+    free(statelist);
+    statelist = NULL;
 out:
     for (i = 0; i < 2; i++)
         for (uint32_t j = 0; j <= 0xff; j++)
             free(bucket[i][j].head);
     free(odd_head);
     free(even_head);
+    errno = statelist == NULL ? ENOMEM : 0;
     return statelist;
 }
 
