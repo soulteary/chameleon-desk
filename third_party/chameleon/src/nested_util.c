@@ -4,6 +4,7 @@
 #include <time.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <errno.h>
 #include "parity.h"
 
 #if WIN32
@@ -31,7 +32,7 @@ typedef struct {
 
     uint64_t *keys;
     uint32_t keyCount;
-    bool failed;
+    int error;
 
     uint32_t startPos;
     uint32_t endPos;
@@ -57,11 +58,21 @@ static bool allocation_fits(uint64_t count, size_t width) {
 }
 
 countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size, uint32_t *uniqueCount) {
+    errno = 0;
     *uniqueCount = 0;
-    if (size == 0 || possibleKeys == NULL || !allocation_fits(size, sizeof(countKeys))) return NULL;
+    if (size == 0) return NULL;
+    if (possibleKeys == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    if (!allocation_fits(size, sizeof(countKeys))) {
+        errno = EOVERFLOW;
+        return NULL;
+    }
     countKeys *our_counts = calloc(size, sizeof(countKeys));
     if (our_counts == NULL) {
         fprintf(stderr, "Memory allocation error for our_counts\n");
+        errno = ENOMEM;
         return NULL;
     }
     qsort(possibleKeys, size, sizeof(uint64_t), compar_int);
@@ -74,6 +85,7 @@ countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size, uint32_t *uniqueCount
         (*uniqueCount)++;
     }
     qsort(our_counts, *uniqueCount, sizeof(countKeys), compar_special_int);
+    errno = 0;
     return our_counts;
 }
 
@@ -87,7 +99,7 @@ static void *nested_revover(void *args) {
 
     rp->keyCount = 0;
     rp->keys = NULL;
-    rp->failed = false;
+    rp->error = 0;
 
     //printf("Start pos is %d, End pos is %d\r\n", rp->startPos, rp->endPos);
 
@@ -105,7 +117,7 @@ static void *nested_revover(void *args) {
         revstate = lfsr_recovery32(ks1, nt_probe);
         revstate_start = revstate;
         if (revstate == NULL) {
-            rp->failed = true;
+            rp->error = ENOMEM;
             break;
         }
 
@@ -115,13 +127,13 @@ static void *nested_revover(void *args) {
             if (kcount == capacity) {
                 uint32_t next = capacity > UINT32_MAX - MEM_CHUNK ? UINT32_MAX : capacity + MEM_CHUNK;
                 if (next <= kcount || !allocation_fits(next, sizeof(uint64_t))) {
-                    rp->failed = true;
+                    rp->error = EOVERFLOW;
                     break;
                 }
                 void *tmp = realloc(rp->keys, next * sizeof(uint64_t));
                 if (tmp == NULL) {
                     fprintf(stderr, "Memory allocation error for possible keys\n");
-                    rp->failed = true;
+                    rp->error = ENOMEM;
                     break;
                 }
                 rp->keys = (uint64_t *)tmp;
@@ -133,11 +145,11 @@ static void *nested_revover(void *args) {
         }
         free(revstate_start);
         revstate_start = NULL;
-        if (rp->failed) {
+        if (rp->error != 0) {
             break;
         }
     }
-    if (rp->failed || kcount == 0) {
+    if (rp->error != 0 || kcount == 0) {
         free(rp->keys);
         rp->keys = NULL;
     } else {
@@ -148,15 +160,23 @@ static void *nested_revover(void *args) {
 
 uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyCount) {
 #define THREAD_MAX 4
-    if (keyCount == NULL) return NULL;
+    errno = 0;
+    if (keyCount == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
     *keyCount = 0;
-    if (pNK == NULL || sizePNK == 0) return NULL;
+    if (sizePNK == 0) return NULL;
+    if (pNK == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
 
     uint32_t manyThread = sizePNK < THREAD_MAX ? sizePNK : THREAD_MAX;
     pthread_t threads[THREAD_MAX];
     RecPar params[THREAD_MAX] = {0};
     uint32_t started = 0;
-    bool failed = false;
+    int error = 0;
     uint32_t average = sizePNK / manyThread;
     uint32_t modules = sizePNK % manyThread;
 
@@ -166,9 +186,10 @@ uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyC
         params[i].startPos = pos;
         params[i].endPos = pos + average;
         if (i == manyThread - 1) params[i].endPos += modules;
-        if (pthread_create(&threads[i], NULL, nested_revover, &params[i]) != 0) {
+        int thread_error = pthread_create(&threads[i], NULL, nested_revover, &params[i]);
+        if (thread_error != 0) {
             fprintf(stderr, "Cannot start recovery thread\n");
-            failed = true;
+            error = thread_error;
             break;
         }
         started++;
@@ -176,15 +197,18 @@ uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyC
     uint64_t total = 0;
     for (uint32_t i = 0; i < started; i++) {
         pthread_join(threads[i], NULL);
-        if (params[i].failed) failed = true;
+        if (error == 0 && params[i].error != 0) error = params[i].error;
         total += params[i].keyCount;
     }
 
     uint64_t *keys = NULL;
-    if (!failed && total > 0 && total <= UINT32_MAX && allocation_fits(total, sizeof(uint64_t))) {
+    if (total > UINT32_MAX || !allocation_fits(total, sizeof(uint64_t))) error = EOVERFLOW;
+    if (error == 0 && total > 0) {
         keys = malloc((size_t)total * sizeof(uint64_t));
-        if (keys == NULL) fprintf(stderr, "Cannot allocate memory to merge keys\n");
-        else {
+        if (keys == NULL) {
+            fprintf(stderr, "Cannot allocate memory to merge keys\n");
+            error = ENOMEM;
+        } else {
             size_t pos = 0;
             for (uint32_t i = 0; i < started; i++) {
                 if (params[i].keyCount == 0) continue;
@@ -194,26 +218,36 @@ uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyC
         }
     }
     for (uint32_t i = 0; i < started; i++) free(params[i].keys);
-    if (keys == NULL) return NULL;
+    if (keys == NULL) {
+        errno = error;
+        return NULL;
+    }
 
     uint32_t uniqueCount = 0;
     countKeys *counts = uniqsort(keys, (uint32_t)total, &uniqueCount);
+    error = errno;
     free(keys);
     keys = NULL;
-    if (counts == NULL) return NULL;
+    if (counts == NULL) {
+        errno = error;
+        return NULL;
+    }
 
     uint32_t limit = uniqueCount < TRY_KEYS ? uniqueCount : TRY_KEYS;
     uint32_t selected = 0;
     while (selected < limit && counts[selected].count >= 2) selected++;
     if (selected > 0) {
         keys = malloc(selected * sizeof(uint64_t));
-        if (keys == NULL) fprintf(stderr, "Cannot allocate memory for selected keys\n");
-        else {
+        if (keys == NULL) {
+            fprintf(stderr, "Cannot allocate memory for selected keys\n");
+            error = ENOMEM;
+        } else {
             for (uint32_t i = 0; i < selected; i++) keys[i] = counts[i].key;
             *keyCount = selected;
         }
     }
     free(counts);
+    errno = error;
     return keys;
 }
 
