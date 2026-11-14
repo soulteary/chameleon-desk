@@ -4,6 +4,7 @@ Commit: 6009a5fb8adbb92d3efb548eaac9e501bd179801
 Local modifications:
 - nested.c, staticnested.c and darkside.c validate argument counts before argv access.
 - nested_util.c bounds candidate grouping and selection by their actual sizes, retains each recovered state, handles empty input and allocation/thread failures, and frees intermediate buffers. Its errno contract distinguishes valid empty results from internal failures.
+- nested.c validates decimal distance bounds and probes exactly 29 nonce positions without unsigned range-counter wraparound.
 - nested.c and staticnested.c free their nonce arrays on success and failure and return a failure status when candidate recovery fails internally.
 - mfkey32.c and mfkey32v2.c report recovery-state allocation failures before iterating candidate states.
 - staticnested_1nt.c preserves existing dictionaries when candidate generation fails, releases partial results, and reports output failures.
@@ -13,10 +14,12 @@ Local modifications:
 - HardnestedRecovery/cmdhfmfhard.c distinguishes EOF and malformed/read failures, finishes pending reductions with a bounded EOF step, validates replay reads, and releases input/recovery buffers on failure.
 - HardnestedRecovery/cmdhfmfhard.c and hardnested_threads.h use exact first-byte partitions, bound worker counts, run failed thread partitions inline, and join only successfully started threads.
 - HardnestedRecovery/cmdhfmfhard.c preserves computed state lists when optional shrink allocations fail, checks nonce/candidate/cipher allocations before use, and reports incomplete nonce acquisition as failure.
+- HardnestedRecovery/cmdhfmfhard.c serializes progress throttling and logging across workers. The core and bitarray dispatchers call the existing NOSIMD implementation without shared lazy-dispatch writes.
+- hardnested_bf_core.c sizes per-block metadata from the candidate count, skips empty halves, handles partial blocks without out-of-range pointer increments, frees partial allocations, and keeps constants local to each worker. Shared progress reads and first-key publication use atomic operations.
 - hardnested_bruteforce.c sizes bucket storage from the complete candidate list, snapshots a positive bounded worker count, processes failed thread partitions inline, and frees benchmark and bucket buffers.
 - crapto1.c initializes recovery32 bucket ownership before allocation failures can reach cleanup, frees partial results, and returns NULL with ENOMEM on allocation failure.
 - mfulc_des_brute.c checks thread creation, signals a separate atomic abort flag on failure, joins only started workers, and reports an incomplete search as failure. It validates bounded numeric/hex input, frees partial allocations, and reads CBC bytes without alignment assumptions.
 - darkside.c and mfkey.c release empty and discarded candidate lists, transfer parity-zero history ownership explicitly, and report candidate-allocation failures separately from empty results. Parameter allocation failures clean up retained state.
-Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, RECOVERY32-ALLOCATIONS.patch, MFULC-THREADS.patch, HARDNESTED-THREADS.patch, DARKSIDE-OWNERSHIP.patch, HELPER-FAILURES.patch, and HARDNESTED-ALLOCATIONS.patch.
+Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, RECOVERY32-ALLOCATIONS.patch, MFULC-THREADS.patch, HARDNESTED-THREADS.patch, DARKSIDE-OWNERSHIP.patch, HELPER-FAILURES.patch, HARDNESTED-ALLOCATIONS.patch, HARDNESTED-SLICES.patch, NESTED-DISTANCE.patch, and HARDNESTED-CALLBACKS.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
 The offline C workers are optional executables; no Python is required at runtime.

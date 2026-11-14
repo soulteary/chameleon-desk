@@ -73,7 +73,8 @@ THE SOFTWARE.
 #include <io.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#define atomic_add(num, val) (InterlockedExchangeAdd64(num, val) + val)
+#define atomic_read(num) (sizeof(*(num)) == sizeof(uint64_t) ? InterlockedCompareExchange64((volatile LONG64 *)(num), 0, 0) : InterlockedCompareExchange((volatile LONG *)(num), 0, 0))
+#define claim_first_key(num) (InterlockedCompareExchange((volatile LONG *)(num), 1, 0) == 0)
 FILE *fmemopen(void *buf, size_t len, const char *type) {
     int fd;
     FILE *fp;
@@ -102,7 +103,8 @@ FILE *fmemopen(void *buf, size_t len, const char *type) {
     return fp;
 }
 #else
-#define atomic_add __sync_fetch_and_add
+#define atomic_read(num) __atomic_load_n((num), __ATOMIC_RELAXED)
+#define claim_first_key(num) __sync_bool_compare_and_swap((num), 0, 1)
 #ifdef _WIN32 // Non-MSVC Windows (MinGW, etc.)
 // Include the compatibility header provided via CMake
 #include "../../compat/fmemopen/libfmemopen.h"
@@ -214,8 +216,8 @@ crack_states_thread(void *x) {
 #endif
             const uint64_t key = crack_states_bitsliced(thread_arg->cuid, thread_arg->best_first_bytes, bucket, &keys_found, &num_keys_tested, nonces_to_bruteforce, bf_test_nonce_2nd_byte, thread_arg->nonces);
             if (key != -1) {
-                atomic_add(&keys_found, 1);
-                atomic_add(&found_bs_key, key);
+                if (!claim_first_key(&keys_found)) break;
+                found_bs_key = key;
 
                 char progress_text[80];
                 char keystr[19];
@@ -223,13 +225,14 @@ crack_states_thread(void *x) {
                 snprintf(progress_text, sizeof(progress_text), "Brute force phase completed.  Key found: " _GREEN_("%s"), keystr);
                 hardnested_print_progress(thread_arg->num_acquired_nonces, progress_text, 0.0, 0);
                 break;
-            } else if (keys_found) {
+            } else if (atomic_read(&keys_found)) {
                 break;
             } else {
                 if (!thread_arg->silent) {
                     char progress_text[80];
-                    snprintf(progress_text, sizeof(progress_text), "Brute force phase: %6.02f%%", 100.0 * (float)num_keys_tested / (float)(thread_arg->maximum_states));
-                    float remaining_bruteforce = thread_arg->nonces[thread_arg->best_first_bytes[0]].expected_num_brute_force - (float)num_keys_tested / 2;
+                    uint64_t tested = atomic_read(&num_keys_tested);
+                    snprintf(progress_text, sizeof(progress_text), "Brute force phase: %6.02f%%", 100.0 * (float)tested / (float)(thread_arg->maximum_states));
+                    float remaining_bruteforce = thread_arg->nonces[thread_arg->best_first_bytes[0]].expected_num_brute_force - (float)tested / 2;
                     hardnested_print_progress(thread_arg->num_acquired_nonces, progress_text, remaining_bruteforce, 5000);
                 }
             }
