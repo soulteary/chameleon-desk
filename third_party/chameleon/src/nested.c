@@ -6,6 +6,20 @@
 #include "common.h"
 #include "nested_util.h"
 
+static int parse_distance(const char *text, uint32_t *distance) {
+    uint32_t value = 0;
+    if (*text == '\0') return 0;
+    for (; *text != '\0'; text++) {
+        if (*text < '0' || *text > '9') return 0;
+        uint32_t digit = (uint32_t)(*text - '0');
+        if (value > (UINT32_MAX - digit) / 10) return 0;
+        value = value * 10 + digit;
+    }
+    if (value < 14 || value > UINT32_MAX - 14) return 0;
+    *distance = value;
+    return 1;
+}
+
 int main(int argc, char *const argv[]) {
     if (argc < 6 || (argc - 3) % 3 != 0) {
         fprintf(stderr, "Usage: %s UID DIST NT NT_ENC PARITY [triples...]\n", argv[0]);
@@ -18,7 +32,10 @@ int main(int argc, char *const argv[]) {
     uint8_t par_arr[3] = { 0x00 };
 
     uint32_t authuid = atoui(argv[1]);   // uid
-    dist = atoui(argv[2]);  // dist
+    if (!parse_distance(argv[2], &dist)) {
+        fprintf(stderr, "Distance must be a decimal integer from 14 to %" PRIu32 "\n", UINT32_MAX - 14);
+        return EXIT_FAILURE;
+    }
 
     // process all args.
     for (i = 3, j = 0; i < argc; i += 3) {
@@ -35,7 +52,7 @@ int main(int argc, char *const argv[]) {
         }
         // Try to recover the keystream1
         nttest = prng_successor(nt1, dist - 14);
-        for (m = dist - 14; m <= dist + 14; m += 1) {
+        for (m = 0; m < 29; m++) {
             ks1 = nt2 ^ nttest;
             if (valid_nonce(nttest, nt2, ks1, par_arr)) {
                 ++j;
