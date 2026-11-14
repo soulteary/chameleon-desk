@@ -1,0 +1,96 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
+#include <errno.h>
+#include "common.h"
+#include "nested_util.h"
+
+static int parse_distance(const char *text, uint32_t *distance) {
+    uint32_t value = 0;
+    if (*text == '\0') return 0;
+    for (; *text != '\0'; text++) {
+        if (*text < '0' || *text > '9') return 0;
+        uint32_t digit = (uint32_t)(*text - '0');
+        if (value > (UINT32_MAX - digit) / 10) return 0;
+        value = value * 10 + digit;
+    }
+    if (value < 14 || value > UINT32_MAX - 14) return 0;
+    *distance = value;
+    return 1;
+}
+
+int main(int argc, char *const argv[]) {
+    if (argc < 6 || (argc - 3) % 3 != 0) {
+        fprintf(stderr, "Usage: %s UID DIST NT NT_ENC PARITY [triples...]\n", argv[0]);
+        return 1;
+    }
+    NtpKs1 *pNK = NULL;
+    uint32_t i, j, m;
+    uint32_t nt1, nt2, nttest, ks1, dist;
+    uint8_t par_int;
+    uint8_t par_arr[3] = { 0x00 };
+
+    uint32_t authuid = atoui(argv[1]);   // uid
+    if (!parse_distance(argv[2], &dist)) {
+        fprintf(stderr, "Distance must be a decimal integer from 14 to %" PRIu32 "\n", UINT32_MAX - 14);
+        return EXIT_FAILURE;
+    }
+
+    // process all args.
+    for (i = 3, j = 0; i < argc; i += 3) {
+        // nt + par
+        nt1 = atoui(argv[i]);
+        nt2 = atoui(argv[i + 1]);
+        par_int = atoui(argv[i + 2]);
+        if (par_int != 0) {
+            for (m = 0; m < 3; m++) {
+                par_arr[m] = (par_int >> m) & 0x01;
+            }
+        } else {
+            memset(par_arr, 0, 3);
+        }
+        // Try to recover the keystream1
+        nttest = prng_successor(nt1, dist - 14);
+        for (m = 0; m < 29; m++) {
+            ks1 = nt2 ^ nttest;
+            if (valid_nonce(nttest, nt2, ks1, par_arr)) {
+                ++j;
+                // append to list
+                void *tmp = realloc(pNK, sizeof(NtpKs1) * j);
+                if (tmp == NULL) {
+                    goto error;
+                }
+                pNK = tmp;
+                pNK[j - 1].ntp = nttest;
+                pNK[j - 1].ks1 = ks1;
+            }
+            nttest = prng_successor(nttest, 1);
+        }
+    }
+
+    uint32_t keyCount = 0;
+    uint64_t *keys = nested(pNK, j, authuid, &keyCount);
+    int recovery_error = errno;
+    if (recovery_error != 0) {
+        errno = recovery_error;
+        perror("Nested recovery failed");
+        free(keys);
+        free(pNK);
+        return EXIT_FAILURE;
+    }
+
+    if (keyCount > 0) {
+        for (i = 0; i < keyCount; i++) {
+            printf("Key %d... %012" PRIx64 " \r\n", i + 1, keys[i]);
+            fflush(stdout);
+        }
+    }
+    fflush(stdout);
+    free(keys);
+    free(pNK);
+    exit(EXIT_SUCCESS);
+error:
+    free(pNK);
+    exit(EXIT_FAILURE);
+}

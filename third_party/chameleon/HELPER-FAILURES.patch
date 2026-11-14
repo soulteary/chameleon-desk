@@ -1,0 +1,359 @@
+diff --git a/software/src/mfkey32.c b/software/src/mfkey32.c
+index 1199688..9f61c64 100644
+--- a/software/src/mfkey32.c
++++ b/software/src/mfkey32.c
+@@ -54,2 +54,7 @@ int main(int argc, char *argv[]) {
+
++    if (s == NULL) {
++        perror("Key recovery failed");
++        return EXIT_FAILURE;
++    }
++
+     for (t = s; t->odd | t->even; ++t) {
+diff --git a/software/src/mfkey32v2.c b/software/src/mfkey32v2.c
+index 11e3623..8c88234 100644
+--- a/software/src/mfkey32v2.c
++++ b/software/src/mfkey32v2.c
+@@ -60,2 +60,7 @@ int main(int argc, char *argv[]) {
+
++    if (s == NULL) {
++        perror("Key recovery failed");
++        return EXIT_FAILURE;
++    }
++
+     for (t = s; t->odd | t->even; ++t) {
+diff --git a/software/src/staticnested_1nt.c b/software/src/staticnested_1nt.c
+index 727094f..ee21c75 100644
+--- a/software/src/staticnested_1nt.c
++++ b/software/src/staticnested_1nt.c
+@@ -54,2 +54,3 @@ static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, u
+
++    *keyCount = 0;
+     uint64_t *result_keys = (uint64_t *)calloc(1, KEY_SPACE_SIZE * sizeof(uint64_t));
+@@ -78,3 +79,3 @@ static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, u
+         crypto1_destroy(revstate_start);
+-        return 0;
++        return NULL;
+     }
+@@ -95,7 +96,11 @@ static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, u
+         if (lastpar1 == lastpar2) {
+-            result_keys[(*keyCount)++] = lfsr;
+             if (*keyCount == KEY_SPACE_SIZE) {
+                 fprintf(stderr, "No space left on result_keys, abort! Increase KEY_SPACE_SIZE\n");
+-                break;
++                free(result_keys);
++                crypto1_destroy(s);
++                crypto1_destroy(revstate_start);
++                *keyCount = 0;
++                return NULL;
+             }
++            result_keys[(*keyCount)++] = lfsr;
+         }
+@@ -161,2 +166,7 @@ int main(int argc, char *const argv[]) {
+
++    if (keys == NULL) {
++        fprintf(stderr, "Key candidate generation failed\n");
++        return EXIT_FAILURE;
++    }
++
+     printf("Finding phase complete, found %u keys\n", keyCount);
+@@ -164,3 +174,4 @@ int main(int argc, char *const argv[]) {
+     FILE *fptr;
+-    char filename[30];
++    char filename[48];
++    int status = EXIT_SUCCESS;
+     snprintf(filename, sizeof(filename), "keys_%08x_%02u_%08x.dic", authuid, sector, nt);
+@@ -171,8 +182,16 @@ int main(int argc, char *const argv[]) {
+             for (uint32_t j = 0; j < keyCount; j++) {
+-                fprintf(fptr, "%012" PRIx64 "\n", keys[j]);
++                if (fprintf(fptr, "%012" PRIx64 "\n", keys[j]) < 0) {
++                    perror("Cannot write key dictionary");
++                    status = EXIT_FAILURE;
++                    break;
++                }
+             }
+         }
+-        fclose(fptr);
++        if (fclose(fptr) != 0) {
++            perror("Cannot close key dictionary");
++            status = EXIT_FAILURE;
++        }
+     } else {
+-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filename);
++        fprintf(stderr, "Cannot save keys in %s\n", filename);
++        status = EXIT_FAILURE;
+     }
+@@ -182,3 +201,3 @@ int main(int argc, char *const argv[]) {
+     }
+-    return 0;
++    return status;
+ }
+diff --git a/software/src/staticnested_2x1nt_rf08s.c b/software/src/staticnested_2x1nt_rf08s.c
+index 0a83c10..fc0aa9e 100644
+--- a/software/src/staticnested_2x1nt_rf08s.c
++++ b/software/src/staticnested_2x1nt_rf08s.c
+@@ -19,2 +19,3 @@
+ #include <inttypes.h>
++#include "staticnested_dictionary.h"
+
+@@ -130,61 +131,12 @@ int main(int argc, char *const argv[]) {
+
+-    fptr = fopen(filename1, "r");
+-    if (fptr != NULL) {
+-
+-        uint64_t buffer;
+-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
+-            keycount1++;
+-        }
+-
+-        keys1 = (uint64_t *)calloc(1, keycount1 * sizeof(uint64_t));
+-        filter_keys1 = (uint8_t *)calloc(keycount1, sizeof(uint8_t));
+-        if ((keys1 == NULL) || (filter_keys1 == NULL)) {
+-            perror("Failed to allocate memory");
+-            fclose(fptr);
+-            goto end;
+-        }
+-
+-        rewind(fptr);
+-
+-        for (uint32_t i = 0; i < keycount1; i++) {
+-            if (fscanf(fptr, "%012" PRIx64, &keys1[i]) != 1) {
+-                perror("Failed to read key");
+-                fclose(fptr);
+-                goto end;
+-            }
+-        }
+-        fclose(fptr);
+-    } else {
+-        fprintf(stderr, "Warning: Cannot open %s\n", filename1);
++    int status = EXIT_FAILURE;
++    if (load_key_dictionary(filename1, &keys1, &keycount1) != 0 ||
++        load_key_dictionary(filename2, &keys2, &keycount2) != 0) {
++        perror("Cannot load key dictionary");
+         goto end;
+     }
+-
+-    fptr = fopen(filename2, "r");
+-    if (fptr != NULL) {
+-
+-        uint64_t buffer;
+-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
+-            keycount2++;
+-        }
+-
+-        keys2 = (uint64_t *)calloc(1, keycount2 * sizeof(uint64_t));
+-        filter_keys2 = (uint8_t *)calloc(keycount2, sizeof(uint8_t));
+-        if ((keys2 == NULL) || (filter_keys2 == NULL)) {
+-            perror("Failed to allocate memory");
+-            fclose(fptr);
+-            goto end;
+-        }
+-
+-        rewind(fptr);
+-
+-        for (uint32_t i = 0; i < keycount2; i++) {
+-            if (fscanf(fptr, "%012" PRIx64, &keys2[i]) != 1) {
+-                perror("Failed to read key");
+-                fclose(fptr);
+-                goto end;
+-            }
+-        }
+-        fclose(fptr);
+-    } else {
+-        fprintf(stderr, "Warning: Cannot open %s\n", filename2);
++    filter_keys1 = calloc(keycount1 ? keycount1 : 1, sizeof(*filter_keys1));
++    filter_keys2 = calloc(keycount2 ? keycount2 : 1, sizeof(*filter_keys2));
++    if (filter_keys1 == NULL || filter_keys2 == NULL) {
++        perror("Failed to allocate memory");
+         goto end;
+@@ -195,3 +147,3 @@ int main(int argc, char *const argv[]) {
+
+-    seednt1 = (uint16_t *)calloc(1, keycount1 * sizeof(uint16_t));
++    seednt1 = (uint16_t *)calloc(keycount1 ? keycount1 : 1, sizeof(uint16_t));
+     if (seednt1 == NULL) {
+@@ -226,9 +178,17 @@ int main(int argc, char *const argv[]) {
+                 filter_keycount1++;
+-                fprintf(fptr, "%012" PRIx64 "\n", keys1[j]);
++                if (fprintf(fptr, "%012" PRIx64 "\n", keys1[j]) < 0) {
++                    perror("Cannot write key dictionary");
++                    fclose(fptr);
++                    goto end;
++                }
+             }
+         }
+-        fclose(fptr);
++        if (fclose(fptr) != 0) {
++            perror("Cannot close key dictionary");
++            goto end;
++        }
+
+     } else {
+-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filter_filename1);
++        fprintf(stderr, "Cannot save keys in %s\n", filter_filename1);
++        goto end;
+     }
+@@ -245,9 +205,17 @@ int main(int argc, char *const argv[]) {
+                 filter_keycount2++;
+-                fprintf(fptr, "%012" PRIx64 "\n", keys2[j]);
++                if (fprintf(fptr, "%012" PRIx64 "\n", keys2[j]) < 0) {
++                    perror("Cannot write key dictionary");
++                    fclose(fptr);
++                    goto end;
++                }
+             }
+         }
+-        fclose(fptr);
++        if (fclose(fptr) != 0) {
++            perror("Cannot close key dictionary");
++            goto end;
++        }
+
+     } else {
+-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filter_filename2);
++        fprintf(stderr, "Cannot save keys in %s\n", filter_filename2);
++        goto end;
+     }
+@@ -256,2 +224,4 @@ int main(int argc, char *const argv[]) {
+
++    status = EXIT_SUCCESS;
++
+ end:
+@@ -277,3 +247,3 @@ end:
+
+-    return 0;
++    return status;
+ }
+diff --git a/software/src/staticnested_2x1nt_rf08s_1key.c b/software/src/staticnested_2x1nt_rf08s_1key.c
+index 91a2f23..cdf91e0 100644
+--- a/software/src/staticnested_2x1nt_rf08s_1key.c
++++ b/software/src/staticnested_2x1nt_rf08s_1key.c
+@@ -17,2 +17,3 @@
+ #include <inttypes.h>
++#include "staticnested_dictionary.h"
+
+@@ -122,30 +123,5 @@ int main(int argc, char *const argv[]) {
+
+-    FILE *fptr = fopen(filename, "r");
+-    if (fptr != NULL) {
+-
+-        uint64_t buffer;
+-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
+-            keycount2++;
+-        }
+-
+-        keys2 = (uint64_t *)calloc(1, keycount2 * sizeof(uint64_t));
+-        if (keys2 == NULL) {
+-            perror("Failed to allocate memory");
+-            fclose(fptr);
+-            goto end;
+-        }
+-
+-        rewind(fptr);
+-
+-        for (uint32_t i = 0; i < keycount2; i++) {
+-            if (fscanf(fptr, "%012" PRIx64, &keys2[i]) != 1) {
+-                perror("Failed to read key");
+-                fclose(fptr);
+-                goto end;
+-            }
+-        }
+-        fclose(fptr);
+-
+-    } else {
+-        fprintf(stderr, "Warning: Cannot open %s\n", filename);
++    int status = EXIT_FAILURE;
++    if (load_key_dictionary(filename, &keys2, &keycount2) != 0) {
++        perror("Cannot load key dictionary");
+         goto end;
+@@ -157,3 +133,3 @@ int main(int argc, char *const argv[]) {
+         if (seednt1 == compute_seednt16_nt32(nt2, keys2[i])) {
+-            printf("%012" PRIx64 "\n", keys2[i]);
++            if (printf("%012" PRIx64 "\n", keys2[i]) < 0) goto end;
+             found++;
+@@ -162,2 +138,5 @@ int main(int argc, char *const argv[]) {
+
++    if (fflush(stdout) != 0) goto end;
++    status = EXIT_SUCCESS;
++
+ end:
+@@ -167,3 +146,3 @@ end:
+
+-    return 0;
++    return status;
+ }
+diff --git a/software/src/staticnested_dictionary.h b/software/src/staticnested_dictionary.h
+new file mode 100644
+index 0000000..095c5e0
+--- /dev/null
++++ b/software/src/staticnested_dictionary.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Local dictionary input checks shared by the static-nested filters.
++#ifndef STATICNESTED_DICTIONARY_H
++#define STATICNESTED_DICTIONARY_H
++
++#include <errno.h>
++#include <inttypes.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static int dictionary_key(FILE *input, uint64_t *key) {
++    char token[14];
++    int result = fscanf(input, "%13s", token);
++    if (result == EOF) return ferror(input) ? -1 : 0;
++    if (result != 1 || strlen(token) != 12) {
++        errno = EINVAL;
++        return -1;
++    }
++    *key = 0;
++    for (unsigned i = 0; i < 12; i++) {
++        unsigned digit;
++        if (token[i] >= '0' && token[i] <= '9') digit = token[i] - '0';
++        else if (token[i] >= 'a' && token[i] <= 'f') digit = token[i] - 'a' + 10;
++        else if (token[i] >= 'A' && token[i] <= 'F') digit = token[i] - 'A' + 10;
++        else { errno = EINVAL; return -1; }
++        *key = (*key << 4) | digit;
++    }
++    return 1;
++}
++
++static int load_key_dictionary(const char *name, uint64_t **keys, uint32_t *count) {
++    *keys = NULL;
++    *count = 0;
++    FILE *input = fopen(name, "r");
++    if (input == NULL) return -1;
++    uint64_t key;
++    int result;
++    while ((result = dictionary_key(input, &key)) == 1) {
++        if (*count == UINT32_MAX || (size_t)*count >= SIZE_MAX / sizeof(**keys)) {
++            errno = EOVERFLOW;
++            goto failure;
++        }
++        (*count)++;
++    }
++    if (result < 0 || fseek(input, 0, SEEK_SET) != 0) goto failure;
++    *keys = calloc(*count ? *count : 1, sizeof(**keys));
++    if (*keys == NULL) goto failure;
++    for (uint32_t i = 0; i < *count; i++) {
++        if (dictionary_key(input, &(*keys)[i]) != 1) goto failure;
++    }
++    if (dictionary_key(input, &key) != 0) goto failure;
++    if (fclose(input) != 0) {
++        free(*keys);
++        *keys = NULL;
++        return -1;
++    }
++    return 0;
++failure:
++    {
++        int error = errno ? errno : EIO;
++        fclose(input);
++        free(*keys);
++        *keys = NULL;
++        errno = error;
++        return -1;
++    }
++}
++#endif
