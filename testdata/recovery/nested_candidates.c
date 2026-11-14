@@ -31,7 +31,8 @@ void crypto1_get_lfsr(struct Crypto1State *state, uint64_t *key) {
 
 int main(void) {
     uint32_t count = 99;
-    assert(uniqsort(NULL, 0, &count) == NULL && count == 0);
+    errno = EIO;
+    assert(uniqsort(NULL, 0, &count) == NULL && count == 0 && errno == 0);
 
     uint64_t one[] = {9};
     countKeys *groups = uniqsort(one, 1, &count);
@@ -54,23 +55,27 @@ int main(void) {
     assert(groups[2].key == 5 && groups[2].count == 1);
     free(groups);
 
-    assert(nested(NULL, 0, 0, &count) == NULL && count == 0);
+    errno = EIO;
+    assert(nested(NULL, 0, 0, &count) == NULL && count == 0 && errno == 0);
     NtpKs1 empty[] = {{0, 0}};
-    assert(nested(empty, 1, 0, &count) == NULL && count == 0);
+    errno = EIO;
+    assert(nested(empty, 1, 0, &count) == NULL && count == 0 && errno == 0);
     NtpKs1 single[] = {{0, 1}};
-    assert(nested(single, 1, 0, &count) == NULL && count == 0);
+    errno = EIO;
+    assert(nested(single, 1, 0, &count) == NULL && count == 0 && errno == 0);
 
     NtpKs1 repeated[] = {{0, 2}, {0, 2}};
     uint64_t *keys = nested(repeated, 2, 0, &count);
-    assert(keys != NULL && count == 2 && keys[0] == 17 && keys[1] == 34);
+    assert(keys != NULL && count == 2 && keys[0] == 17 && keys[1] == 34 && errno == 0);
     free(keys);
 
     NtpKs1 mixed[] = {{0, 0}, {0, 1}, {0, 2}};
     keys = nested(mixed, 3, 0, &count);
-    assert(keys != NULL && count == 1 && keys[0] == 17);
+    assert(keys != NULL && count == 1 && keys[0] == 17 && errno == 0);
     free(keys);
 
     NtpKs1 failed[] = {{0, 1}, {0, UINT32_MAX}};
-    assert(nested(failed, 2, 0, &count) == NULL && count == 0);
+    assert(nested(failed, 2, 0, &count) == NULL && count == 0 && errno == ENOMEM);
+    assert(nested(NULL, 1, 0, &count) == NULL && count == 0 && errno == EINVAL);
     return 0;
 }

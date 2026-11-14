@@ -97,7 +97,7 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 						break
 					}
 					var status *StatusError
-					if !errors.As(writeErr, &status) || status.Status != 6 {
+					if !errors.As(writeErr, &status) || (status.Status != 2 && status.Status != 6) {
 						return writeErr
 					}
 				}

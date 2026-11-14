@@ -416,7 +416,7 @@ func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (out 
 						break
 					}
 					var status *StatusError
-					if !errors.As(last, &status) || status.Status != 6 {
+					if !errors.As(last, &status) || (status.Status != 2 && status.Status != 6) {
 						return last
 					}
 				}

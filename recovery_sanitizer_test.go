@@ -68,6 +68,25 @@ func TestRecoveryHelpersMemorySafety(t *testing.T) {
 		t.Fatal("single sample produced a repeated candidate")
 	}
 	run(static, 1, "1", "96", "1", "2")
+	for _, tool := range []struct {
+		name string
+		args []string
+	}{
+		{"nested", []string{"1", "160", "1", "0", "0"}},
+		{"staticnested", []string{"1", "96", "18874693", "12345678"}},
+	} {
+		files := []string{filepath.Join(src, tool.name+".c"), filepath.Join(src, "nested_util.c"), filepath.Join(src, "common.c"), filepath.Join(src, "parity.c"), "testdata/recovery/nested_failures.c"}
+		for _, fault := range []string{"allocation", "thread"} {
+			inputs := append([]string(nil), files...)
+			if fault == "thread" {
+				inputs = append(inputs, "-Dpthread_create=recovery_pthread_create")
+			}
+			command := build(tool.name+"-"+fault+"-failure", inputs...)
+			if output := run(command, 1, tool.args...); !strings.Contains(output, "Nested recovery failed:") || strings.Contains(output, "Key ") {
+				t.Fatalf("%s %s failure was reported as successful recovery", tool.name, fault)
+			}
+		}
+	}
 
 	mfkey := build("mfkey64", append([]string{filepath.Join(src, "mfkey64.c")}, common...)...)
 	vector := []string{"65535D33", "BE2B7B5D", "B1E1B891", "2CF7A248", "36081500"}

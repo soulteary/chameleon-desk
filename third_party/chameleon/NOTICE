@@ -3,8 +3,8 @@ Upstream: https://github.com/RfidResearchGroup/ChameleonUltra
 Commit: 6009a5fb8adbb92d3efb548eaac9e501bd179801
 Local modifications:
 - nested.c, staticnested.c and darkside.c validate argument counts before argv access.
-- nested_util.c bounds candidate grouping and selection by their actual sizes, retains each recovered state, handles empty input and allocation/thread failures, and frees intermediate buffers.
-- nested.c and staticnested.c free their nonce arrays on success and failure.
+- nested_util.c bounds candidate grouping and selection by their actual sizes, retains each recovered state, handles empty input and allocation/thread failures, and frees intermediate buffers. Its errno contract distinguishes valid empty results from internal failures.
+- nested.c and staticnested.c free their nonce arrays on success and failure and return a failure status when candidate recovery fails internally.
 - mfkey64.c validates hexadecimal input, allocates encrypted-data buffers from the decoded lengths, checks recovery results, and releases allocations on every exit path.
 The cryptographic primitives are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch and MEMORY-BOUNDS.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
