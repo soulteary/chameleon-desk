@@ -7,7 +7,7 @@ const el = (tag, cls, text) => {
   if (text != null) n.textContent = text;
   return n;
 };
-let csrfToken = "", writesEnabled = false, generatedCard = null;
+let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
 const busy = new Set();
 const dictionaryLabels = {
   "proxmark3-classic": "Classic 默认密钥",
@@ -23,19 +23,34 @@ async function api(path, opts = {}) {
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
   if (path.startsWith("/api/slot/")) headers["X-Chameleon-Token"] = csrfToken;
-  const r = await fetch(path, { ...opts, headers });
-  const ct = r.headers.get("content-type") || "";
-  const body = ct.includes("json") ? await r.json() : await r.text();
-  if (!r.ok) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  try {
+    const r = await fetch(path, { ...opts, headers, signal: controller.signal });
     if (r.status === 403 && path.startsWith("/api/slot/")) {
       writesEnabled = false; csrfToken = ""; $("#retry-capabilities").hidden = false;
       $("#write-note").textContent = "写入权限或会话已失效，请重试读取权限后再决定是否重新操作";
       $("#menu-write-mode").textContent = "权限未就绪"; updateWriteButtons();
     }
-    throw new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
-  }
-  if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
-  return body;
+    const ct = r.headers.get("content-type") || "";
+    let body;
+    try { body = ct.includes("json") ? await r.json() : await r.text(); }
+    catch (error) {
+      if (error.name === "SyntaxError") throw new Error("服务返回了无效 JSON，请重试或重新启动本地服务");
+      throw error;
+    }
+    if (!r.ok) {
+      throw new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
+    }
+    if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
+    return body;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const message = "本地服务响应超时。请确认服务仍在运行，再重试。";
+      throw new Error(message + (path.startsWith("/api/slot/") ? "写入操作请先读取状态确认结果。" : ""));
+    }
+    throw error;
+  } finally { clearTimeout(timeout); }
 }
 const postJSON = (path, value) => api(path, { method: "POST", body: JSON.stringify(value) });
 function parseObject(id, name) {
@@ -45,6 +60,7 @@ function parseObject(id, name) {
   return value;
 }
 function updateWriteButtons() {
+  $("#retry-capabilities").disabled = capabilitiesPending || busy.has("hardware");
   $("#load-card-go").disabled = !writesEnabled || busy.has("hardware");
   document.querySelectorAll("[data-slot-active]").forEach((button) => { button.disabled = !writesEnabled || busy.has("hardware") || button.dataset.slotActive === "true"; });
 }
@@ -224,7 +240,7 @@ async function showPre(sel,action,options={}) {
   hardwareState(summary,"loading","正在处理","请稍候，结果将在这里显示。",null,group);
   if(sel==="#ndef-out"){generatedCard=null;$("#ndef-use-result").hidden=true;}
   try {
-    const value=await action();
+    const value=await action(()=>outputRevisions.get(pre)===revision);
     if(outputRevisions.get(pre)!==revision) return null;
     if(value==null||typeof value!=="object") throw new Error("返回的数据格式不完整，请重试");
     const rendered=renderToolResult(sel,value,options);
@@ -280,8 +296,10 @@ function wire() {
     if (!/^(?:[0-9a-f]{8}|[0-9a-f]{14})$/i.test(uid)) throw new Error("UID 必须是 4 或 7 字节的十六进制内容");
     return postJSON("/api/vanity", { uid });
   });
-  bindOutput("#dict-go", "#dict-out", "dictionary", async () => {
-    const sources = await api("/api/dictionary/sources"), list = $("#dictionary-sources"); list.replaceChildren();
+  bindOutput("#dict-go", "#dict-out", "dictionary", async (isCurrent) => {
+    const sources = await api("/api/dictionary/sources"), list = $("#dictionary-sources");
+    if (!isCurrent()) return null;
+    list.replaceChildren();
     if(!Array.isArray(sources)||sources.some((source)=>!source||typeof source.name!=="string")) throw new Error("字典来源格式不完整，请重试");
     const selected = $("#dict-name").value;
     $("#dict-name").replaceChildren(...sources.map((source) => {
@@ -330,13 +348,14 @@ function wire() {
     $("#ndef-input").value = JSON.stringify(generatedCard, null, 2); updateNdefSource();
     window.desktopToast("生成的卡片已设为当前输入，可读取记录或继续编辑");
   });
-  const dbCall=(payload)=>runTask("database",()=>showPre("#db-out",async()=>{
+  const dbCall=(payload)=>runTask("database",()=>showPre("#db-out",async(isCurrent)=>{
     if(payload.op==="list"){ $("#library-results").replaceChildren();$("#db-id").value=""; }
     payload.database=parseObject("#db-json","数据库");
     if(payload.op==="add") payload.card=parseObject("#db-card","卡片");
     if((payload.op==="show"||payload.op==="delete")&&!payload.id) throw new Error("请先选择卡片或填写卡片 ID / 完整名称");
     const original=$("#db-json").value;
     const value=await postJSON("/api/database",payload);
+    if (!isCurrent()) return null;
     if(payload.op==="add"||payload.op==="delete"){
       if($("#db-json").value!==original) throw new Error("数据库输入已变化，请重新操作");
       const next=payload.op==="add"?value:value.database;
@@ -381,7 +400,8 @@ function wire() {
   $("#retry-capabilities").addEventListener("click", loadCapabilities);
 }
 async function loadCapabilities() {
-  const button = $("#retry-capabilities"); if (button.disabled) return; button.disabled = true;
+  const button = $("#retry-capabilities"); if (capabilitiesPending || busy.has("hardware")) return;
+  capabilitiesPending = true; updateWriteButtons();
   try {
     const caps = await api("/api/capabilities");
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
@@ -391,7 +411,7 @@ async function loadCapabilities() {
     writesEnabled = false; csrfToken = ""; button.hidden = false;
     $("#write-note").textContent = "无法读取服务权限：" + e.message;
     $("#menu-write-mode").textContent = "权限未就绪";
-  } finally { button.disabled = false; updateWriteButtons(); }
+  } finally { capabilitiesPending = false; updateWriteButtons(); }
 }
 wire();
 loadCapabilities();

@@ -9,11 +9,23 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const response = (body, status = 200, type = 'application/json') => ({ ok: status < 400, status, headers: { get: () => type }, json: async () => body, text: async () => String(body) });
 
-async function page(t, routes = {}, { width = 1368, height = 900, writes = false } = {}) {
+async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false } = {}) {
   const errors = [], requests = [], downloads = [], imports = [];
   const virtualConsole = new VirtualConsole(); virtualConsole.on('jsdomError', (e) => errors.push(e));
   const dom = new JSDOM(source('index.html'), { url: 'http://127.0.0.1:8099/', runScripts: 'outside-only', virtualConsole });
   const w = dom.window, d = w.document, $ = (s) => d.querySelector(s);
+  let now = 0, timerID = 0;
+  const timers = new Map();
+  if (clock) {
+    const clear = w.clearTimeout.bind(w);
+    w.setTimeout = (fn, delay) => { const id = ++timerID; timers.set(id, { fn, at: now + delay }); return id; };
+    w.clearTimeout = (id) => { if (!timers.delete(id)) clear(id); };
+  }
+  const advance = async (elapsed) => {
+    now += elapsed;
+    for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); }
+    await tick();
+  };
   Object.assign(w, { innerWidth: width, innerHeight: height, Blob: global.Blob });
   w.confirm = () => true;
   w.ResizeObserver = class { observe() {} };
@@ -39,7 +51,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'app.js']) w.eval(source(file));
   t.after(() => { dom.window.close(); assert.deepEqual(errors, [], 'no uncaught page errors'); });
   await tick();
-  return { w, d, $, requests, downloads, imports, click: async (selector) => { $(selector).click(); await tick(); }, input: (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new w.Event('input', { bubbles: true })); } };
+  return { w, d, $, requests, downloads, imports, advance, timers, click: async (selector) => { $(selector).click(); await tick(); }, input: (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new w.Event('input', { bubbles: true })); } };
 }
 const open = (id) => `.dock [data-open="${id}"]`;
 const summary = ($, id) => $(id).closest('details').previousElementSibling;
@@ -499,4 +511,155 @@ test('dictionary labels preserve source request IDs and export complete key data
   assert.equal(exported.keyLength, 12);
   assert.deepEqual(exported.keys, keys);
   assert.equal(p.downloads[0].name, 'chameleon-desk-dict-out.json');
+});
+
+for (const maximizeBeforeShrink of [true, false]) test(`desktop geometry survives restoring a maximized window across a narrow viewport (${maximizeBeforeShrink})`, async (t) => {
+  const p = await page(t);
+  await p.click(open('acl'));
+  const win = p.$('#acl');
+  const rectangle = () => ['left', 'top', 'width', 'height'].map(key => win.style[key]);
+  const original = rectangle();
+  if (maximizeBeforeShrink) await p.click('#acl [data-window="maximize"]');
+  p.w.innerWidth = 375; p.w.innerHeight = 600; p.w.dispatchEvent(new p.w.Event('resize'));
+  if (!maximizeBeforeShrink) await p.click('#acl [data-window="maximize"]');
+  if (maximizeBeforeShrink) await p.click('#acl [data-window="maximize"]');
+  p.w.innerWidth = 1368; p.w.innerHeight = 900; p.w.dispatchEvent(new p.w.Event('resize'));
+  if (!maximizeBeforeShrink) await p.click('#acl [data-window="maximize"]');
+  assert.deepEqual(rectangle(), original);
+});
+
+test('latest file selection wins even when its text matches the current input', async (t) => {
+  const p = await page(t), slow = deferred();
+  const original = p.$('#db-json').value;
+  const choose = async (name, text) => {
+    await p.click('[data-import="db-json"]'); const input = p.imports.at(-1);
+    Object.defineProperty(input, 'files', { value: [{ name, size: 20, text }] });
+    input.dispatchEvent(new p.w.Event('change')); await tick();
+  };
+  await choose('older.json', () => slow.promise);
+  await choose('latest.json', async () => original);
+  slow.resolve('{"older":true}'); await tick();
+  assert.equal(p.$('#db-json').value, original);
+  assert.match(p.$('#toast').textContent, /latest.json/);
+});
+
+test('editing and reverting an input still invalidates a pending import', async (t) => {
+  const p = await page(t), slow = deferred(), original = p.$('#db-json').value;
+  await p.click('[data-import="db-json"]'); const input = p.imports.at(-1);
+  Object.defineProperty(input, 'files', { value: [{ name: 'old.json', size: 20, text: () => slow.promise }] });
+  input.dispatchEvent(new p.w.Event('change'));
+  p.input('#db-json', '{"edited":true}'); p.input('#db-json', original);
+  slow.resolve('{"older":true}'); await tick();
+  assert.equal(p.$('#db-json').value, original);
+  assert.match(p.$('#toast').textContent, /输入已变化/);
+});
+
+for (const stalledBody of [false, true]) test(`a stalled ${stalledBody ? 'response body' : 'request'} times out and an offline retry recovers`, async (t) => {
+  let attempts = 0;
+  const p = await page(t, { '/api/acl/decode': (opts) => {
+    if (++attempts > 1) return response({ conditions: [0, 0, 0, 4], blocks: [] });
+    const pending = new Promise((resolve, reject) => opts.signal?.addEventListener('abort', () => reject(new p.w.DOMException('Aborted', 'AbortError'))));
+    return stalledBody ? { ...response(null), json: () => pending } : pending;
+  } }, { clock: true });
+  await p.click('#acl-decode-go');
+  assert.equal(p.$('#acl-encode-go').disabled, true);
+  await p.advance(60000);
+  assert.match(summary(p.$, '#acl-out').textContent, /超时/);
+  assert.doesNotMatch(summary(p.$, '#acl-out').textContent, /写入|读取状态/);
+  assert.equal(p.$('#acl-encode-go').disabled, false);
+  assert.equal(p.$('#acl').hasAttribute('aria-busy'), false);
+  await p.click('#acl .hardware-state button');
+  assert.match(summary(p.$, '#acl-out').textContent, /访问权限已解码/);
+  assert.equal(attempts, 2);
+  assert.equal(p.timers.size, 0);
+});
+
+test('a malformed JSON response clears stale success and permits a successful retry', async (t) => {
+  let malformed = false;
+  const p = await page(t, { '/api/acl/encode': () => malformed ? { ...response(null), json: async () => { throw new SyntaxError('Unexpected token <'); } } : response({ access_hex: 'FF0780' }) });
+  await p.click('#acl-encode-go'); malformed = true; await p.click('#acl-encode-go');
+  assert.equal(p.$('#acl-out').dataset.ready, 'false');
+  assert.match(summary(p.$, '#acl-out').textContent, /无效 JSON/);
+  assert.equal(p.$('#acl-encode-go').disabled, false);
+  malformed = false; await p.click('#acl .hardware-state button');
+  assert.equal(p.$('#acl-out').dataset.ready, 'true');
+});
+
+for (const malformed of [false, true]) test(`a forbidden write revokes UI permissions even with a ${malformed ? 'malformed JSON' : 'text'} response`, async (t) => {
+  const p = await page(t, { '/api/slot/load-card': () => malformed ? { ...response(null, 403), json: async () => { throw new SyntaxError('Invalid JSON'); } } : response('Forbidden', 403, 'text/plain') }, { writes: true });
+  p.input('#load-card-json', JSON.stringify(card)); await p.click('#load-card-go');
+  assert.equal(p.$('#load-card-go').disabled, true);
+  assert.equal(p.$('#retry-capabilities').hidden, false);
+  assert.equal(p.$('#load-card-out').dataset.ready, 'false');
+  assert.equal(summary(p.$, '#load-card-out').querySelector('.hardware-state button'), null);
+  assert.equal(p.requests.filter(r => r.url === '/api/slot/load-card').length, 1);
+});
+
+test('initial capability failure overlapping another task leaves permission retry usable', async (t) => {
+  const caps = deferred(), operation = deferred(); let attempts = 0;
+  const p = await page(t, {
+    '/api/capabilities': () => ++attempts === 1 ? caps.promise : response({ writes_enabled: false }),
+    '/api/firmware/check': () => operation.promise
+  });
+  await p.click('#fw-check');
+  caps.resolve(response({ error: 'temporarily unavailable' }, 503)); await tick();
+  assert.equal(p.$('#retry-capabilities').hidden, false);
+  assert.equal(p.$('#retry-capabilities').disabled, true);
+  operation.resolve(response({ notes: ['Offline fixture'] })); await tick();
+  assert.equal(p.$('#retry-capabilities').disabled, false);
+  await p.click('#retry-capabilities');
+  assert.equal(p.$('#retry-capabilities').hidden, true);
+  assert.equal(attempts, 2);
+  assert.equal(p.$('#load-card-go').disabled, true);
+});
+
+for (const field of ['#db-query', '#db-json']) test(`a superseded library search cannot repopulate rows after ${field} changes`, async (t) => {
+  const pending = deferred(); let attempt = 0;
+  const p = await page(t, { '/api/database': () => ++attempt === 1 ? pending.promise : response([{ id: 'fresh', name: 'Current card' }]) });
+  await p.click('#db-list');
+  p.input(field, field === '#db-query' ? 'current' : '{"cards":[],"setting":"current"}');
+  pending.resolve(response([{ id: 'old', name: 'Stale card' }])); await tick();
+  assert.equal(p.$('#library-results').children.length, 0);
+  assert.equal(p.$('#db-out').dataset.ready, 'false');
+  await p.click('#db-list');
+  assert.equal(p.$('[data-card-id]').dataset.cardId, 'fresh');
+});
+
+test('a superseded source listing cannot reset a newer dictionary choice', async (t) => {
+  const pending = deferred();
+  const p = await page(t, { '/api/dictionary/sources': () => pending.promise });
+  await p.click('#dict-go');
+  p.input('#dict-name', 'proxmark3-t55xx');
+  pending.resolve(response([{ name: 'proxmark3-classic' }])); await tick();
+  assert.equal(p.$('#dict-name').value, 'proxmark3-t55xx');
+  assert.equal(p.$('#dictionary-sources').children.length, 0);
+  assert.equal(p.$('#dict-out').dataset.ready, 'false');
+});
+
+test('a timed-out simulated write is not retried automatically or offered a retry action', async (t) => {
+  const p = await page(t, { '/api/slot/load-card': opts => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(new p.w.DOMException('Aborted', 'AbortError')))) }, { clock: true, writes: true });
+  p.input('#load-card-json', JSON.stringify(card)); await p.click('#load-card-go');
+  await p.advance(60000);
+  assert.match(summary(p.$, '#load-card-out').textContent, /先读取状态确认结果/);
+  assert.equal(summary(p.$, '#load-card-out').querySelector('.hardware-state button'), null);
+  assert.equal(p.requests.filter(r => r.url === '/api/slot/load-card').length, 1);
+  assert.equal(p.$('#slots').hasAttribute('aria-busy'), false);
+});
+
+for (const kind of ['database', 'card', 'dictionary']) test(`successful ${kind} exports preserve a user metadata field named error`, async (t) => {
+  const metadata = { message: 'User-defined metadata', keep: true };
+  const p = await page(t, {
+    '/api/database': () => response({ ...card, error: metadata }),
+    '/api/dictionary/download': () => response({ id: 'metadata', name: 'sample', keyLength: 8, keys: [[1, 2, 3, 4]], error: metadata })
+  });
+  if (kind === 'database') {
+    p.input('#db-json', JSON.stringify({ cards: [], error: metadata }));
+    await p.click('[data-export="db-out"]:not([data-export-card])');
+  } else if (kind === 'card') {
+    p.input('#db-id', card.id); await p.click('#db-show'); await p.click('[data-export-card]');
+  } else {
+    await p.click('#dict-download'); await p.click('[data-export="dict-out"]');
+  }
+  assert.equal(p.downloads.length, 1);
+  assert.deepEqual(JSON.parse(await p.downloads[0].blob.text()).error, metadata);
 });
