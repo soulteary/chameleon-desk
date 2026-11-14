@@ -52,15 +52,13 @@ func Open(path string, timeout time.Duration) (*Client, error) {
 	return OpenContext(context.Background(), path, timeout)
 }
 
-// OpenContext bounds transport establishment, including BLE discovery.
+// OpenContext bounds serial or TCP transport establishment. BLE uses the Python bridge.
 func OpenContext(ctx context.Context, path string, timeout time.Duration) (*Client, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if strings.HasPrefix(path, "ble:") {
-		setup, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		return OpenBLE(setup, strings.TrimPrefix(path, "ble:"), timeout)
+		return nil, ErrBLEUnavailable
 	}
 	if strings.HasPrefix(path, "tcp:") {
 		conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", strings.TrimPrefix(path, "tcp:"))

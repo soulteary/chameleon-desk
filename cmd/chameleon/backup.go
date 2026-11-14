@@ -27,7 +27,7 @@ func runBackup(args []string) (retErr error) {
 	input := f.String("input", "", "backup JSON")
 	output := f.String("output", "", "new backup/result file")
 	rollback := f.String("rollback-output", "", "mandatory pre-restore snapshot path")
-	port := f.String("port", "", "explicit USB/TCP/BLE application port")
+	port := f.String("port", "", "explicit USB serial or TCP application port (Python bridge for BLE)")
 	yes := f.Bool("yes", false, "allow temporary slot switching or full restore")
 	commit := f.Bool("commit", false, "explicit final save of slot configuration and settings")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
