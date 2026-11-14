@@ -344,6 +344,9 @@ type RestoreResult struct {
 // Slot switches and initialization can persist data in upstream firmware.
 // Persist controls the final explicit slot-config/settings commit only.
 func (c *Client) RestoreDevice(ctx context.Context, b DeviceBackup, o RestoreOptions) (out RestoreResult, err error) {
+	if !c.transportInfo.AllowsDeviceRestore {
+		return out, fmt.Errorf("device restore requires a direct serial connection; %s/%s is not supported", c.transportInfo.Connection, c.transportInfo.Medium)
+	}
 	if e := b.Validate(); e != nil {
 		return out, e
 	}

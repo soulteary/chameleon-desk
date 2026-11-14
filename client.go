@@ -22,6 +22,8 @@ type transport interface{ io.ReadWriteCloser }
 // Client serializes requests. A timeout after transmission invalidates the
 // connection: this protocol has no request ID to disambiguate late responses.
 type Client struct {
+	transportInfo                             TransportInfo
+	bridgeDeviceID                            string
 	port                                      transport
 	gate                                      chan struct{}
 	done                                      chan struct{}
@@ -65,7 +67,7 @@ func OpenContext(ctx context.Context, path string, timeout time.Duration) (*Clie
 		if err != nil {
 			return nil, err
 		}
-		return newClient(conn, timeout), nil
+		return tcpClient(ctx, conn, timeout)
 	}
 	p, err := serial.Open(path, &serial.Mode{BaudRate: 115200, DataBits: 8, Parity: serial.NoParity, StopBits: serial.OneStopBit})
 	if err != nil {
@@ -81,7 +83,9 @@ func OpenContext(ctx context.Context, path string, timeout time.Duration) (*Clie
 	if err = p.ResetInputBuffer(); err != nil {
 		return fail(err)
 	}
-	return newClient(p, timeout), nil
+	c := newClient(p, timeout)
+	c.transportInfo = serialTransport()
+	return c, nil
 }
 
 func newClient(p transport, timeout time.Duration) *Client {
@@ -89,6 +93,9 @@ func newClient(p transport, timeout time.Duration) *Client {
 		timeout = 3 * time.Second
 	}
 	c := &Client{port: p, gate: make(chan struct{}, 1), done: make(chan struct{}), timeout: timeout}
+	// Custom streams retain caller-managed policy for compatibility. Built-in
+	// serial, TCP and BLE openers set explicit transport properties.
+	c.transportInfo = TransportInfo{Connection: "custom", Medium: "caller-managed", AllowsPairingChanges: true, AllowsDeviceRestore: true}
 	c.gate <- struct{}{}
 	return c
 }
@@ -154,6 +161,9 @@ func (c *Client) exchange(ctx context.Context, command uint16, payload []byte, s
 }
 
 func (c *Client) exchangeFrame(ctx context.Context, command uint16, payload []byte) (frame, error) {
+	if err := c.checkTransportCommand(command); err != nil {
+		return frame{}, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {

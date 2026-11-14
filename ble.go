@@ -39,6 +39,7 @@ func OpenBLE(ctx context.Context, id string, timeout time.Duration) (*Client, er
 		return nil, e
 	}
 	c := NewClient(stream, timeout)
+	c.transportInfo = bleTransport("ble", false)
 	model, _, e := c.Model(setup)
 	if e != nil || model > 1 {
 		_ = c.Close()

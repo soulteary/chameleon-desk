@@ -756,3 +756,96 @@ for (const [path, button, out, budget] of [
   assert.match(summary(p.$, out).textContent, /超时/);
   assert.equal(p.requests.filter(r => r.url === path).length, 1);
 });
+
+const bridgeCaps = () => response({ writes_enabled: false, csrf_token: 'web-session', ble_bridge_enabled: true });
+const bridgeState = () => ({ api_version: 1, state: 'disconnected', selected_device: null, session_active: false, transport: { connection: 'tcp', medium: 'ble', managed: true, allows_pairing_changes: false, allows_device_restore: false, supports_dfu: false }, error: '' });
+
+test('bridge controls remain hidden when management is not configured', async (t) => {
+  const p = await page(t);
+  assert.equal(p.$('#bridge-panel').hidden, true);
+  assert.equal(p.requests.some(r => r.url.startsWith('/api/bridge/')), false);
+});
+
+test('read-only users can scan, select, connect and disconnect a managed BLE bridge', async (t) => {
+  const status = bridgeState(), name = '<img src=x onerror=alert(1)>';
+  const snapshot = () => response(JSON.parse(JSON.stringify(status)));
+  const p = await page(t, {
+    '/api/capabilities': bridgeCaps,
+    '/api/bridge/status': snapshot,
+    '/api/bridge/scan': () => response({ api_version: 1, devices: [{ id: 'chosen-id', name }] }),
+    '/api/bridge/select': opts => { assert.deepEqual(JSON.parse(opts.body), { device_id: 'chosen-id' }); status.selected_device = { id: 'chosen-id', name }; return snapshot(); },
+    '/api/bridge/connect': () => { status.state = 'connected'; status.session_active = true; return snapshot(); },
+    '/api/bridge/disconnect': () => { status.state = 'disconnected'; status.session_active = false; return snapshot(); },
+    '/api/info': () => response({ model: 'Chameleon Ultra', slots: [] })
+  });
+  assert.equal(p.$('#bridge-panel').hidden, false);
+  assert.equal(p.$('#bridge-connect').disabled, true);
+  await p.click('#bridge-scan');
+  p.$('#bridge-devices').value = 'chosen-id';
+  p.$('#bridge-devices').dispatchEvent(new p.w.Event('change'));
+  await p.click('#bridge-select');
+  assert.equal(p.$('#bridge-connect').disabled, false);
+  assert.match(p.$('#bridge-selected').textContent, /chosen-id/);
+  assert.equal(p.$('#bridge-selected img'), null);
+  await p.click('#bridge-connect');
+  assert.match(p.$('#bridge-state').textContent, /已连接/);
+  assert.equal(p.$('#bridge-scan').disabled, true);
+  assert.equal(p.$('#bridge-select').disabled, true);
+  assert.match(p.$('#info-cards').textContent, /Chameleon Ultra/);
+  assert.match(p.$('#write-note').textContent, /只读/);
+  await p.click('#bridge-disconnect');
+  assert.match(p.$('#bridge-state').textContent, /未连接/);
+  assert.equal(p.$('#info-cards').children.length, 0);
+  assert.equal(p.$('#slot-list').dataset.ready, 'false');
+  for (const request of p.requests.filter(r => r.url.startsWith('/api/bridge/') && r.method === 'POST')) assert.equal(request.headers['X-Chameleon-Token'], 'web-session');
+});
+
+test('failed BLE connect refreshes state without replaying the connection request', async (t) => {
+  const status = bridgeState(); status.selected_device = { id: 'chosen', name: 'Selected' };
+  const p = await page(t, {
+    '/api/capabilities': bridgeCaps,
+    '/api/bridge/status': () => response(status),
+    '/api/bridge/connect': () => response({ error: 'BLE setup failed' }, 502)
+  });
+  await p.click('#bridge-connect');
+  assert.equal(p.requests.filter(r => r.url === '/api/bridge/connect').length, 1);
+  assert.equal(p.$('#bridge-connect').disabled, false);
+  assert.equal(p.$('#bridge-error').hidden, false);
+  assert.match(p.$('#bridge-error').textContent, /BLE setup failed/);
+});
+
+test('bridge state refresh clears stale device and slot results after disconnection', async (t) => {
+  const status = bridgeState(); status.state = 'connected'; status.session_active = true;
+  const p = await page(t, {
+    '/api/capabilities': bridgeCaps,
+    '/api/bridge/status': () => response(JSON.parse(JSON.stringify(status))),
+    '/api/info': () => response({ model: 'Old device', slots: [{ number: 1, active: true }] })
+  });
+  await p.click('#refresh-info'); await p.click('#refresh-slots');
+  assert.match(p.$('#info-cards').textContent, /Old device/);
+  status.state = 'disconnected'; status.session_active = false;
+  await p.click('#bridge-refresh');
+  assert.equal(p.$('#info-cards').children.length, 0);
+  assert.equal(p.$('#slot-list').children.length, 0);
+  assert.equal(p.$('#slot-list').dataset.ready, 'false');
+  assert.equal(p.requests.some(r => r.url === '/api/bridge/connect'), false);
+});
+
+test('pending BLE connection blocks competing hardware controls', async (t) => {
+  const status = bridgeState(), connection = deferred(); status.selected_device = { id: 'chosen', name: 'Selected' };
+  const p = await page(t, {
+    '/api/capabilities': bridgeCaps,
+    '/api/bridge/status': () => response(status),
+    '/api/bridge/connect': () => connection.promise,
+    '/api/info': () => response({ model: 'Selected', slots: [] })
+  });
+  await p.click('#bridge-connect');
+  assert.equal(p.$('#refresh-info').disabled, true);
+  assert.equal(p.$('#bridge-select').disabled, true);
+  await p.click('#bridge-connect');
+  assert.equal(p.requests.filter(r => r.url === '/api/bridge/connect').length, 1);
+  status.state = 'connected'; status.session_active = true;
+  connection.resolve(response(status)); await tick();
+  assert.equal(p.$('#refresh-info').disabled, false);
+  assert.equal(p.$('#bridge-connect').disabled, true);
+});

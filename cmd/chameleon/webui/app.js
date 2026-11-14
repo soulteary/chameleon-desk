@@ -8,6 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
+let bridgeEnabled = false, bridgeStatus = null;
 const busy = new Set();
 const dictionaryLabels = {
   "proxmark3-classic": "Classic 默认密钥",
@@ -22,7 +23,7 @@ const groups = { hardware: ["device", "slots", "read"], database: ["cards"], nde
 async function api(path, opts = {}) {
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/slot/")) headers["X-Chameleon-Token"] = csrfToken;
+  if (path.startsWith("/api/slot/") || path.startsWith("/api/bridge/")) headers["X-Chameleon-Token"] = csrfToken;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
   // Leave time for the server's error response before the browser aborts.
@@ -68,6 +69,65 @@ function updateWriteButtons() {
   $("#retry-capabilities").disabled = capabilitiesPending || busy.has("hardware");
   $("#load-card-go").disabled = !writesEnabled || busy.has("hardware");
   document.querySelectorAll("[data-slot-active]").forEach((button) => { button.disabled = !writesEnabled || busy.has("hardware") || button.dataset.slotActive === "true"; });
+  updateBridgeButtons();
+}
+
+function updateBridgeButtons() {
+  const blocked = busy.has("hardware") || !bridgeStatus;
+  const disconnected = bridgeStatus?.state === "disconnected" && !bridgeStatus?.session_active;
+  $("#bridge-scan").disabled = blocked || !disconnected;
+  $("#bridge-select").disabled = blocked || !disconnected || !$("#bridge-devices").value;
+  $("#bridge-devices").disabled = blocked || !disconnected;
+  $("#bridge-connect").disabled = blocked || !disconnected || !bridgeStatus?.selected_device;
+  $("#bridge-disconnect").disabled = blocked || bridgeStatus?.state === "scanning" || bridgeStatus?.state === "blocked";
+  $("#bridge-refresh").disabled = busy.has("hardware");
+}
+function showBridgeStatus(status) {
+  if (!status || status.api_version !== 1 || status.transport?.medium !== "ble") throw new Error("蓝牙桥返回了不支持的连接信息");
+  if (bridgeStatus?.state === "connected" && status.state !== "connected") clearBridgeDeviceView();
+  bridgeStatus = status;
+  const states = { disconnected:"未连接", scanning:"正在扫描", connecting:"正在连接", connected:"已连接", disconnecting:"正在断开", blocked:"连接清理失败，请重启蓝牙桥" };
+  $("#bridge-state").textContent = (states[status.state] || "未知状态") + (status.session_active ? " · 设备会话使用中" : "");
+  $("#bridge-selected").textContent = status.selected_device ? "已选择：" + (status.selected_device.name || status.selected_device.id) + " · " + status.selected_device.id : "尚未选择设备";
+  $("#bridge-error").hidden = !status.error;
+  $("#bridge-error").textContent = status.error || "";
+  updateBridgeButtons();
+}
+async function refreshBridgeStatus() {
+  if (!bridgeEnabled) return;
+  try { showBridgeStatus(await api("/api/bridge/status")); }
+  catch (error) {
+    bridgeStatus = null;
+    $("#bridge-state").textContent = "无法读取蓝牙桥状态";
+    $("#bridge-error").hidden = false; $("#bridge-error").textContent = error.message;
+    updateBridgeButtons();
+  }
+}
+function clearBridgeDeviceView() {
+  setStatus(false, "设备会话已断开");
+  $("#info-cards").replaceChildren(); $("#info-raw").replaceChildren();
+  $("#device").classList.remove("has-device-data"); $("#device .device-hero h1").textContent = "Chameleon Desk";
+  const slots = $("#slot-list"); slots.replaceChildren(); slots.dataset.ready = "false"; delete slots.dataset.exportJson;
+}
+async function bridgeAction(action) {
+  try {
+    const input = action === "select" ? { device_id: $("#bridge-devices").value } : {};
+    const result = await postJSON("/api/bridge/" + action, input);
+    if (action === "scan") {
+      if (!Array.isArray(result.devices)) throw new Error("扫描结果无效");
+      const select = $("#bridge-devices"); select.replaceChildren(el("option", null, result.devices.length ? "选择扫描到的设备" : "未发现设备，请确认设备正在广播")); select.firstChild.value = "";
+      for (const device of result.devices) { const option = el("option", null, (device.name || "未命名设备") + " · " + device.id); option.value = device.id; select.append(option); }
+      await refreshBridgeStatus();
+    } else {
+      showBridgeStatus(result);
+      if (action === "select" || action === "disconnect") clearBridgeDeviceView();
+      if (action === "connect") { await loadInfo(); await refreshBridgeStatus(); }
+    }
+  } catch (error) {
+    await refreshBridgeStatus();
+    $("#bridge-error").hidden = false; $("#bridge-error").textContent = error.message;
+    throw error;
+  }
 }
 async function runTask(group, action) {
   if (busy.has(group)) return;
@@ -289,6 +349,9 @@ function updateCardSource(input,container) {
 }
 function updateNdefSource(){updateCardSource("#ndef-input","#ndef-source");}
 function wire() {
+  for (const action of ["scan", "select", "connect", "disconnect"]) $("#bridge-" + action).addEventListener("click", () => runTask("hardware", () => bridgeAction(action)));
+  $("#bridge-refresh").addEventListener("click", () => runTask("hardware", refreshBridgeStatus));
+  $("#bridge-devices").addEventListener("change", updateBridgeButtons);
   document.querySelectorAll("pre").forEach((pre) => {
     const summary = el("div", "result-summary tool-result"); summary.hidden = true; summary.setAttribute("role", "status");
     const details = el("details", "raw-result"); details.hidden = true; details.append(el("summary", null, "查看完整结果 JSON")); pre.before(summary, details); details.append(pre);
@@ -425,6 +488,9 @@ async function loadCapabilities() {
   try {
     const caps = await api("/api/capabilities");
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
+    bridgeEnabled = caps.ble_bridge_enabled === true;
+    $("#bridge-panel").hidden = !bridgeEnabled;
+    if (bridgeEnabled) await refreshBridgeStatus();
     $("#write-note").textContent = writesEnabled ? "设备写入已启用" : "只读模式 · 仅查看设备配置";
     $("#menu-write-mode").textContent = writesEnabled ? "写入已启用" : "只读模式"; button.hidden = true;
   } catch (e) {

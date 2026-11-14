@@ -5,9 +5,10 @@ and exposes its application protocol on a loopback TCP port. Desk uses its
 existing `tcp:HOST:PORT` transport. The Go workbench does not need Python, Bleak
 or cgo to use that transport. Native macOS BLE remains available separately.
 
-The bridge handles transport only. Device commands, firmware capabilities and
-card operations remain in Desk. It does not implement BLE DFU, a device
-management API, or a persistent BLE session shared by multiple TCP clients.
+Device commands, firmware capabilities and card operations remain in Desk.
+The optional management API provides scanning, selection, connection state and
+disconnect. It does not implement BLE DFU or share a BLE session between TCP
+clients. Reset and pairing-change commands are blocked before GATT writes.
 
 ## Requirements
 
@@ -60,6 +61,67 @@ The default `--timeout 20` bounds discovery, connection setup, each GATT write,
 TCP output drain and BLE cleanup. It is not a total session or idle timeout.
 Use Ctrl-C to stop the listener and close an active connection.
 
+## Manage the bridge from Desk Web UI
+
+Start the bridge with a separate management port and private token file:
+
+```sh
+tools/ble_bridge/.venv/bin/python tools/ble_bridge/bridge.py \
+  --control-port 12346 --token-file tools/ble_bridge/bridge.key
+```
+
+`--device` is optional in this mode. The management listener uses the same
+loopback IP as the data listener (`127.0.0.1` by default). The token file is
+created with a random 256-bit token and mode `0600` on POSIX systems. An
+existing valid token is reused. On Windows, restrict the file's ACL to the
+account running the bridge and Desk. Do not put the token in a URL or a browser
+input. The repository ignores `*.key` files.
+
+In another terminal, start Desk:
+
+```sh
+CGO_ENABLED=0 ./scripts/build.sh
+./chameleon serve --ble-bridge http://127.0.0.1:12346 \
+  --bridge-token-file tools/ble_bridge/bridge.key --timeout 10s
+```
+
+Open the device-management tool. Scan for devices, select an advertisement,
+then connect. Desk retains the resulting data connection for subsequent
+device requests. Use the disconnect button before selecting a different
+device or scanning again. Refresh connection state after a physical disconnect
+or a failed operation. Reconnection is explicit; requests are not replayed.
+The UI clears stale device and slot results when a disconnect is observed.
+
+The Web server keeps the bridge credential on the backend. Browser actions
+use Desk's session token and existing Host/Origin checks. Connection management
+works in read-only mode; writing cards or device data still requires
+`serve --allow-writes`. `--ble-bridge` cannot be combined with `--port`.
+
+The management API accepts `Authorization: Bearer TOKEN` on every request and
+does not accept browser `Origin` headers or nonmatching Host headers. It has
+no CORS interface. Requests use HTTP/1.1, JSON bodies, a 4 KiB body limit and
+an 8 KiB header limit. Redirects are not followed by the Go management client.
+
+- `GET /v1/status`: selected device, connection state, session ownership,
+  data address, transport properties and last error.
+- `POST /v1/scan` with `{}`: NUS advertisements from a bounded scan.
+- `POST /v1/select` with `{"device_id":"ID"}`: select from the latest scan.
+- `POST /v1/connect` with `{}`: connect and subscribe to NUS notifications.
+- `POST /v1/disconnect` with `{}`: end the active data connection and BLE link,
+  or cancel a pending connection.
+
+Responses declare `api_version: 1`. States are `disconnected`, `scanning`,
+`connecting`, `connected`, `disconnecting` and `blocked`. A failed cleanup
+enters `blocked` and requires a bridge restart. Scan and selection do not
+replace an active connection. A data connection is admitted only after an
+explicit management connect; closing it also ends the BLE link. The API
+token controls management operations, not access to the separate data port.
+
+The SDK exposes the same API through `NewBLEBridge`, `Scan`, `Select`,
+`Connect`, `Status`, `OpenSession` and `Disconnect`. `OpenSession` verifies
+that the data connection declares the selected device and managed BLE
+transport before returning a client.
+
 ## Use Desk without cgo
 
 ```sh
@@ -76,27 +138,58 @@ go build -mod=readonly -trimpath -o chameleon.exe ./cmd/chameleon
 .\chameleon.exe info --port tcp:127.0.0.1:12345 --timeout 30s --json
 ```
 
-The Desk command timeout must allow for BLE setup on the first command. The
-Web server also has a 30-second hardware-request budget. Its current per-request
-TCP connection opens a new BLE session for each request, so initial pairing or
-slow discovery can exceed that budget. Pair first, and close other clients
-before opening the Web UI. After a failed request, wait for bridge cleanup
-before explicitly retrying a read. No automatic reconnect or replay is done.
+In fixed-device mode, the Desk command timeout must allow for BLE setup on the
+first command. With `serve --port tcp:...`, each Web request opens a new BLE
+session and has a 30-second request budget. Initial pairing or slow discovery
+can exceed that budget. Use managed mode for a persistent Web device session.
+After a failure, wait for cleanup before explicitly reconnecting or retrying a
+read. No automatic reconnect or replay is done.
 
-The bridge forwards raw application bytes without inspecting commands. Existing
-Desk write controls (`--yes` and `serve --allow-writes`) still apply, but they
+The bridge validates application frames and blocks reset and pairing-change
+commands. Existing Desk write controls (`--yes` and `serve --allow-writes`) still apply, but they
 are not a bridge access-control mechanism. Any local process that can connect
-to the TCP port can send device commands. The listener accepts loopback IP
-addresses only; it has no authentication or encryption.
+to the data TCP port can send device commands. The data listener accepts
+loopback IP addresses only; it has no authentication or encryption. The separate
+management listener requires its bearer token for every request.
+
+### Transport declaration and restrictions
+
+Every accepted data connection starts with one UTF-8 line:
+
+```text
+CHAMELEON_BRIDGE/1 {"api_version":1,"transport":{"connection":"tcp","medium":"ble","managed":true,"allows_pairing_changes":false,"allows_device_restore":false,"supports_dfu":false},"device_id":"ID"}
+```
+
+`managed` is false in fixed-device mode. Desk reads this declaration before
+using application frames; it is exposed through `Client.TransportInfo()` and
+the `transport` field in `info` results. Invalid or unsupported declarations
+are rejected. Legacy serial TCP peers without a declaration remain usable for
+ordinary commands and are marked `tcp/unknown` after a bounded probe.
+
+TCP declarations cannot grant serial-link permissions. Both declared BLE and
+unknown TCP connections reject pairing changes, resets and full device restore.
+Use a direct serial connection for these operations, including when a TCP
+bridge happens to lead to a wired device. This changes the earlier allowance
+for restoring over an assumed stable TCP bridge.
+
+The restrictions apply in the SDK, including raw command execution. Full
+restore and mixed settings patches are checked before sending any request.
+`NewClient` also identifies a supplied TCP `net.Conn` as unknown TCP. Other
+custom streams remain caller-managed for compatibility; use `OpenContext`
+for built-in TCP declaration handling rather than hiding a connection in an
+unidentified wrapper.
 
 ## Boundaries
 
 - Normal application commands can use the bridge, subject to the device model,
   firmware capabilities and BLE throughput. No new card capability is added.
-- Do not use it for `backup restore`, changing BLE PIN/pairing settings,
-  clearing bonds, or factory reset. These operations can invalidate the link.
-  Desk currently rejects `ble:` for full restore but cannot identify BLE behind
-  a `tcp:` address. The bridge does not parse or block those commands.
+- The updated CLI and SDK reject full device restore before device access on
+  BLE/TCP. The bridge also blocks application command IDs 1014, 1020, 1030,
+  1032 and 1037 (settings reset, factory reset, BLE PIN, bond deletion and pairing
+  enable). Fragmenting a frame or using a raw TCP client does not bypass this
+  check. The bridge cannot infer an entire restore workflow from commands sent
+  by an older or custom client; such a client could write some slot data before
+  a restricted command is rejected. Do not use it for restore.
 - BLE DFU uses separate control and packet characteristics. The application
   UART stream cannot upload firmware, and `FlashFirmware` rejects `tcp:`.
   Entering bootloader ends the application connection; use the existing USB
@@ -131,10 +224,12 @@ CHAMELEON_BRIDGE_TEST_BINARY="$PWD/reports/chameleon-nocgo" \
   python3 -m unittest discover -s tools/ble_bridge -v
 ```
 
-The optional binary test runs `info` through Desk's TCP transport, this bridge,
-and a simulated BLE device that returns fragmented protocol replies. It checks
-the CLI output; it does not establish hardware compatibility. CI runs this
-test on Linux, macOS and Windows with a cgo-disabled binary.
+The optional binary tests run CLI `info` and the Web scan/select/connect/read/
+disconnect workflow through the bridge and a simulated BLE device. Two Web
+device reads must reuse one BLE connection. Tests also cover authorization,
+connection cancellation, stale callbacks, transport declarations and blocked
+raw pairing commands. They do not establish hardware compatibility. CI runs
+these tests on Linux, macOS and Windows with a cgo-disabled binary.
 The existing Go test suite also runs on Linux and macOS. It is not run by the
 Windows bridge job because recovery fixtures use POSIX shell helpers and file
 semantics; that job covers the native CLI build and the Python bridge tests.

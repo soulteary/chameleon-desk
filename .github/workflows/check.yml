@@ -39,7 +39,7 @@ jobs:
         run: go test -mod=readonly ./...
       - run: go build -mod=readonly -trimpath -o chameleon-nocgo.exe ./cmd/chameleon
       - run: ./chameleon-nocgo.exe version
-      - name: Run offline bridge and CLI integration tests
+      - name: Run offline bridge, CLI and Web integration tests
         env:
           CHAMELEON_BRIDGE_TEST_BINARY: chameleon-nocgo.exe
         run: python -m unittest discover -s tools/ble_bridge -v

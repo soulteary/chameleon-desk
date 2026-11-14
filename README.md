@@ -28,6 +28,10 @@ An optional [Python + Bleak bridge](tools/ble_bridge/README.md) provides BLE
 through the existing TCP transport, including with a cgo-disabled Desk binary.
 It runs separately; native macOS BLE remains available. See its setup,
 connection limits and offline tests before use.
+Its authenticated management API can be enabled with `--control-port` and
+`--token-file`; `serve --ble-bridge` exposes scan, selection, connection and
+disconnect controls in the Web UI. BLE/TCP transport properties are checked
+before pairing changes or full device restore.
 
 ## Web UI
 

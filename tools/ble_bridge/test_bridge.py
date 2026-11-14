@@ -14,6 +14,37 @@ from unittest import mock
 import bridge
 
 
+def application_frame(command=1000, payload=b""):
+    header = b"\x11\xef" + struct.pack(">HHH", command, 0, len(payload))
+    return header + bytes([-sum(header) % 256]) + payload + bytes([-sum(payload) % 256])
+
+
+def configure_info_device(client):
+    incoming = bytearray()
+
+    def respond(data):
+        incoming.extend(data)
+        while len(incoming) >= 10:
+            length = int.from_bytes(incoming[6:8], "big") + 10
+            if len(incoming) < length:
+                return
+            request = bytes(incoming[:length])
+            del incoming[:length]
+            command = int.from_bytes(request[2:4], "big")
+            payloads = {
+                1000: b"\x02\x00", 1033: b"\x00", 1017: b"test-bridge",
+                1035: b"\x03\xe8", 1002: b"\x00", 1025: b"\x0e\x74\x50",
+                1018: b"\x00", 1019: b"\x03\xe9\x00\x64" * 8,
+                1023: b"\x01\x01" * 8,
+            }
+            payload = payloads[command]
+            header = b"\x11\xef" + struct.pack(">HHH", command, 0x68, len(payload))
+            reply = header + bytes([-sum(header) % 256]) + payload + bytes([-sum(payload) % 256])
+            for start in range(0, len(reply), 3):
+                client.emit(reply[start:start + 3])
+    client.handler = respond
+
+
 class Characteristic:
     def __init__(self, properties, maximum=20):
         self.properties = properties
@@ -126,6 +157,9 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def connect(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
         self.writers.append(writer)
+        declaration = await asyncio.wait_for(reader.readline(), 2)
+        if declaration:
+            self.assertTrue(declaration.startswith(bridge.PREAMBLE))
         return reader, writer
 
     async def client(self, count=1):
@@ -135,7 +169,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_binary_stream_fragmentation_and_coalescing(self):
         reader, writer = await self.connect()
         client = await self.client()
-        payload = bytes(range(256)) * 3
+        payload = application_frame(payload=bytes(range(256)) * 3) + application_frame()
         for data in (payload[:3], payload[3:117], payload[117:]):
             writer.write(data)
             await writer.drain()
@@ -148,9 +182,10 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.factory.configure = lambda c: setattr(c, "service", Service(response=False, maximum=7))
         reader, writer = await self.connect()
         client = await self.client()
-        writer.write(b"abcdefghijklmnopqrstuvw")
+        payload = application_frame(payload=b"abcdefghijklm")
+        writer.write(payload)
         await writer.drain()
-        self.assertEqual(await asyncio.wait_for(reader.readexactly(23), 2), b"abcdefghijklmnopqrstuvw")
+        self.assertEqual(await asyncio.wait_for(reader.readexactly(23), 2), payload)
         self.assertTrue(all(len(data) <= 7 and not response for data, response in client.writes))
 
     async def test_second_client_is_closed_without_touching_ble(self):
@@ -159,9 +194,10 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         other, _ = await self.connect()
         self.assertEqual(await asyncio.wait_for(other.read(), 2), b"")
         self.assertEqual(len(self.factory.clients), 1)
-        writer.write(b"still active")
+        payload = application_frame(payload=b"still active")
+        writer.write(payload)
         await writer.drain()
-        self.assertEqual(await asyncio.wait_for(reader.readexactly(12), 2), b"still active")
+        self.assertEqual(await asyncio.wait_for(reader.readexactly(len(payload)), 2), payload)
 
     async def test_tcp_eof_disconnects_and_old_notifications_are_ignored(self):
         _, writer = await self.connect()
@@ -172,9 +208,10 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         current = await self.client(2)
         self.assertIsNot(old, current)
         old.emit(b"stale data")
-        current_writer.write(b"current")
+        payload = application_frame(payload=b"current")
+        current_writer.write(payload)
         await current_writer.drain()
-        self.assertEqual(await asyncio.wait_for(reader.readexactly(7), 2), b"current")
+        self.assertEqual(await asyncio.wait_for(reader.readexactly(len(payload)), 2), payload)
 
     async def test_ble_disconnect_closes_tcp(self):
         reader, _ = await self.connect()
@@ -194,8 +231,8 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         reader, _ = await self.connect()
         client = await self.client()
         # No event-loop yield: the callback queue itself must remain bounded.
-        for _ in range(bridge.BUFFER_LIMIT // 20 + 1):
-            client.emit(b"x" * 20)
+        for _ in range(bridge.BUFFER_LIMIT // 512 + 1):
+            client.emit(b"x" * 512)
         await asyncio.wait_for(reader.read(), 2)
         await eventually(lambda: not self.bridge.active)
         self.assertTrue(client.disconnected.is_set())
@@ -204,10 +241,10 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.factory.configure = lambda c: setattr(c, "write_gate", asyncio.Event())
         reader, writer = await self.connect()
         client = await self.client()
-        writer.write(b"write once")
+        writer.write(application_frame())
         await writer.drain()
         self.assertEqual(await asyncio.wait_for(reader.read(), 2), b"")
-        self.assertEqual(client.writes, [(b"write once", True)])
+        self.assertEqual(client.writes, [(application_frame(), True)])
         self.assertTrue(client.disconnected.is_set())
 
     async def test_client_eof_cancels_pending_ble_connection(self):
@@ -280,7 +317,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.factory.configure = configure
         reader, writer = await self.connect()
         client = await self.client()
-        writer.write(b"once")
+        writer.write(application_frame())
         await writer.drain()
         self.assertEqual(await asyncio.wait_for(reader.read(), 2), b"")
         self.assertEqual(client.write_gatt_char.await_count, 1)
@@ -358,6 +395,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(started.wait(), 2)
                 reader, writer = await asyncio.open_connection("127.0.0.1", servers[0].sockets[0].getsockname()[1])
                 self.writers.append(writer)
+                await reader.readline()
                 client = await self.client()
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
@@ -383,31 +421,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
 
     @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a CGO_ENABLED=0 CLI binary")
     async def test_desk_cli_uses_tcp_bridge(self):
-        def configure(client):
-            incoming = bytearray()
-
-            def respond(data):
-                incoming.extend(data)
-                while len(incoming) >= 10:
-                    length = int.from_bytes(incoming[6:8], "big") + 10
-                    if len(incoming) < length:
-                        return
-                    request = bytes(incoming[:length])
-                    del incoming[:length]
-                    command = int.from_bytes(request[2:4], "big")
-                    payloads = {
-                        1000: b"\x02\x00", 1033: b"\x00", 1017: b"test-bridge",
-                        1035: b"\x03\xe8", 1002: b"\x00", 1025: b"\x0e\x74\x50",
-                        1018: b"\x00", 1019: b"\x03\xe9\x00\x64" * 8,
-                        1023: b"\x01\x01" * 8,
-                    }
-                    payload = payloads[command]
-                    header = b"\x11\xef" + struct.pack(">HHH", command, 0x68, len(payload))
-                    reply = header + bytes([-sum(header) % 256]) + payload + bytes([-sum(payload) % 256])
-                    for start in range(0, len(reply), 3):
-                        client.emit(reply[start:start + 3])
-            client.handler = respond
-        self.factory.configure = configure
+        self.factory.configure = configure_info_device
         process = await asyncio.create_subprocess_exec(
             os.path.abspath(os.environ["CHAMELEON_BRIDGE_TEST_BINARY"]),
             "info", "--port", f"tcp:127.0.0.1:{self.port}", "--json",

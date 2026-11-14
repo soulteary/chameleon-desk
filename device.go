@@ -29,14 +29,15 @@ type Slot struct {
 	LFEnabled bool   `json:"lf_enabled"`
 }
 type Info struct {
-	Model        string   `json:"model"`
-	ModelID      byte     `json:"model_id"`
-	Firmware     Version  `json:"firmware"`
-	GitVersion   string   `json:"git_version"`
-	Mode         string   `json:"mode"`
-	Battery      Battery  `json:"battery"`
-	Capabilities []uint16 `json:"capabilities"`
-	Slots        []Slot   `json:"slots"`
+	Transport    TransportInfo `json:"transport"`
+	Model        string        `json:"model"`
+	ModelID      byte          `json:"model_id"`
+	Firmware     Version       `json:"firmware"`
+	GitVersion   string        `json:"git_version"`
+	Mode         string        `json:"mode"`
+	Battery      Battery       `json:"battery"`
+	Capabilities []uint16      `json:"capabilities"`
+	Slots        []Slot        `json:"slots"`
 }
 
 func (c *Client) fixed(ctx context.Context, cmd uint16, n int) ([]byte, error) {
@@ -154,6 +155,7 @@ func (c *Client) Slots(ctx context.Context) ([]Slot, error) {
 }
 func (c *Client) Info(ctx context.Context) (Info, error) {
 	var v Info
+	v.Transport = c.TransportInfo()
 	var e error
 	if v.Firmware, e = c.Firmware(ctx); e != nil {
 		return v, e
