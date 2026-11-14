@@ -31,7 +31,7 @@ for f in doc['features']:
     if f['conditional']: lines += ['']
     for note in f['notes']: lines += [note, '']
     lines += ['Sources: ' + ', '.join('[' + s + '](../' + s + ')' for s in f['sources']) + '.', '']
-text = '\n'.join(lines) + '\n'
+text = '\n'.join(line.rstrip() for line in lines).rstrip() + '\n'
 output = root / 'docs/features.md'
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--check', action='store_true')
@@ -40,4 +40,5 @@ if args.check:
     if not output.exists() or output.read_text(encoding="utf-8") != text:
         raise SystemExit('docs/features.md is stale; run python3 scripts/generate_features.py')
 else:
-    output.write_text(text, encoding="utf-8", newline="\n")
+    with output.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(text)

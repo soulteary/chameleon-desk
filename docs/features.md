@@ -33,7 +33,7 @@ Sources: [features.go](../features.go).
 
 ## device.commands — Firmware command catalog
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `commands`
 - SDK: **supported**. `Commands`; `DescribeCommand`
 
@@ -47,7 +47,7 @@ Sources: [execute.go](../execute.go), [catalog_details.go](../catalog_details.go
 
 ## device.command-support — Advertised firmware commands
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `commands --supported`
 - SDK: **supported**. `Client.Capabilities`
 
@@ -61,7 +61,7 @@ Sources: [execute.go](../execute.go), [catalog_details.go](../catalog_details.go
 
 ## device.settings — Read device settings
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `settings view`; `settings get`
 - SDK: **supported**. `Client.SettingsView`; `Client.Settings`
 
@@ -73,7 +73,7 @@ Sources: [settings_view.go](../settings_view.go), [settings.go](../settings.go).
 
 ## device.configure — Configure device settings
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `settings configure`; `settings set`
 - SDK: **supported**. `Client.ConfigureSettings`
 
@@ -93,7 +93,7 @@ Sources: [settings_workflow.go](../settings_workflow.go).
 
 ## device.pairing — Pairing PIN, policy and bonds
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `settings set --name ble-key`; `settings set --name ble-pairing`; `settings clear-bonds`
 - SDK: **supported**. `Client.SetBLEKey`; `Client.SetBLEPairing`; `Client.ClearBLEBonds`
 
@@ -109,7 +109,7 @@ Sources: [settings.go](../settings.go), [transport_info.go](../transport_info.go
 
 ## device.reset — Reset settings or device
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `settings reset`; `settings factory-reset`
 - SDK: **supported**. `Client.ResetSettings`; `Client.FactoryReset`
 
@@ -124,7 +124,7 @@ Sources: [settings.go](../settings.go).
 
 ## device.mode — Reader/emulator mode
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mode`
 - SDK: **supported**. `Client.SetReaderMode`
 
@@ -150,7 +150,7 @@ Sources: [settings.go](../settings.go).
 
 ## slot.configure — Slot types, defaults and enable state
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `slot type`; `slot init`; `slot enable`; `slot delete`
 - SDK: **supported**. `Client.SetSlotType`; `Client.InitializeSlot`; `Client.EnableSlot`; `Client.DeleteSlot`
 
@@ -167,7 +167,7 @@ Sources: [settings.go](../settings.go).
 
 ## slot.details — Slot detail and nicknames
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `slot list`; `slot nickname-get`; `slot nickname-set`; `slot nickname-delete`
 - SDK: **supported**. `Client.SlotDetails`; `Client.ReadSlotNickname`; `Client.UpdateSlotNickname`
 
@@ -186,7 +186,7 @@ Sources: [slot_workflows.go](../slot_workflows.go).
 
 ## slot.initialize — Initialize all slots
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `slot openall`
 - SDK: **supported**. `Client.InitializeAllSlots`
 
@@ -202,7 +202,7 @@ Sources: [slot_workflows.go](../slot_workflows.go).
 
 ## slot.prng — Slot PRNG configuration
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `slot prng`
 - SDK: **supported**. `Client.SlotPRNG`
 
@@ -231,7 +231,7 @@ Sources: [gui_slot.go](../gui_slot.go).
 
 ## slot.memory — Emulator memory import/export
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc eload`; `mfc esave`; `mfc eview`; `type2 eload`; `type2 esave`; `type2 eview`; `image save`; `image load`
 - SDK: **supported**. `Client.ExportSlotMemory`; `Client.LoadSlotMemory`
 
@@ -246,7 +246,7 @@ Sources: [memory_files.go](../memory_files.go).
 
 ## slot.emulator — Emulator flags and Type2 extras
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `emulator config`; `emulator configure`; `emulator counter`; `emulator reset-auth`; `emulator password-log`
 - SDK: **supported**. `Client.SlotEmulatorConfig`; `Client.ConfigureSlotEmulator`; `Client.SlotCounter`; `Client.ResetSlotAuthAttempts`; `Client.Type2DetectionLogs`
 
@@ -290,7 +290,7 @@ Sources: [cards.go](../cards.go).
 
 ## reader.lf — LF protocol reading
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `lf read`
 - SDK: **supported**. `Client.ReadLFRecord`
 
@@ -313,7 +313,7 @@ Sources: [lf_workflows.go](../lf_workflows.go).
 
 ## reader.config — HF inspection and RF configuration
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `rf info`; `rf config`; `rf config-set`
 - SDK: **supported**. `Client.InspectHFCard`; `Client.ReaderConfig`; `Client.SetReaderConfig`
 
@@ -328,7 +328,7 @@ Sources: [reader_extras.go](../reader_extras.go).
 
 ## classic.read — Classic authentication and block reading
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc auth`; `mfc read`; `mfc dump`; `mfc dump-keys`
 - SDK: **supported**. `Client.AuthenticateClassic`; `Client.ReadClassicBlock`; `Client.DumpClassic`; `Client.DumpClassicWithKeys`
 
@@ -343,7 +343,7 @@ Sources: [cards.go](../cards.go), [classic_workflows.go](../classic_workflows.go
 
 ## classic.write — Classic block writing and cloning
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc write`; `mfc clone`
 - SDK: **supported**. `Client.WriteClassicBlock`; `Client.CloneClassic`
 
@@ -360,7 +360,7 @@ Sources: [classic_clone.go](../classic_clone.go), [cards.go](../cards.go).
 
 ## classic.value — Classic value blocks
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc value-get`; `mfc value-set`; `mfc value-inc`; `mfc value-dec`; `mfc value-copy`; `mfc value-decode`
 - SDK: **supported**. `Client.ReadClassicValue`; `Client.WriteClassicValue`; `Client.ManipulateClassicValue`
 
@@ -376,7 +376,7 @@ Sources: [classic_workflows.go](../classic_workflows.go).
 
 ## classic.dictionary — Classic dictionary checking
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc dictionary`; `mfc autopwn`
 - SDK: **supported**. `Client.CheckClassicDictionary`; `Client.Autopwn`
 
@@ -393,7 +393,7 @@ Sources: [classic_workflows.go](../classic_workflows.go).
 
 ## classic.recover — Classic recovery strategies
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc recover`; `mfc senested`
 - SDK: **supported**. `Client.RecoverClassic`; `Client.RecoverStaticEncrypted`
 
@@ -413,7 +413,7 @@ Sources: [recovery_advanced.go](../recovery_advanced.go), [recovery_senested.go]
 
 ## classic.recovery-bundle — Recovery collection, offline compute and verification
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc recover-collect`; `mfc recover-compute`; `mfc recover-verify`
 - SDK: **supported**. `Client.CollectRecoveryBundle`; `ComputeRecovery`; `Client.VerifyRecoveryCandidate`
 
@@ -429,7 +429,7 @@ Sources: [recovery_bundle.go](../recovery_bundle.go).
 
 ## classic.logs — Detection logs and mfkey32 recovery
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `mfc auth-log`; `mfc recover-log`
 - SDK: **supported**. `Client.ClassicDetectionLogs`; `RecoverDetectionLogs`
 
@@ -445,7 +445,7 @@ Sources: [detection_recovery.go](../detection_recovery.go).
 
 ## type2.memory — Type2 page access and password authentication
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `type2 read`; `type2 write`; `type2 password-read`; `type2 password-write`
 - SDK: **supported**. `Client.ReadType2Pages`; `Client.WriteType2Page`; `Client.ReadType2Authenticated`; `Client.WriteType2Authenticated`
 
@@ -461,7 +461,7 @@ Sources: [cards.go](../cards.go), [reader_extras.go](../reader_extras.go).
 
 ## type2.inspect — Type2 version, signature, counters and nonce
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `type2 version`; `type2 signature`; `type2 counter`; `type2 authnonce`
 - SDK: **supported**. `Client.Type2Info`
 
@@ -475,9 +475,9 @@ Sources: [reader_extras.go](../reader_extras.go).
 
 ## type2.auto-dump — Automatic Type2 capacity/full dump
 
-- WEB: **missing**. 
-- CLI: **missing**. 
-- SDK: **missing**. 
+- WEB: **missing**.
+- CLI: **missing**.
+- SDK: **missing**.
 
 Models: ultra, lite (device-independent).
 Transport policy: `any`. Effect: `offline`.
@@ -489,7 +489,7 @@ Sources: [reader_extras.go](../reader_extras.go).
 
 ## ulc.memory — Ultralight-C access and key changes
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `ulc auth`; `ulc read`; `ulc write`; `ulc set-key`
 - SDK: **supported**. `Client.AuthenticateULC`; `Client.ReadULC`; `Client.WriteULCPage`; `Client.SetULCKey`
 
@@ -506,7 +506,7 @@ Sources: [reader_extras.go](../reader_extras.go).
 
 ## ulc.recover — ULCG acquisition and recovery
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `ulc ulcg-collect`; `ulc ulcg-recover`
 - SDK: **supported**. `Client.CollectULCG`; `RecoverULCG`
 
@@ -520,7 +520,7 @@ Sources: [ulcg.go](../ulcg.go).
 
 ## gen1a.tools — GEN1A card tools
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `gen1a detect`; `gen1a read`; `gen1a write-block`; `gen1a set-uid`
 - SDK: **supported**. `Client.DetectGen1A`; `Client.Gen1AReadBlock`; `Client.Gen1AWriteBlock`; `Client.Gen1ASetUID`
 
@@ -534,7 +534,7 @@ Sources: [gen1a.go](../gen1a.go).
 
 ## gen3.tools — GEN3 card tools
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `gen3 detect`; `gen3 block0`; `gen3 set-uid`; `gen3 lock`
 - SDK: **supported**. `Client.DetectGen3`; `Client.Gen3WriteBlock0`; `Client.Gen3SetUID`; `Client.Gen3Lock`
 
@@ -548,7 +548,7 @@ Sources: [gen3.go](../gen3.go).
 
 ## gen4.tools — GEN4 card tools
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `gen4 config`; `gen4 dump`; `gen4 write-block`; `gen4 write-config`; `gen4 set-uid`; `gen4 set-password`
 - SDK: **supported**. `Client.Gen4ReadConfig`; `Client.Gen4Dump`; `Client.Gen4WriteBlock`
 
@@ -562,7 +562,7 @@ Sources: [gen4.go](../gen4.go).
 
 ## lf.clone — LF encoding and physical T55xx cloning
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `lf clone`; `lf encode`; `lf decode`; `lf formats`
 - SDK: **supported**. `Client.CloneLF`; `Client.EncodeLFIdentity`; `HIDFormats`
 
@@ -578,7 +578,7 @@ Sources: [lf_workflows.go](../lf_workflows.go).
 
 ## lf.emulator — LF emulator identity
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `lf econfig`
 - SDK: **supported**. `Client.SlotLFIdentity`
 
@@ -594,7 +594,7 @@ Sources: [lf_workflows.go](../lf_workflows.go).
 
 ## t55.clean — T55xx password cleaner
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `t55 clean`
 - SDK: **supported**. `Client.CleanT55Password`
 
@@ -608,7 +608,7 @@ Sources: [t55_cleaner.go](../t55_cleaner.go).
 
 ## t55.raw-block — T55xx arbitrary block write
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **raw**. `call LF_T55XX_WRITE`
 - SDK: **raw**. `Client.WireLfT55xxWrite`
 
@@ -622,7 +622,7 @@ Sources: [wire_gen.go](../wire_gen.go).
 
 ## protocol.raw — Raw firmware command
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `call`
 - SDK: **supported**. `Client.Execute`; `Client.ExecuteWithOptions`
 
@@ -636,7 +636,7 @@ Sources: [execute.go](../execute.go).
 
 ## protocol.hf-raw — Raw ISO14443-A exchange
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `raw`
 - SDK: **supported**. `Client.Raw14A`
 
@@ -652,7 +652,7 @@ Sources: [cards.go](../cards.go).
 
 ## protocol.apdu — ISO14443-4 APDU exchange
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `apdu`
 - SDK: **supported**. `Client.ReaderAPDU`
 
@@ -666,7 +666,7 @@ Sources: [advanced.go](../advanced.go).
 
 ## emv.tools — EMV analysis and response profiles
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `emv scan`; `emv debug`; `emv load`; `emv tlv`
 - SDK: **supported**. `Client.ScanEMV`; `Client.LoadISO4Profile`; `ParseBERTLV`
 
@@ -682,7 +682,7 @@ Sources: [emv.go](../emv.go).
 
 ## desfire.tools — DESFire inspection and dictionary
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `des info`; `des auth`; `des check`
 - SDK: **supported**. `Client.DESFireInfo`; `Client.AuthenticateDESFire`; `Client.CheckDESFireDictionary`
 
@@ -696,7 +696,7 @@ Sources: [desfire.go](../desfire.go).
 
 ## seos.tools — SEOS emulator data/keys
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `seos get`; `seos set`; `seos keys`
 - SDK: **supported**. `Client.SEOSData`; `Client.SetSEOSData`; `Client.SetSEOSKeys`
 
@@ -712,7 +712,7 @@ Sources: [seos.go](../seos.go).
 
 ## rf.hf-trace — HF sniff and authentication trace
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `sniff`; `rf auth-trace`
 - SDK: **supported**. `Client.SniffHF`; `Client.AuthTrace`
 
@@ -727,7 +727,7 @@ Sources: [advanced.go](../advanced.go), [reader_extras.go](../reader_extras.go).
 
 ## rf.lf-samples — LF samples and ADC
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `rf lf-samples`; `rf adc`
 - SDK: **supported**. `Client.CaptureLF`; `Client.ReadLFADC`
 
@@ -742,7 +742,7 @@ Sources: [reader_extras.go](../reader_extras.go).
 
 ## files.samples — Offline sample analysis
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `data csv`; `data plot`; `data modulation`; `data manrawdecode`
 - SDK: **supported**. `AnalyzeLFSamples`; `DecodeManchester`
 
@@ -768,7 +768,7 @@ Sources: [gui_database.go](../gui_database.go).
 
 ## files.card — Saved-card file conversion
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `cardfile inspect`; `cardfile to-image`; `cardfile from-image`; `cardfile to-bin`; `cardfile from-bin`
 - SDK: **supported**. `ParseGUICard`; `NewGUICardFromDump`
 
@@ -869,8 +869,8 @@ Sources: [dictionary_download.go](../dictionary_download.go).
 ## library.persistence — Browser-local library saving/recovery
 
 - WEB: **supported**. `browser IndexedDB`
-- CLI: **missing**. 
-- SDK: **missing**. 
+- CLI: **missing**.
+- SDK: **missing**.
 
 Models: ultra, lite (device-independent).
 Transport policy: `any`. Effect: `offline`.
@@ -882,7 +882,7 @@ Sources: [cmd/chameleon/webui/library-persistence.js](../cmd/chameleon/webui/lib
 
 ## backup.create — Device snapshot backup
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `backup create`
 - SDK: **supported**. `Client.BackupDevice`
 
@@ -898,7 +898,7 @@ Sources: [backup.go](../backup.go).
 
 ## backup.restore — Device snapshot restore
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `backup restore`
 - SDK: **supported**. `Client.RestoreDevice`; `DeviceBackup.RestorePlan`
 
@@ -930,7 +930,7 @@ Sources: [firmware_update.go](../firmware_update.go).
 
 ## firmware.download — Firmware download and inspection
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `firmware download`; `firmware inspect`
 - SDK: **supported**. `FirmwareUpdater.DownloadFirmware`; `InspectFirmware`
 
@@ -944,7 +944,7 @@ Sources: [firmware_update.go](../firmware_update.go), [firmware.go](../firmware.
 
 ## firmware.enter — Enter the bootloader
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `firmware enter`
 - SDK: **supported**. `Client.EnterBootloader`
 
@@ -958,7 +958,7 @@ Sources: [execute.go](../execute.go).
 
 ## firmware.flash — USB application DFU upload
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `firmware flash`
 - SDK: **supported**. `FlashFirmware`
 
@@ -972,8 +972,8 @@ Sources: [firmware_flash.go](../firmware_flash.go).
 
 ## firmware.ble-dfu — BLE DFU helper only
 
-- WEB: **missing**. 
-- CLI: **missing**. 
+- WEB: **missing**.
+- CLI: **missing**.
 - SDK: **raw**. `dfu.UploadBLE`
 
 Models: ultra, lite (device-independent).
@@ -986,7 +986,7 @@ Sources: [dfu/upload.go](../dfu/upload.go).
 
 ## diagnostics.device — Diagnostics and transport stress
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `doctor`; `stress`
 - SDK: **supported**. `Client.Diagnose`; `Client.Stats`
 
@@ -1000,7 +1000,7 @@ Sources: [diagnostics.go](../diagnostics.go).
 
 ## recovery.offline — Offline recovery workers
 
-- WEB: **missing**. 
+- WEB: **missing**.
 - CLI: **supported**. `recover`
 - SDK: **supported**. `RunRecovery`; `RecoveryTools`
 
@@ -1029,7 +1029,7 @@ Sources: [bridge_control.go](../bridge_control.go).
 ## bridge.select — Managed BLE select
 
 - WEB: **supported**. `POST /api/bridge/select`
-- CLI: **missing**. 
+- CLI: **missing**.
 - SDK: **supported**. `BLEBridge.Select`
 
 Models: ultra, lite (device-independent).
@@ -1043,7 +1043,7 @@ Sources: [bridge_control.go](../bridge_control.go).
 ## bridge.connect — Managed BLE connect
 
 - WEB: **supported**. `POST /api/bridge/connect`
-- CLI: **missing**. 
+- CLI: **missing**.
 - SDK: **supported**. `BLEBridge.Connect`
 
 Models: ultra, lite (device-independent).
@@ -1057,7 +1057,7 @@ Sources: [bridge_control.go](../bridge_control.go).
 ## bridge.status — Managed BLE status
 
 - WEB: **supported**. `GET /api/bridge/status`
-- CLI: **missing**. 
+- CLI: **missing**.
 - SDK: **supported**. `BLEBridge.Status`
 
 Models: ultra, lite (device-independent).
@@ -1071,7 +1071,7 @@ Sources: [bridge_control.go](../bridge_control.go).
 ## bridge.disconnect — Managed BLE disconnect
 
 - WEB: **supported**. `POST /api/bridge/disconnect`
-- CLI: **missing**. 
+- CLI: **missing**.
 - SDK: **supported**. `BLEBridge.Disconnect`
 
 Models: ultra, lite (device-independent).
@@ -1084,8 +1084,8 @@ Sources: [bridge_control.go](../bridge_control.go).
 
 ## transport.native-ble — Removed native BLE
 
-- WEB: **missing**. 
-- CLI: **missing**. 
+- WEB: **missing**.
+- CLI: **missing**.
 - SDK: **removed**. `OpenBLE`; `ScanBLE`
 
 Models: ultra, lite (device-independent).
@@ -1095,4 +1095,3 @@ Requirement mode: `external`. Unconditional commands: None.
 Compatibility calls return ErrBLEUnavailable. Use the Python bridge.
 
 Sources: [ble.go](../ble.go).
-
