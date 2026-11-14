@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <inttypes.h>
+#include "staticnested_dictionary.h"
 
 static uint32_t hex_to_uint32(const char *hex_str) {
     return (uint32_t)strtoul(hex_str, NULL, 16);
@@ -120,34 +121,9 @@ int main(int argc, char *const argv[]) {
     uint32_t keycount2 = 0;
     uint64_t *keys2 = NULL;
 
-    FILE *fptr = fopen(filename, "r");
-    if (fptr != NULL) {
-
-        uint64_t buffer;
-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
-            keycount2++;
-        }
-
-        keys2 = (uint64_t *)calloc(1, keycount2 * sizeof(uint64_t));
-        if (keys2 == NULL) {
-            perror("Failed to allocate memory");
-            fclose(fptr);
-            goto end;
-        }
-
-        rewind(fptr);
-
-        for (uint32_t i = 0; i < keycount2; i++) {
-            if (fscanf(fptr, "%012" PRIx64, &keys2[i]) != 1) {
-                perror("Failed to read key");
-                fclose(fptr);
-                goto end;
-            }
-        }
-        fclose(fptr);
-
-    } else {
-        fprintf(stderr, "Warning: Cannot open %s\n", filename);
+    int status = EXIT_FAILURE;
+    if (load_key_dictionary(filename, &keys2, &keycount2) != 0) {
+        perror("Cannot load key dictionary");
         goto end;
     }
 
@@ -155,15 +131,18 @@ int main(int argc, char *const argv[]) {
     uint16_t seednt1 = compute_seednt16_nt32(nt1, key1);
     for (uint32_t i = 0; i < keycount2; i++) {
         if (seednt1 == compute_seednt16_nt32(nt2, keys2[i])) {
-            printf("%012" PRIx64 "\n", keys2[i]);
+            if (printf("%012" PRIx64 "\n", keys2[i]) < 0) goto end;
             found++;
         }
     }
+
+    if (fflush(stdout) != 0) goto end;
+    status = EXIT_SUCCESS;
 
 end:
     if (keys2 != NULL) {
         free(keys2);
     }
 
-    return 0;
+    return status;
 }
