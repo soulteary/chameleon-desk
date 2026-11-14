@@ -10,47 +10,83 @@ import (
 	"time"
 )
 
+// DetectionLogs reads the active slot's complete Classic log snapshot.
+// It rejects snapshots larger than limit rather than returning a partial log.
 func (c *Client) DetectionLogs(ctx context.Context, limit int) (out []AuthLog, err error) {
-	out = []AuthLog{}
 	if limit < 1 || limit > 100000 {
 		return nil, fmt.Errorf("log limit must be 1..100000")
 	}
+	out = []AuthLog{}
 	err = c.Emulator(ctx, func(s *ReaderSession) error {
-		b, e := s.expect(ctx, CmdMf1GetDetectionCount, nil, 0x68)
+		var e error
+		out, e = classicDetectionLogs(ctx, s, 0, limit, true)
+		return e
+	})
+	return
+}
+
+// ClassicDetectionLogs reads at most limit records from start in one slot's
+// snapshot. Slot 0 selects the active slot; other selections are restored.
+func (c *Client) ClassicDetectionLogs(ctx context.Context, slot int, start uint32, limit int) (out []AuthLog, err error) {
+	if limit < 1 || limit > 100000 {
+		return nil, fmt.Errorf("log limit must be 1..100000")
+	}
+	out = []AuthLog{}
+	err = c.slotSession(ctx, slot, false, func(s *ReaderSession) error {
+		_, _, _, width, e := c.activeGeometry(ctx)
 		if e != nil {
 			return e
 		}
-		if len(b) != 4 {
-			return fmt.Errorf("invalid detection count")
+		if width != 16 {
+			return fmt.Errorf("authentication logs require a Classic slot")
 		}
-		count := int(binary.BigEndian.Uint32(b))
-		if count > limit {
-			return fmt.Errorf("log count exceeds requested limit")
-		}
-		for pos := 0; pos < count; {
-			payload := make([]byte, 4)
-			binary.BigEndian.PutUint32(payload, uint32(pos))
-			b, e = s.expect(ctx, CmdMf1GetDetectionLog, payload, 0x68)
-			if e != nil {
-				return e
-			}
-			if len(b) == 0 || len(b)%18 != 0 {
-				return fmt.Errorf("truncated detection log or no forward progress")
-			}
-			n := min(len(b)/18, count-pos)
-			for i := 0; i < n; i++ {
-				p := b[i*18:]
-				kind := "A"
-				if p[1]&1 != 0 {
-					kind = "B"
-				}
-				out = append(out, AuthLog{p[0], kind, p[1]&2 != 0, append(HexBytes(nil), p[2:6]...), append(HexBytes(nil), p[6:10]...), append(HexBytes(nil), p[10:14]...), append(HexBytes(nil), p[14:18]...)})
-			}
-			pos += n
-		}
-		return nil
+		out, e = classicDetectionLogs(ctx, s, start, limit, false)
+		return e
 	})
 	return
+}
+
+func classicDetectionLogs(ctx context.Context, s *ReaderSession, start uint32, limit int, requireComplete bool) ([]AuthLog, error) {
+	out := []AuthLog{}
+	b, e := s.expect(ctx, CmdMf1GetDetectionCount, nil, 0x68)
+	if e != nil {
+		return out, e
+	}
+	if len(b) != 4 {
+		return out, fmt.Errorf("invalid detection count")
+	}
+	count := binary.BigEndian.Uint32(b)
+	if requireComplete && count > uint32(limit) {
+		return out, fmt.Errorf("log count exceeds requested limit")
+	}
+	if start > count {
+		return out, fmt.Errorf("start exceeds snapshot count")
+	}
+	for pos := start; pos < count && len(out) < limit; {
+		payload := make([]byte, 4)
+		binary.BigEndian.PutUint32(payload, pos)
+		b, e = s.expect(ctx, CmdMf1GetDetectionLog, payload, 0x68)
+		if e != nil {
+			return out, e
+		}
+		if len(b) == 0 || len(b)%18 != 0 {
+			return out, fmt.Errorf("truncated detection log or no forward progress")
+		}
+		n := min(len(b)/18, limit-len(out))
+		if uint32(n) > count-pos {
+			n = int(count - pos)
+		}
+		for i := 0; i < n; i++ {
+			p := b[i*18:]
+			kind := "A"
+			if p[1]&1 != 0 {
+				kind = "B"
+			}
+			out = append(out, AuthLog{p[0], kind, p[1]&2 != 0, append(HexBytes(nil), p[2:6]...), append(HexBytes(nil), p[6:10]...), append(HexBytes(nil), p[10:14]...), append(HexBytes(nil), p[14:18]...)})
+		}
+		pos += uint32(n)
+	}
+	return out, nil
 }
 
 type DetectionKeyCandidate struct {

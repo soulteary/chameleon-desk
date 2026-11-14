@@ -3,6 +3,8 @@ package chameleon
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -106,6 +108,39 @@ func TestNdefType2Container(t *testing.T) {
 	hugeMsg, _ := EncodeNdefMessage([]NdefRecord{huge})
 	if e = again.WriteMessage(blocks, hugeMsg); e == nil {
 		t.Fatal("oversized NDEF message accepted")
+	}
+}
+
+func TestNdefType2RejectsIncompletePhysicalPages(t *testing.T) {
+	for _, size := range []int{0, 1, 3, 5} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			blocks := make([][]byte, 8)
+			for i := range blocks {
+				blocks[i] = make([]byte, 4)
+			}
+			blocks[3] = []byte{0xE1, 0x10, 2, 0}
+			blocks[4] = make([]byte, size)
+			// This TLV is physically on page 5. Missing bytes on page 4 must
+			// never be compacted out to turn it into the start of user memory.
+			blocks[5] = []byte{0x03, 0x00, 0xFE, 0}
+			before, _ := json.Marshal(blocks)
+			if _, e := DetectNdef(1100, blocks); e == nil {
+				t.Fatal("incomplete page accepted as a writable NDEF container")
+			}
+			after, _ := json.Marshal(blocks)
+			if !bytes.Equal(before, after) {
+				t.Fatal("rejected dump was modified")
+			}
+		})
+	}
+	blocks := make([][]byte, 7)
+	for i := range blocks {
+		blocks[i] = make([]byte, 4)
+	}
+	blocks[3] = []byte{0xE1, 0x10, 2, 0}
+	blocks[4] = []byte{0x03, 0, 0xFE, 0}
+	if _, e := DetectNdef(1100, blocks); e == nil {
+		t.Fatal("dump shorter than the capability-container region accepted")
 	}
 }
 
