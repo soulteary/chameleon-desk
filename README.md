@@ -10,7 +10,8 @@ Available operations depend on the device model and firmware capabilities.
 
 ## Build
 
-Requires Go 1.22 or later; use Go 1.27 on macOS 26. Go dependencies are vendored.
+Requires Go 1.22 or later; use Go 1.27 on macOS 26. Go dependency versions and
+checksums are recorded in `go.mod` and `go.sum`.
 Native Bluetooth on macOS also requires a C compiler; other platforms use USB
 serial or a serial TCP bridge. Node.js and Python are not needed to build or run
 the workbench.
@@ -18,6 +19,7 @@ the workbench.
 ```sh
 git clone https://github.com/soulteary/chameleon-desk.git
 cd chameleon-desk
+go mod download
 ./scripts/build.sh
 ./chameleon version
 ```
@@ -65,15 +67,17 @@ the build script also supports Homebrew's `openssl@3` and `xz` installations.
 
 ## Tests
 
-Install Node.js 18 or later and the test dependencies once:
+Install Node.js 18 or later and download the test and Go dependencies once:
 
 ```sh
 npm ci --ignore-scripts
+go mod download
 ./scripts/check.sh
 ```
 
 The check script runs Go race tests, coverage, vet, Web UI regressions, and a
-CLI build. It disables hardware-test opt-ins and uses vendored Go dependencies.
+CLI build. It disables hardware-test opt-ins and Go dependency downloads, using
+the verified local module cache. Builds and checks use `-mod=readonly`.
 Results are written to the ignored `reports/` directory. Hardware tests remain
 opt-in and are not part of CI.
 On Linux and macOS, the suite also runs C helper regressions with AddressSanitizer.

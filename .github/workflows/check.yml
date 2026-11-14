@@ -30,6 +30,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: false
+      - run: go mod download
       - name: Install Linux recovery test dependencies
         if: runner.os == 'Linux'
         run: |
