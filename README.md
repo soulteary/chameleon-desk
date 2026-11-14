@@ -12,9 +12,9 @@ Available operations depend on the device model and firmware capabilities.
 
 Requires Go 1.22 or later; use Go 1.27 on macOS 26. Go dependency versions and
 checksums are recorded in `go.mod` and `go.sum`.
-Native Bluetooth on macOS also requires a C compiler; other platforms use USB
-serial or a serial TCP bridge. Node.js and Python are not needed to build or run
-the workbench.
+Native Bluetooth on macOS also requires a C compiler. USB serial and TCP work
+with `CGO_ENABLED=0`. Node.js and Python are not needed to build or run the
+workbench itself.
 
 ```sh
 git clone https://github.com/soulteary/chameleon-desk.git
@@ -23,6 +23,11 @@ go mod download
 ./scripts/build.sh
 ./chameleon version
 ```
+
+An optional [Python + Bleak bridge](tools/ble_bridge/README.md) provides BLE
+through the existing TCP transport, including with a cgo-disabled Desk binary.
+It runs separately; native macOS BLE remains available. See its setup,
+connection limits and offline tests before use.
 
 ## Web UI
 

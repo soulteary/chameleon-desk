@@ -9,6 +9,40 @@ permissions:
   contents: read
 
 jobs:
+  ble-bridge:
+    name: BLE bridge (${{ matrix.os }}, cgo disabled)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      CGO_ENABLED: '0'
+      CHAMELEON_TEST_PORT: ''
+      CHAMELEON_TEST_NO_CARD: ''
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.x'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r tools/ble_bridge/requirements.txt
+      - run: python -m pip check
+      - run: python -c "from bleak import BleakClient, BleakScanner"
+      - run: go mod download
+      # Existing recovery fixtures require a POSIX shell and file semantics.
+      # Windows still builds and runs the CLI through the bridge below.
+      - name: Run existing Go tests on Unix
+        if: runner.os != 'Windows'
+        run: go test -mod=readonly ./...
+      - run: go build -mod=readonly -trimpath -o chameleon-nocgo.exe ./cmd/chameleon
+      - run: ./chameleon-nocgo.exe version
+      - name: Run offline bridge and CLI integration tests
+        env:
+          CHAMELEON_BRIDGE_TEST_BINARY: chameleon-nocgo.exe
+        run: python -m unittest discover -s tools/ble_bridge -v
   offline:
     name: Offline checks (${{ matrix.os }}, Go ${{ matrix.go }})
     runs-on: ${{ matrix.os }}
