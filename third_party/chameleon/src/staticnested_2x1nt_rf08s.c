@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <inttypes.h>
+#include "staticnested_dictionary.h"
 
 uint16_t i_lfsr16[1 << 16] = {0};
 uint16_t s_lfsr16[1 << 16] = {0};
@@ -128,72 +129,23 @@ int main(int argc, char *const argv[]) {
     uint8_t *filter_keys2 = NULL;
     FILE *fptr;
 
-    fptr = fopen(filename1, "r");
-    if (fptr != NULL) {
-
-        uint64_t buffer;
-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
-            keycount1++;
-        }
-
-        keys1 = (uint64_t *)calloc(1, keycount1 * sizeof(uint64_t));
-        filter_keys1 = (uint8_t *)calloc(keycount1, sizeof(uint8_t));
-        if ((keys1 == NULL) || (filter_keys1 == NULL)) {
-            perror("Failed to allocate memory");
-            fclose(fptr);
-            goto end;
-        }
-
-        rewind(fptr);
-
-        for (uint32_t i = 0; i < keycount1; i++) {
-            if (fscanf(fptr, "%012" PRIx64, &keys1[i]) != 1) {
-                perror("Failed to read key");
-                fclose(fptr);
-                goto end;
-            }
-        }
-        fclose(fptr);
-    } else {
-        fprintf(stderr, "Warning: Cannot open %s\n", filename1);
+    int status = EXIT_FAILURE;
+    if (load_key_dictionary(filename1, &keys1, &keycount1) != 0 ||
+        load_key_dictionary(filename2, &keys2, &keycount2) != 0) {
+        perror("Cannot load key dictionary");
         goto end;
     }
-
-    fptr = fopen(filename2, "r");
-    if (fptr != NULL) {
-
-        uint64_t buffer;
-        while (fscanf(fptr, "%012" PRIx64, &buffer) == 1) {
-            keycount2++;
-        }
-
-        keys2 = (uint64_t *)calloc(1, keycount2 * sizeof(uint64_t));
-        filter_keys2 = (uint8_t *)calloc(keycount2, sizeof(uint8_t));
-        if ((keys2 == NULL) || (filter_keys2 == NULL)) {
-            perror("Failed to allocate memory");
-            fclose(fptr);
-            goto end;
-        }
-
-        rewind(fptr);
-
-        for (uint32_t i = 0; i < keycount2; i++) {
-            if (fscanf(fptr, "%012" PRIx64, &keys2[i]) != 1) {
-                perror("Failed to read key");
-                fclose(fptr);
-                goto end;
-            }
-        }
-        fclose(fptr);
-    } else {
-        fprintf(stderr, "Warning: Cannot open %s\n", filename2);
+    filter_keys1 = calloc(keycount1 ? keycount1 : 1, sizeof(*filter_keys1));
+    filter_keys2 = calloc(keycount2 ? keycount2 : 1, sizeof(*filter_keys2));
+    if (filter_keys1 == NULL || filter_keys2 == NULL) {
+        perror("Failed to allocate memory");
         goto end;
     }
 
     printf("%s: %u keys loaded\n", filename1, keycount1);
     printf("%s: %u keys loaded\n", filename2, keycount2);
 
-    seednt1 = (uint16_t *)calloc(1, keycount1 * sizeof(uint16_t));
+    seednt1 = (uint16_t *)calloc(keycount1 ? keycount1 : 1, sizeof(uint16_t));
     if (seednt1 == NULL) {
         perror("Failed to allocate memory");
         goto end;
@@ -224,13 +176,21 @@ int main(int argc, char *const argv[]) {
         for (uint32_t j = 0; j < keycount1; j++) {
             if (filter_keys1[j]) {
                 filter_keycount1++;
-                fprintf(fptr, "%012" PRIx64 "\n", keys1[j]);
+                if (fprintf(fptr, "%012" PRIx64 "\n", keys1[j]) < 0) {
+                    perror("Cannot write key dictionary");
+                    fclose(fptr);
+                    goto end;
+                }
             }
         }
-        fclose(fptr);
+        if (fclose(fptr) != 0) {
+            perror("Cannot close key dictionary");
+            goto end;
+        }
 
     } else {
-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filter_filename1);
+        fprintf(stderr, "Cannot save keys in %s\n", filter_filename1);
+        goto end;
     }
 
     char filter_filename2[40];
@@ -243,16 +203,26 @@ int main(int argc, char *const argv[]) {
         for (uint32_t j = 0; j < keycount2; j++) {
             if (filter_keys2[j]) {
                 filter_keycount2++;
-                fprintf(fptr, "%012" PRIx64 "\n", keys2[j]);
+                if (fprintf(fptr, "%012" PRIx64 "\n", keys2[j]) < 0) {
+                    perror("Cannot write key dictionary");
+                    fclose(fptr);
+                    goto end;
+                }
             }
         }
-        fclose(fptr);
+        if (fclose(fptr) != 0) {
+            perror("Cannot close key dictionary");
+            goto end;
+        }
 
     } else {
-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filter_filename2);
+        fprintf(stderr, "Cannot save keys in %s\n", filter_filename2);
+        goto end;
     }
     printf("%s: %u keys saved\n", filter_filename1, filter_keycount1);
     printf("%s: %u keys saved\n", filter_filename2, filter_keycount2);
+
+    status = EXIT_SUCCESS;
 
 end:
     if (keys1 != NULL) {
@@ -275,5 +245,5 @@ end:
         free(seednt1);
     }
 
-    return 0;
+    return status;
 }
