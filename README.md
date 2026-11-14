@@ -10,9 +10,10 @@ Available operations depend on the device model and firmware capabilities.
 
 ## Build
 
-Requires Go 1.22 or later. Go dependencies are vendored. Native Bluetooth on
-macOS also requires a C compiler; other platforms use USB serial or a serial
-TCP bridge. Node.js and Python are not needed to build or run the workbench.
+Requires Go 1.22 or later; use Go 1.27 on macOS 26. Go dependencies are vendored.
+Native Bluetooth on macOS also requires a C compiler; other platforms use USB
+serial or a serial TCP bridge. Node.js and Python are not needed to build or run
+the workbench.
 
 ```sh
 git clone https://github.com/soulteary/chameleon-desk.git
