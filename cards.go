@@ -17,12 +17,18 @@ type ReaderSession struct {
 // Do runs a wire command inside a Reader callback without reacquiring the client
 // gate. Do not retain the session or call Client methods from that callback.
 func (s *ReaderSession) Do(ctx context.Context, cmd Command, payload []byte) (Response, error) {
+	return s.DoWithOptions(ctx, cmd, payload, CommandOptions{})
+}
+
+// DoWithOptions sends a catalog command with explicit compatibility options.
+// It cannot enter the bootloader or extend the lifetime of a session.
+func (s *ReaderSession) DoWithOptions(ctx context.Context, cmd Command, payload []byte, options CommandOptions) (Response, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return Response{}, ErrClosed
 	}
-	if meta, ok := LookupCommand(cmd); !ok || !meta.Registered || cmd == CmdEnterBootloader {
+	if meta, ok := LookupCommand(cmd); !ok || (!meta.Registered && !options.AllowUnregistered) || cmd == CmdEnterBootloader {
 		return Response{}, fmt.Errorf("command not allowed in reader session")
 	}
 	f, e := s.c.exchangeFrame(ctx, uint16(cmd), payload)

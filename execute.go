@@ -77,13 +77,26 @@ func (r Response) Check(statuses ...uint16) error {
 	return &StatusError{uint16(r.Command), r.Status}
 }
 
-// Execute exposes every catalog command. It preserves firmware status in the
+// CommandOptions controls explicit compatibility with firmware variants.
+type CommandOptions struct {
+	// AllowUnregistered permits commands in the pinned catalog that are not
+	// registered in its firmware. Unknown command IDs are always rejected.
+	AllowUnregistered bool
+}
+
+// Execute sends a command registered in the pinned firmware. It preserves status in the
 // Response; transport failures alone are Go errors. Check the response status.
 // Wire methods intentionally require pre-encoded bytes; typed methods are in
 // settings.go, emulator.go and cards.go. No mode switching is done here.
 func (c *Client) Execute(ctx context.Context, cmd Command, payload []byte) (Response, error) {
+	return c.ExecuteWithOptions(ctx, cmd, payload, CommandOptions{})
+}
+
+// ExecuteWithOptions sends a catalog command with explicit compatibility options.
+// It keeps Execute's serialization, timeout and send-only bootloader behavior.
+func (c *Client) ExecuteWithOptions(ctx context.Context, cmd Command, payload []byte, options CommandOptions) (Response, error) {
 	meta, ok := LookupCommand(cmd)
-	if !ok || !meta.Registered {
+	if !ok || (!meta.Registered && !options.AllowUnregistered) {
 		return Response{}, fmt.Errorf("%s is not registered in pinned firmware", cmd)
 	}
 	if cmd == CmdEnterBootloader {
