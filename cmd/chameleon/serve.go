@@ -126,6 +126,8 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/dictionary/download", ws.handleDictDownload)
 	mux.HandleFunc("/api/database", ws.handleDatabase)
 	mux.HandleFunc("/api/capabilities", ws.handleCaps)
+	mux.HandleFunc("/api/features/device", ws.handleFeatureDevice)
+	mux.HandleFunc("/api/features/check", ws.handleFeatureCheck)
 	for _, path := range []string{"status", "scan", "select", "connect", "disconnect"} {
 		mux.HandleFunc("/api/bridge/"+path, ws.handleBridge)
 	}
@@ -159,7 +161,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			method := http.MethodPost
 			switch r.URL.Path {
-			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status":
+			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status", "/api/features/device":
 				method = http.MethodGet
 			}
 			if r.Method != method {
@@ -241,6 +243,7 @@ func (ws *webServer) withDevice(parent context.Context, fn func(context.Context,
 }
 
 func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(context.Context, *chameleon.Client) (any, error)) {
+	w.Header().Set("Cache-Control", "no-store")
 	var out any
 	e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {
 		v, e := fn(ctx, c)
@@ -261,12 +264,23 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 }
 
 func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
-	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) { return c.Info(ctx) })
+	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
+		info, err := c.Info(ctx)
+		if err != nil {
+			return nil, err
+		}
+		device := chameleon.FeatureDevice{ModelID: &info.ModelID, Capabilities: info.Capabilities, Transport: info.Transport}
+		return struct {
+			chameleon.Info
+			FeatureSchemaVersion int                             `json:"feature_schema_version"`
+			FeatureStates        []chameleon.FeatureAvailability `json:"feature_states"`
+		}{info, chameleon.FeatureSchemaVersion, ws.featureStates(&device)}, nil
+	})
 }
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil})
+	writeJSON(w, map[string]any{"writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {
@@ -419,7 +433,7 @@ func readBody(r *http.Request, limit int64) ([]byte, error) {
 func decodeBody(r *http.Request, v any) error {
 	limit := int64(1 << 20)
 	switch r.URL.Path {
-	case "/api/slot/load-card", "/api/ndef/write":
+	case "/api/slot/load-card", "/api/ndef/write", "/api/features/check":
 		limit = webCardBodyLimit
 	case "/api/database":
 		limit = webDatabaseBodyLimit

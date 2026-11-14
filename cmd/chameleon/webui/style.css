@@ -27,3 +27,4 @@ html,body,#desktop{overflow:clip}
 /* Managed BLE controls share the device window's existing layout. */
 .bridge-panel{margin:16px 0;padding:16px;border:1px solid var(--line,#b7b7b7);border-radius:8px;background:rgba(255,255,255,.45)}
 .bridge-panel h3{margin:0 0 8px}.bridge-panel select{min-width:180px;max-width:100%}.bridge-panel [role="alert"]{color:#8b2424;overflow-wrap:anywhere}
+.feature-disabled-reason{display:block;color:#8b6142;font-size:11px;line-height:1.6;margin:4px 0 8px;max-width:420px}.feature-disabled-reason[hidden]{display:none}#feature-panel{margin:16px 0;font-size:12px}#feature-list{max-height:320px;overflow:auto}#feature-list>details{padding:8px 0;border-bottom:1px solid #dce5ed}#feature-list p{font-size:11px;overflow-wrap:anywhere}

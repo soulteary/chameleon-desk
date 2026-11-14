@@ -11,6 +11,16 @@ let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPen
 let bridgeEnabled = false, bridgeStatus = null;
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
+let featureAvailability = null;
+function clearFeatureDevice() { featureAvailability?.clear(); }
+function featureInfo(info) { featureAvailability?.observe(info); }
+async function refreshFeatures() {
+ try {
+  const value = await api("/api/features/device");
+  featureAvailability.setStates(value.schema_version, value.states, value.device);
+ } catch(error) { featureAvailability.clear(error.message); window.desktopToast("无法读取功能状态："+error.message); }
+}
+
 const dictionaryLabels = {
   "proxmark3-classic": "Classic 默认密钥",
   "proxmark3-t55xx": "T55xx 默认密码",
@@ -72,6 +82,7 @@ function updateWriteButtons() {
   document.querySelectorAll("[data-slot-active]").forEach((button) => { button.disabled = !writesEnabled || busy.has("hardware") || button.dataset.slotActive === "true"; });
   updateBridgeButtons();
   updateLibraryButtons();
+  featureAvailability?.apply();
 }
 
 function updateLibraryButtons() {
@@ -159,6 +170,7 @@ async function refreshBridgeStatus() {
   }
 }
 function clearBridgeDeviceView() {
+  clearFeatureDevice();
   setStatus(false, "设备会话已断开");
   $("#info-cards").replaceChildren(); $("#info-raw").replaceChildren();
   $("#device").classList.remove("has-device-data"); $("#device .device-hero h1").textContent = "Chameleon Desk";
@@ -257,6 +269,7 @@ async function loadInfo() {
   hardwareState(cards, "loading", "正在读取设备", "读取型号、工作模式、电量与槽位概览…");
   try {
     const info = await api("/api/info"); cards.replaceChildren();
+    featureInfo(info);
     if (!info || typeof info.model !== "string" || !Array.isArray(info.slots)) throw new Error("设备信息不完整，请重试读取");
     const fw = info.firmware ? info.firmware.major + "." + info.firmware.minor : "";
     setStatus(true, info.model + " · fw " + fw); $("#device").classList.add("has-device-data");
@@ -272,7 +285,7 @@ async function loadInfo() {
     });
     $("#info-raw").append(el("p","read-stamp",resultStamp()),rawDetails(info));
   } catch (error) {
-    setStatus(false,"设备连接失败"); $("#device").classList.remove("has-device-data");
+    clearFeatureDevice(); setStatus(false,"设备连接失败"); $("#device").classList.remove("has-device-data");
     hardwareFailure(cards,"未能连接设备",error,loadInfo);
   }
 }
@@ -280,6 +293,7 @@ async function loadSlots() {
   const list = $("#slot-list"); list.dataset.ready="false"; delete list.dataset.exportJson; hardwareState(list,"loading","正在读取槽位","读取当前槽位与 HF / LF 配置…");
   try {
     const info=await api("/api/info");
+    featureInfo(info);
     if (!info || !Array.isArray(info.slots)) throw new Error("槽位信息不完整，请重试读取");
     setStatus(true,info.model); list.replaceChildren();
     const active=info.slots.find((slot)=>slot.active), occupied=info.slots.filter((slot)=>slot.hf_enabled || slot.lf_enabled).length;
@@ -307,9 +321,10 @@ async function loadSlots() {
     if (!info.slots.length) hardwareState(grid,"empty","没有返回槽位","可重新读取设备信息确认。",loadSlots);
     list.append(grid,el("p","read-stamp",resultStamp()),rawDetails({slots:info.slots}));
     list.dataset.exportJson=JSON.stringify({slots:info.slots}); list.dataset.ready="true";
-  } catch (error) { setStatus(false,"设备连接失败"); hardwareFailure(list,"未能读取槽位",error,loadSlots); }
+  } catch (error) { clearFeatureDevice(); setStatus(false,"设备连接失败"); hardwareFailure(list,"未能读取槽位",error,loadSlots); }
 }
 function slotMutationFailure(error) {
+  clearFeatureDevice();
   const list = $("#slot-list"); list.dataset.ready = "false"; delete list.dataset.exportJson;
   hardwareFailure(list, "槽位状态需要重新读取", error, loadSlots);
 }
@@ -333,6 +348,11 @@ function renderScanCard(card, kind, index) {
   article.append(rawDetails(card)); return article;
 }
 async function scan(kind) {
+  const id = kind === "hf" ? "reader.hf-scan" : "reader.lf-scan";
+  if (featureAvailability.state(id).state === "unknown") await refreshFeatures();
+  if (featureAvailability.state(id).state !== "available") {
+    window.desktopToast("扫描不可用：请在设备管理中查看功能限制并刷新状态"); return;
+  }
   const out=$("#scan-out"); $("#read").classList.add("has-scan-data");
   $("#scan-hf").classList.toggle("primary",kind==="hf"); $("#scan-lf").classList.toggle("primary",kind==="lf");
   hardwareState(out,"loading","正在扫描 " + kind.toUpperCase(),"请将卡片保持在对应天线附近…");
@@ -344,7 +364,7 @@ async function scan(kind) {
     setStatus(true,"扫描完成 · 设备可用"); out.replaceChildren();
     if (!result.present) { hardwareState(out,"empty","未检测到 " + kind.toUpperCase() + " 卡片","设备已响应。请调整卡片位置，或确认所选频段后重试。",()=>scan(kind)); return; }
     out.append(resultHeader("已发现 " + cards.length + " 张卡片",resultStamp(),kind.toUpperCase())); cards.forEach((card,index)=>out.append(renderScanCard(card,kind,index)));
-  } catch (error) { setStatus(false,"设备操作失败"); hardwareFailure(out,"扫描未完成",error,()=>scan(kind)); }
+  } catch (error) { clearFeatureDevice(); setStatus(false,"设备操作失败"); hardwareFailure(out,"扫描未完成",error,()=>scan(kind)); }
 }
 const {renderToolResult,panelButton}=window.createToolPanels({el,$,appSymbol,fieldGrid,hardwareState,hexNumber,resultStamp});
 const outputGroups={"#db-out":"database","#ndef-out":"ndef","#acl-out":"acl","#vanity-out":"vanity","#dict-out":"dictionary","#fw-out":"hardware","#load-card-out":"hardware"};
@@ -404,6 +424,19 @@ function updateCardSource(input,container) {
 }
 function updateNdefSource(){updateCardSource("#ndef-input","#ndef-source");}
 function wire() {
+  featureAvailability = new window.DeskFeatureAvailability({ api: postJSON, changed: updateWriteButtons, writeAllowed: () => writesEnabled,
+    baseDisabled: (button, f) => {
+      if (f.requirement_mode === "bridge") return button.disabled;
+      const group = Object.entries(groups).find(([, ids]) => ids.includes(button.closest(".app-window")?.id))?.[0];
+      return busy.has(group) || (!!f.write && !writesEnabled) || button.dataset.slotActive === "true";
+    }
+  });
+  $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));
+  for(const id of ["#load-card-json", "#load-slot", "#load-persist", "#load-activate"]) {
+    $(id).addEventListener("input",()=>featureAvailability.checkCard());
+    $(id).addEventListener("change",()=>featureAvailability.checkCard());
+  }
+
   for (const action of ["scan", "select", "connect", "disconnect"]) $("#bridge-" + action).addEventListener("click", () => runTask("hardware", () => bridgeAction(action)));
   $("#bridge-refresh").addEventListener("click", () => runTask("hardware", refreshBridgeStatus));
   $("#bridge-devices").addEventListener("change", updateBridgeButtons);
@@ -547,12 +580,14 @@ async function loadCapabilities() {
   try {
     const caps = await api("/api/capabilities");
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
+    if (!featureAvailability.configure(caps)) throw new Error("功能清单版本或内容不受支持，请重试或更新服务后刷新");
     bridgeEnabled = caps.ble_bridge_enabled === true;
     $("#bridge-panel").hidden = !bridgeEnabled;
     if (bridgeEnabled) await refreshBridgeStatus();
     $("#write-note").textContent = writesEnabled ? "设备写入已启用" : "只读模式 · 仅查看设备配置";
     $("#menu-write-mode").textContent = writesEnabled ? "写入已启用" : "只读模式"; button.hidden = true;
   } catch (e) {
+    featureAvailability.clear("无法读取功能清单，请重试读取权限");
     writesEnabled = false; csrfToken = ""; button.hidden = false;
     $("#write-note").textContent = "无法读取服务权限：" + e.message;
     $("#menu-write-mode").textContent = "权限未就绪";

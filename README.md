@@ -66,6 +66,7 @@ and storage limits. Dictionary downloads and firmware checks require internet ac
 ./chameleon info
 ./chameleon scan --wait 15s
 ./chameleon commands --supported
+./chameleon features --surface cli
 ./chameleon acl --help
 ```
 
@@ -74,6 +75,11 @@ operations directly; inspect their arguments before use.
 
 The Go module is `github.com/soulteary/chameleon-desk`; its package name is
 `chameleon`. Use `go doc github.com/soulteary/chameleon-desk` to inspect the SDK.
+
+The [feature catalog](docs/features.md) records Web/CLI/SDK entrypoints and
+requirements. [Capability evaluation](docs/feature-capabilities.md) explains
+availability states, parameter-dependent commands and Web disable reasons.
+Listing `features` without a port stays offline.
 
 Optional recovery executables can be built with `./scripts/build-recovery.sh`.
 They require a C compiler, OpenSSL, and liblzma development libraries. On macOS,
