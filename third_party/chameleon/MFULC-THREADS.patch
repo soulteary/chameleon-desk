@@ -1,0 +1,135 @@
+diff --git a/software/src/mfulc_des_brute.c b/software/src/mfulc_des_brute.c
+index 23aaf19..df1954b 100644
+--- a/software/src/mfulc_des_brute.c
++++ b/software/src/mfulc_des_brute.c
+@@ -11,2 +11,4 @@
+ #include <openssl/des.h>
++#include <errno.h>
++#include <ctype.h>
+
+@@ -22,4 +24,32 @@
+
+-// Global flag to signal that a key has been found.
+-volatile int key_found = 0;
++#ifdef _MSC_VER
++#include <windows.h>
++typedef volatile LONG search_flag_t;
++static int load_flag(search_flag_t *flag) { return InterlockedCompareExchange(flag, 0, 0); }
++static void store_flag(search_flag_t *flag, int value) { InterlockedExchange(flag, value); }
++#else
++typedef int search_flag_t;
++static int load_flag(search_flag_t *flag) { return __atomic_load_n(flag, __ATOMIC_RELAXED); }
++static void store_flag(search_flag_t *flag, int value) { __atomic_store_n(flag, value, __ATOMIC_RELAXED); }
++#endif
++
++static search_flag_t key_found = 0;
++static search_flag_t abort_search = 0;
++
++static int hex_digit(char value) {
++    if (value >= '0' && value <= '9') return value - '0';
++    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
++    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
++    return -1;
++}
++
++static bool positive_number(const char *text, unsigned limit, int *value) {
++    if (!isdigit((unsigned char)*text)) return false;
++    errno = 0;
++    char *end;
++    unsigned long number = strtoul(text, &end, 10);
++    if (errno != 0 || *end != '\0' || number == 0 || number > limit) return false;
++    *value = (int)number;
++    return true;
++}
+
+@@ -49,6 +79,5 @@ static int hex_to_bytes(const char *hex, unsigned char *buf, size_t len) {
+     for (size_t i = 0; i < len; i++) {
+-        unsigned int byte;
+-        if (sscanf(hex + 2 * i, "%2x", &byte) != 1)
+-            return 0;
+-        buf[i] = (unsigned char) byte;
++        int high = hex_digit(hex[2 * i]), low = hex_digit(hex[2 * i + 1]);
++        if (high < 0 || low < 0) return 0;
++        buf[i] = (unsigned char)((high << 4) | low);
+     }
+@@ -154,3 +183,3 @@ static void *worker(void *arg) {
+     for (uint32_t idx = start; idx < end; idx++) {
+-        if (key_found && !BENCHMARK_FULL_KEYSPACE)
++        if (load_flag(&abort_search) || (load_flag(&key_found) && !BENCHMARK_FULL_KEYSPACE))
+             break;  // Some other thread already found the key.
+@@ -197,3 +226,5 @@ static void *worker(void *arg) {
+             // Apply XOR block to the second decrypted block (for CBC mode)
+-            out ^= *(uint64_t *)targs->prev_ciphertext;
++            uint64_t previous;
++            memcpy(&previous, targs->prev_ciphertext, sizeof(previous));
++            out ^= previous;
+
+@@ -211,3 +242,3 @@ static void *worker(void *arg) {
+         if (match) {
+-            key_found = 1;  // signal to other threads
++            store_flag(&key_found, 1);  // signal to other threads
+
+@@ -235,5 +266,5 @@ static void print_help_and_exit(const char *cmd_name) {
+             "   * Counterfeit key recovery:\n"
+-            "       %s -c <null key ERndB (8 hex digits)> <target key ERndB (8 hex digits)> <3DES base key hex (32 hex digits)> <key segment (1-4)> <num threads>\n"
++            "       %s -c <null key ERndB (16 hex digits)> <target key ERndB (16 hex digits)> <3DES base key hex (32 hex digits)> <key segment (1-4)> <num threads (1-256)>\n"
+             "   * Reader nonce key recovery:\n"
+-            "       %s -r <ERndB (8 hex digits)> <ERndARndB' (16 hex digits)> <3DES base key hex (32 hex digits)> <key segment (1-4)> <num threads>\n",
++            "       %s -r <ERndB (16 hex digits)> <ERndARndB' (32 hex digits)> <3DES base key hex (32 hex digits)> <key segment (1-4)> <num threads (1-256)>\n",
+             cmd_name,
+@@ -244,2 +275,4 @@ static void print_help_and_exit(const char *cmd_name) {
+ int main(int argc, char **argv) {
++    store_flag(&key_found, 0);
++    store_flag(&abort_search, 0);
+     // Check for -c or -r flag first to determine expected argument count
+@@ -297,4 +330,4 @@ int main(int argc, char **argv) {
+
+-    int seg = atoi(argv[5]);
+-    if (seg < 1 || seg > 4) {
++    int seg;
++    if (!positive_number(argv[5], 4, &seg)) {
+         fprintf(stderr, "Error: key segment must be between 1 and 4.\n");
+@@ -302,5 +335,5 @@ int main(int argc, char **argv) {
+     }
+-    int num_threads = atoi(argv[6]);
+-    if (num_threads < 1) {
+-        fprintf(stderr, "Error: number of threads must be at least 1.\n");
++    int num_threads;
++    if (!positive_number(argv[6], 256, &num_threads)) {
++        fprintf(stderr, "Error: number of threads must be between 1 and 256.\n");
+         return 1;
+@@ -338,2 +371,4 @@ int main(int argc, char **argv) {
+         fprintf(stderr, "Allocation error.\n");
++        free(threads);
++        free(targs);
+         return 1;
+@@ -343,2 +378,4 @@ int main(int argc, char **argv) {
+     uint32_t current = 0;
++    int started = 0;
++    int status = 0;
+     for (int i = 0; i < num_threads; i++) {
+@@ -361,9 +398,16 @@ int main(int argc, char **argv) {
+         current = targs[i].end;
+-        pthread_create(&threads[i], NULL, worker, &targs[i]);
++        int error = pthread_create(&threads[i], NULL, worker, &targs[i]);
++        if (error != 0) {
++            fprintf(stderr, "Cannot start worker %d: %s; search aborted\n", i, strerror(error));
++            store_flag(&abort_search, 1);
++            status = 1;
++            break;
++        }
++        started++;
+     }
+
+-    for (int i = 0; i < num_threads; i++)
++    for (int i = 0; i < started; i++)
+         pthread_join(threads[i], NULL);
+
+-    if (!key_found)
++    if (status == 0 && !load_flag(&key_found))
+         printf("No matching key was found.\n");
+@@ -372,3 +416,3 @@ int main(int argc, char **argv) {
+     free(targs);
+-    return 0;
++    return status;
+ }
