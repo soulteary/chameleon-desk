@@ -45,6 +45,9 @@ func (p SettingsPatch) Validate() error {
 // serializes the update, verifies each result, then optionally saves settings.
 // A connection loss can leave earlier updates applied; no blind write retries.
 func (c *Client) ConfigureSettings(ctx context.Context, p SettingsPatch, persist bool) (out SettingsView, err error) {
+	if (p.BLEKey != nil || p.BLEPairing != nil) && !c.transportInfo.AllowsPairingChanges {
+		return out, fmt.Errorf("pairing changes require a direct serial connection")
+	}
 	if e := p.Validate(); e != nil {
 		return out, e
 	}

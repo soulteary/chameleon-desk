@@ -8,6 +8,35 @@ import ipaddress
 import logging
 import math
 import sys
+import json
+
+PREAMBLE = b"CHAMELEON_BRIDGE/1 "
+RESTRICTED_COMMANDS = {1014, 1020, 1030, 1032, 1037}
+
+
+def transport_info(managed=False):
+    return {"connection": "tcp", "medium": "ble", "managed": managed,
+            "allows_pairing_changes": False, "allows_device_restore": False,
+            "supports_dfu": False}
+
+
+async def connect_nus(client, notification, timeout):
+    async with asyncio.timeout(timeout):
+        await client.connect()
+        service = client.services.get_service(NUS_SERVICE)
+        if service is None:
+            raise RuntimeError("Nordic UART Service not found")
+        rx, tx = service.get_characteristic(NUS_RX), service.get_characteristic(NUS_TX)
+        if rx is None or tx is None or "notify" not in tx.properties:
+            raise RuntimeError("NUS RX/TX characteristics are unavailable")
+        response = "write" in rx.properties
+        if not response and "write-without-response" not in rx.properties:
+            raise RuntimeError("NUS RX characteristic is not writable")
+        chunk = 20 if response else min(20, rx.max_write_without_response_size)
+        if chunk < 1:
+            raise RuntimeError("invalid NUS write size")
+        await client.start_notify(tx, notification)
+    return rx, response, chunk
 
 NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -17,7 +46,7 @@ LOG = logging.getLogger("ble_bridge")
 
 
 class Session:
-    def __init__(self, reader, writer, device, client_factory, timeout, pair):
+    def __init__(self, reader, writer, device, client_factory, timeout, pair, prepared=None):
         self.reader, self.writer = reader, writer
         self.timeout = timeout
         self.ready = asyncio.Event()
@@ -28,7 +57,9 @@ class Session:
         self.buffered = 0
         self.incoming = asyncio.Queue()
         self.incoming_buffered = 0
-        self.client = client_factory(
+        self.prepared = prepared
+        self.clean = False
+        self.client = prepared.client if prepared else client_factory(
             device, disconnected_callback=self.disconnected, pair=pair,
             timeout=timeout,
         )
@@ -56,25 +87,12 @@ class Session:
         self.queue.put_nowait(bytes(data))
 
     async def ble_to_tcp(self):
-        async with asyncio.timeout(self.timeout):
-            await self.client.connect()
-            service = self.client.services.get_service(NUS_SERVICE)
-            if service is None:
-                raise RuntimeError("Nordic UART Service not found")
-            self.rx = service.get_characteristic(NUS_RX)
-            tx = service.get_characteristic(NUS_TX)
-            if self.rx is None or tx is None or "notify" not in tx.properties:
-                raise RuntimeError("NUS RX/TX characteristics are unavailable")
-            self.response = "write" in self.rx.properties
-            if not self.response and "write-without-response" not in self.rx.properties:
-                raise RuntimeError("NUS RX characteristic is not writable")
-            # A conservative 20-byte ceiling avoids relying on platform MTU
-            # reporting. Honor a smaller characteristic limit if supplied.
-            if not self.response:
-                self.chunk_size = min(20, self.rx.max_write_without_response_size)
-                if self.chunk_size < 1:
-                    raise RuntimeError("invalid NUS write size")
-            await self.client.start_notify(tx, self.notification)
+        if self.prepared:
+            self.prepared.session = self
+            self.rx, self.response, self.chunk_size = self.prepared.parameters
+        else:
+            self.rx, self.response, self.chunk_size = await connect_nus(
+                self.client, self.notification, self.timeout)
         self.ready.set()
         LOG.info("BLE connected; forwarding application protocol")
         while True:
@@ -97,14 +115,28 @@ class Session:
 
     async def tcp_to_ble(self):
         await self.ready.wait()
+        pending = bytearray()
         while True:
             data = await self.incoming.get()
-            for start in range(0, len(data), self.chunk_size):
-                async with asyncio.timeout(self.timeout):
-                    await self.client.write_gatt_char(
-                        self.rx, data[start:start + self.chunk_size],
-                        response=self.response,
-                    )
+            pending.extend(data)
+            while len(pending) >= 9:
+                if pending[:2] != b"\x11\xef" or sum(pending[:9]) % 256:
+                    raise RuntimeError("invalid application frame header")
+                length = int.from_bytes(pending[6:8], "big")
+                if length > 4096:
+                    raise RuntimeError("application frame exceeds payload limit")
+                if len(pending) < length + 10:
+                    break
+                frame = bytes(pending[:length + 10])
+                del pending[:length + 10]
+                if sum(frame) % 256:
+                    raise RuntimeError("invalid application frame checksum")
+                if int.from_bytes(frame[2:4], "big") in RESTRICTED_COMMANDS:
+                    raise RuntimeError("pairing changes and reset commands are unavailable over BLE")
+                for start in range(0, len(frame), self.chunk_size):
+                    async with asyncio.timeout(self.timeout):
+                        await self.client.write_gatt_char(
+                            self.rx, frame[start:start + self.chunk_size], response=self.response)
             self.incoming_buffered -= len(data)
 
     async def run(self):
@@ -124,6 +156,8 @@ class Session:
             LOG.warning("session ended: %s", str(error) or type(error).__name__)
         finally:
             self.closed = True
+            if self.prepared:
+                self.prepared.session = None
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -132,6 +166,7 @@ class Session:
                 async with asyncio.timeout(self.timeout):
                     await self.client.disconnect()
                 clean = True
+                self.clean = True
             except Exception as error:
                 LOG.error("BLE cleanup failed; restart the bridge: %s",
                           str(error) or type(error).__name__)
@@ -149,6 +184,17 @@ class Bridge:
         self.blocked = False
         self.tasks = set()
         self.writer = None
+        self.session = None
+
+    def metadata(self):
+        return {"api_version": 1, "transport": transport_info(),
+                "device_id": getattr(self.device, "address", str(self.device))}
+
+    def make_session(self, reader, writer):
+        return Session(reader, writer, self.device, self.client_factory, self.timeout, self.pair)
+
+    def session_ended(self):
+        pass
 
     def accept(self, reader, writer):
         if self.active or self.blocked:
@@ -157,14 +203,15 @@ class Bridge:
             return
         self.active = True
         self.writer = writer
+        writer.write(PREAMBLE + json.dumps(self.metadata(), separators=(",", ":")).encode() + b"\n")
         task = asyncio.create_task(self.handle(reader, writer))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
 
     async def handle(self, reader, writer):
         try:
-            session = Session(reader, writer, self.device, self.client_factory,
-                              self.timeout, self.pair)
+            session = self.make_session(reader, writer)
+            self.session = session
             self.blocked = not await session.run()
         except asyncio.CancelledError:
             raise
@@ -175,6 +222,7 @@ class Bridge:
         finally:
             self.active = False
             self.writer = None
+            self.session_ended()
 
     async def close(self):
         self.blocked = True
@@ -226,7 +274,7 @@ def port_number(value):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    target = p.add_mutually_exclusive_group(required=True)
+    target = p.add_mutually_exclusive_group()
     target.add_argument("--device", help="BLE address, or device UUID on macOS")
     target.add_argument("--scan", action="store_true", help="list advertising NUS devices and exit")
     p.add_argument("--listen", type=loopback, default="127.0.0.1")
@@ -234,6 +282,8 @@ def parser():
     p.add_argument("--timeout", type=positive_timeout, default=20.0,
                    help="seconds for discovery, connection, writes and cleanup (default: 20)")
     p.add_argument("--pair", action="store_true", help="request OS-managed pairing (platform dependent)")
+    p.add_argument("--control-port", type=port_number, help="enable the authenticated management API")
+    p.add_argument("--token-file", help="private shared token file for the management API")
     return p
 
 
@@ -243,6 +293,9 @@ async def serve(args):
         from bleak import BleakClient, BleakScanner
     except ImportError as error:
         raise RuntimeError("install tools/ble_bridge/requirements.txt first") from error
+    if getattr(args, "control_port", None):
+        from management import serve_managed
+        return await serve_managed(args, BleakScanner, BleakClient)
     if args.scan:
         devices = await BleakScanner.discover(
             timeout=args.timeout, return_adv=True, service_uuids=[NUS_SERVICE])
@@ -270,7 +323,14 @@ def main():
     if sys.version_info < (3, 11):
         print("ble_bridge requires Python 3.11 or later", file=sys.stderr)
         return 1
-    args = parser().parse_args()
+    p = parser()
+    args = p.parse_args()
+    if not (args.device or args.scan or args.control_port):
+        p.error("use --device, --scan, or --control-port")
+    if bool(args.control_port) != bool(args.token_file) or (args.scan and args.control_port):
+        p.error("--control-port requires --token-file and cannot be combined with --scan")
+    if args.control_port == args.port:
+        p.error("management and data ports must differ")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
         asyncio.run(serve(args))

@@ -70,8 +70,8 @@ func runBackup(args []string) (retErr error) {
 		return fmt.Errorf("create requires --output; backup includes card keys and BLE PIN")
 	}
 	if action == "restore" {
-		if strings.HasPrefix(*port, "ble:") {
-			return fmt.Errorf("restore includes BLE pairing settings; use USB or a stable serial TCP bridge")
+		if strings.HasPrefix(*port, "ble:") || strings.HasPrefix(*port, "tcp:") {
+			return fmt.Errorf("restore includes BLE pairing settings; use a direct serial connection")
 		}
 		if *rollback == "" || sameFilePath(*rollback, *input) || sameFilePath(*rollback, *output) || sameFilePath(*output, *input) {
 			return fmt.Errorf("restore requires a separate --rollback-output file")

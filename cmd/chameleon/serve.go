@@ -32,13 +32,16 @@ func isServe(args []string) bool { return len(args) >= 1 && args[0] == "serve" }
 // single-page UI. Reads are always allowed; card/device writes need the
 // explicit --allow-writes flag and a per-server token. It binds only to loopback.
 type webServer struct {
-	port        string
-	timeout     time.Duration
-	allowWrites bool
-	gateOnce    sync.Once
-	gate        chan struct{}
-	listenPort  string
-	token       string
+	port         string
+	timeout      time.Duration
+	allowWrites  bool
+	gateOnce     sync.Once
+	gate         chan struct{}
+	listenPort   string
+	token        string
+	bridge       *chameleon.BLEBridge
+	bridgeMu     sync.Mutex
+	bridgeClient *chameleon.Client
 	// Optional transport factory for offline simulations.
 	openDevice func(context.Context, string, time.Duration) (*chameleon.Client, error)
 }
@@ -49,6 +52,8 @@ func runServe(args []string) error {
 	port := f.String("port", "", "device USB/BLE/TCP port; otherwise one USB device is auto-selected per request")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
+	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")
+	bridgeToken := f.String("bridge-token-file", "", "private token file shared with the managed BLE bridge")
 	if e := f.Parse(args[1:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
 			return nil
@@ -67,6 +72,20 @@ func runServe(args []string) error {
 		return fmt.Errorf("--addr must use a loopback host")
 	}
 	ws := &webServer{port: *port, timeout: *timeout, allowWrites: *allowWrites}
+	if (*bridgeURL == "") != (*bridgeToken == "") || (*bridgeURL != "" && *port != "") {
+		return fmt.Errorf("--ble-bridge requires --bridge-token-file and cannot be combined with --port")
+	}
+	if *bridgeURL != "" {
+		token, err := readBridgeToken(*bridgeToken)
+		if err != nil {
+			return err
+		}
+		ws.bridge, err = chameleon.NewBLEBridge(*bridgeURL, token)
+		if err != nil {
+			return err
+		}
+		defer ws.closeBridgeClient()
+	}
 	mux := http.NewServeMux()
 	if e = ws.routes(mux); e != nil {
 		return e
@@ -107,6 +126,9 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/dictionary/download", ws.handleDictDownload)
 	mux.HandleFunc("/api/database", ws.handleDatabase)
 	mux.HandleFunc("/api/capabilities", ws.handleCaps)
+	for _, path := range []string{"status", "scan", "select", "connect", "disconnect"} {
+		mux.HandleFunc("/api/bridge/"+path, ws.handleBridge)
+	}
 	return nil
 }
 
@@ -137,7 +159,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			method := http.MethodPost
 			switch r.URL.Path {
-			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources":
+			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status":
 				method = http.MethodGet
 			}
 			if r.Method != method {
@@ -145,7 +167,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			if r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" {
+			if r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || (strings.HasPrefix(r.URL.Path, "/api/bridge/") && method == http.MethodPost) {
 				if ws.token == "" || r.Header.Get("X-Chameleon-Token") != ws.token {
 					http.Error(w, "missing or invalid session token", http.StatusForbidden)
 					return
@@ -187,6 +209,13 @@ func (ws *webServer) withDevice(parent context.Context, fn func(context.Context,
 	defer func() { <-ws.gate }()
 	if e := ctx.Err(); e != nil {
 		return e
+	}
+	if ws.bridge != nil {
+		c := ws.getBridgeClient()
+		if c == nil || c.IsClosed() {
+			return fmt.Errorf("BLE bridge session is disconnected; connect from device management")
+		}
+		return fn(ctx, c)
 	}
 	port := ws.port
 	if port == "" {
@@ -237,7 +266,7 @@ func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"writes_enabled": ws.allowWrites, "csrf_token": ws.token})
+	writeJSON(w, map[string]any{"writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {

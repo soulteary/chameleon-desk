@@ -206,8 +206,8 @@ func runMappedWorkflow(args []string) (retErr error) {
 		if e = settingsPatch.Validate(); e != nil {
 			return e
 		}
-		if strings.HasPrefix(*port, "ble:") && (settingsPatch.BLEKey != nil || settingsPatch.BLEPairing != nil) {
-			return fmt.Errorf("pairing changes require USB or stable serial TCP transport for readback")
+		if (strings.HasPrefix(*port, "ble:") || strings.HasPrefix(*port, "tcp:")) && (settingsPatch.BLEKey != nil || settingsPatch.BLEPairing != nil) {
+			return fmt.Errorf("pairing changes require a direct serial connection for readback")
 		}
 	}
 	var patch chameleon.EmulatorPatch
