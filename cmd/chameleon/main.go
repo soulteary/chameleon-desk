@@ -149,6 +149,9 @@ func run() error {
 	if isDeviceTool(os.Args[1:]) {
 		return runDeviceTool(os.Args[1:])
 	}
+	if isServe(os.Args[1:]) {
+		return runServe(os.Args[1:])
+	}
 	if isMappedWorkflow(os.Args[1:]) {
 		return runMappedWorkflow(os.Args[1:])
 	}
@@ -168,7 +171,7 @@ func run() error {
 		return runCardfile(os.Args[2:])
 	}
 	if len(os.Args) < 2 {
-		return errors.New("usage: chameleon devices|info|slots|scan|stress|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|backup|ulc|rf|seos|emv|des [--port PATH] [--json]")
+		return errors.New("usage: chameleon devices|info|slots|scan|stress|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [--port PATH] [--json]")
 	}
 	command := os.Args[1]
 	if command == "version" || command == "--version" {
@@ -179,7 +182,7 @@ func run() error {
 		return runExtended(os.Args[1:])
 	}
 	if command == "--help" || command == "-h" || command == "help" {
-		fmt.Println("Usage: chameleon devices|info|slots|scan|stress|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|backup|ulc|rf|seos|emv|des [options]\nRun chameleon <command> --help for options.")
+		fmt.Println("Usage: chameleon devices|info|slots|scan|stress|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [options]\nRun chameleon <command> --help for options.")
 		return nil
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
