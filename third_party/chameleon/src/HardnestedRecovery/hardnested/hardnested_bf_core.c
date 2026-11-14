@@ -85,12 +85,14 @@ THE SOFTWARE.
 
 #ifdef _MSC_VER
 #include <Windows.h>
-#define atomic_add(num, val) (InterlockedExchangeAdd(num, val) + val)
+#define atomic_add(num, val) InterlockedExchangeAdd64((volatile LONG64 *)(num), (val))
+#define atomic_read(num) InterlockedCompareExchange((volatile LONG *)(num), 0, 0)
 #pragma pack(push, VECTOR_SIZE)
 typedef uint32_t bitslice_value_t;
 #pragma pack(pop)
 #else
 #define atomic_add __sync_fetch_and_add
+#define atomic_read(num) __atomic_load_n((num), __ATOMIC_RELAXED)
 typedef uint32_t __attribute__((aligned(VECTOR_SIZE))) __attribute__((vector_size(VECTOR_SIZE))) bitslice_value_t;
 #endif
 
@@ -192,14 +194,12 @@ typedef enum {
 // arrays of bitsliced states with identical values in all slices
 static bitslice_t bitsliced_encrypted_nonces[256][KEYSTREAM_SIZE];
 static bitslice_t bitsliced_encrypted_parity_bits[256][4];
-// 1 and 0 vectors
-static bitslice_t bs_ones;
-static bitslice_t bs_zeroes;
 
 
 void BITSLICE_TEST_NONCES(uint32_t nonces_to_bruteforce, const uint32_t *bf_test_nonce, const uint8_t *bf_test_nonce_par) {
 
     // initialize 1 and 0 vectors
+    bitslice_t bs_ones, bs_zeroes;
     memset(bs_ones.bytes, 0xff, VECTOR_SIZE);
     memset(bs_zeroes.bytes, 0x00, VECTOR_SIZE);
 
@@ -242,7 +242,18 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
     bitslice_t *restrict state_p;
     uint64_t key = -1;
     uint64_t bucket_states_tested = 0;
-    uint32_t bucket_size[16384];
+    if (p == NULL || p->len[EVEN_STATE] == 0 || p->len[ODD_STATE] == 0) return UINT64_MAX;
+    const size_t block_count = p->len[EVEN_STATE] / MAX_BITSLICES + (p->len[EVEN_STATE] % MAX_BITSLICES != 0);
+    if (block_count > SIZE_MAX / sizeof(uint32_t) ||
+        block_count > SIZE_MAX / sizeof(bitslice_t *) ||
+        block_count > SIZE_MAX / sizeof(bitslice_value_t)) {
+        PrintAndLogEx(WARNING, "Hardnested candidate block count is too large");
+        exit(4);
+    }
+    bool allocation_failed = false;
+    uint32_t *bucket_size = NULL;
+    bitslice_t **bitsliced_even_states = NULL;
+    bitslice_value_t *bitsliced_even_feedback = NULL;
     uint32_t bitsliced_blocks = 0;
     uint32_t const *restrict p_even_end = p->states[EVEN_STATE] + p->len[EVEN_STATE];
 #if defined (DEBUG_BRUTE_FORCE)
@@ -251,32 +262,27 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
     uint64_t keys_eliminated[MAX_ELIMINATION_STEP] = {0};
 #endif
 #ifdef DEBUG_KEY_ELIMINATION
-    bool bucket_contains_test_key[(p->len[EVEN_STATE] - 1) / MAX_BITSLICES + 1];
+    bool *bucket_contains_test_key = NULL;
 #endif
 
-    // constant ones/zeroes
-//    bitslice_t bs_ones;
+    // Worker-local constants avoid concurrent writes by other search workers.
+    bitslice_t bs_ones, bs_zeroes;
     memset(bs_ones.bytes, 0xff, VECTOR_SIZE);
-//    bitslice_t bs_zeroes;
     memset(bs_zeroes.bytes, 0x00, VECTOR_SIZE);
 
     // bitslice all the even states
-    bitslice_t **restrict bitsliced_even_states = (bitslice_t **)calloc(1, ((p->len[EVEN_STATE] - 1) / MAX_BITSLICES + 1) * sizeof(bitslice_t *));
-    if (bitsliced_even_states == NULL) {
-        PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting...");
-        exit(4);
-    }
-    bitslice_value_t *restrict bitsliced_even_feedback = malloc_bitslice(((p->len[EVEN_STATE] - 1) / MAX_BITSLICES + 1) * sizeof(bitslice_value_t));
-    if (bitsliced_even_feedback == NULL) {
-        PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting...");
-        exit(4);
-    }
-    for (uint32_t *restrict p_even = p->states[EVEN_STATE]; p_even < p_even_end; p_even += MAX_BITSLICES) {
+    bucket_size = calloc(block_count, sizeof(*bucket_size));
+    bitsliced_even_states = calloc(block_count, sizeof(*bitsliced_even_states));
+    bitsliced_even_feedback = malloc_bitslice(block_count * sizeof(*bitsliced_even_feedback));
+    if (bucket_size == NULL || bitsliced_even_states == NULL || bitsliced_even_feedback == NULL) goto allocation_failure;
+#ifdef DEBUG_KEY_ELIMINATION
+    bucket_contains_test_key = calloc(block_count, sizeof(*bucket_contains_test_key));
+    if (bucket_contains_test_key == NULL) goto allocation_failure;
+#endif
+    for (size_t block_idx = 0; block_idx < block_count; block_idx++) {
+        uint32_t *restrict p_even = p->states[EVEN_STATE] + block_idx * MAX_BITSLICES;
         bitslice_t *restrict lstate_p = malloc_bitslice(STATE_SIZE / 2 * sizeof(bitslice_t));
-        if (lstate_p == NULL) {
-            PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting... \n");
-            exit(4);
-        }
+        if (lstate_p == NULL) goto allocation_failure;
         memset(lstate_p, 0x00, STATE_SIZE / 2 * sizeof(bitslice_t)); // zero even bits
         // bitslice even half-states
         const uint32_t max_slices = (p_even_end - p_even) < MAX_BITSLICES ? p_even_end - p_even : MAX_BITSLICES;
@@ -321,7 +327,7 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
     // bitslice every odd state to every block of even states
     for (uint32_t const *restrict p_odd = p->states[ODD_STATE]; p_odd < p->states[ODD_STATE] + p->len[ODD_STATE]; ++p_odd) {
         // early abort
-        if (*keys_found) {
+        if (atomic_read(keys_found)) {
             goto out;
         }
 
@@ -356,8 +362,8 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
                       f20a(state_p[47 - 33].value, state_p[47 - 35].value, state_p[47 - 37].value, state_p[47 - 39].value),
                       crypto1_bs_f20b_3[0]);
 
-        uint32_t *restrict p_even = p->states[EVEN_STATE];
-        for (uint32_t block_idx = 0; block_idx < bitsliced_blocks; ++block_idx, p_even += MAX_BITSLICES) {
+        for (uint32_t block_idx = 0; block_idx < bitsliced_blocks; ++block_idx) {
+            uint32_t *restrict p_even = p->states[EVEN_STATE] + (size_t)block_idx * MAX_BITSLICES;
 
 #ifdef DEBUG_KEY_ELIMINATION
             // if (known_target_key != -1 && bucket_contains_test_key[block_idx] && *p_odd == test_state[ODD_STATE]) {
@@ -553,12 +559,21 @@ stop_tests:
             state_p = &states[KEYSTREAM_SIZE];
         }
     }
+    goto out;
+allocation_failure:
+    allocation_failed = true;
+    PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting...");
 out:
     for (uint32_t block_idx = 0; block_idx < bitsliced_blocks; ++block_idx) {
         free_bitslice(bitsliced_even_states[block_idx]);
     }
     free(bitsliced_even_states);
     free_bitslice(bitsliced_even_feedback);
+    free(bucket_size);
+#ifdef DEBUG_KEY_ELIMINATION
+    free(bucket_contains_test_key);
+#endif
+    if (allocation_failed) exit(4);
     atomic_add(num_keys_tested, bucket_states_tested);
 
 #if defined (DEBUG_BRUTE_FORCE)

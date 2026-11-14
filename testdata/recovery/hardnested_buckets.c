@@ -23,6 +23,10 @@ static unsigned cpu_calls, creates, joins, visits, failed_starts;
 static unsigned fail_threads;
 static bool check_ids, fail_bench_file;
 static unsigned seen[260];
+static bool simultaneous_keys;
+static unsigned ready_keys;
+static pthread_mutex_t key_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t key_ready = PTHREAD_COND_INITIALIZER;
 
 int num_CPUs(void) {
     cpu_calls++;
@@ -68,6 +72,14 @@ uint64_t crack_states_bitsliced(uint32_t uid, uint8_t *first, statelist_t *candi
                                uint32_t *found, uint64_t *tested, uint32_t count,
                                uint8_t *second, noncelist_t *nonce) {
     (void)uid; (void)first; (void)found; (void)count; (void)second; (void)nonce;
+    if (simultaneous_keys) {
+        pthread_mutex_lock(&key_mutex);
+        ready_keys++;
+        if (ready_keys == 2) pthread_cond_broadcast(&key_ready);
+        while (ready_keys < 2) pthread_cond_wait(&key_ready, &key_mutex);
+        pthread_mutex_unlock(&key_mutex);
+        return UINT64_C(0xA0A1A2A3A4A5);
+    }
     visits++;
     *tested += (uint64_t)candidate->len[0] * candidate->len[1];
     if (check_ids) {
@@ -143,5 +155,25 @@ int main(void) {
     uint64_t key = 0;
     assert(!brute_force_bs(&rate, candidates, 0, 0, 260, NULL, NULL, &key));
     assert(visits == 260 && creates == 1 && joins == 1);
+    // Force both worker searches to succeed before either can claim the key.
+    // Publishing a key must select one result rather than add both values.
+    simultaneous_keys = true;
+    keys_found = 0;
+    found_bs_key = 0;
+    bucket_count = 2;
+    statelist_t *concurrent_buckets[] = {&candidates[0], &candidates[1]};
+    buckets = concurrent_buckets;
+    brute_force_args_t args[2] = {{0}};
+    pthread_t concurrent[2];
+    for (unsigned i = 0; i < 2; i++) {
+        args[i].thread_ID = i;
+        args[i].thread_count = 2;
+        args[i].silent = true;
+        assert(pthread_create(&concurrent[i], NULL, crack_states_thread, &args[i]) == 0);
+    }
+    for (unsigned i = 0; i < 2; i++) assert(pthread_join(concurrent[i], NULL) == 0);
+    assert(ready_keys == 2 && keys_found == 1 && found_bs_key == UINT64_C(0xA0A1A2A3A4A5));
+    buckets = NULL;
+    bucket_count = 0;
     return 0;
 }
