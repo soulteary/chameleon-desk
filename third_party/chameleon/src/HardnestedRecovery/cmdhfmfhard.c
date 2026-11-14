@@ -44,19 +44,8 @@
 #include "pm3/util_posix.h"
 #include "hardnested/tables.h"
 #include <lzma.h>
+#include "hardnested_threads.h"
 
-#define NUM_CHECK_BITFLIPS_THREADS      (num_CPUs())
-#if defined(_MSC_VER)
-#define NUM_CHECK_BITFLIPS_THREADS_ALLOC      128
-#else
-#define NUM_CHECK_BITFLIPS_THREADS_ALLOC      (num_CPUs())
-#endif
-#define NUM_REDUCTION_WORKING_THREADS   (num_CPUs())
-#if defined(_MSC_VER)
-#define NUM_REDUCTION_WORKING_THREADS_ALLOC      128
-#else
-#define NUM_REDUCTION_WORKING_THREADS_ALLOC      (num_CPUs())
-#endif
 #define IGNORE_BITFLIP_THRESHOLD        0.99 // ignore bitflip arrays which have nearly only valid states
 
 #define DEBUG_KEY_ELIMINATION
@@ -124,7 +113,7 @@ static void print_progress_header(void) {
     get_SIMD_instruction_set(instr_set);
     snprintf(progress_text, sizeof(progress_text), "Start using "
              _YELLOW_("%d")
-                                                   " threads", num_CPUs());
+                                                   " threads", (int)hardnested_thread_count(num_CPUs()));
 
     PrintAndLogEx(INFO, "Hardnested attack starting...");
     PrintAndLogEx(INFO,
@@ -1108,32 +1097,17 @@ __attribute__((force_align_arg_pointer))
 }
 
 static void check_for_BitFlipProperties(bool time_budget) {
-    // create and run worker threads
-    pthread_t thread_id[NUM_CHECK_BITFLIPS_THREADS_ALLOC];
-
-    uint8_t args[NUM_CHECK_BITFLIPS_THREADS_ALLOC][3];
-    uint16_t bytes_per_thread = (256 + (NUM_CHECK_BITFLIPS_THREADS / 2)) / NUM_CHECK_BITFLIPS_THREADS;
-    for (uint32_t i = 0; i < NUM_CHECK_BITFLIPS_THREADS; i++) {
-        args[i][0] = i * bytes_per_thread;
-        args[i][1] = MIN(args[i][0] + bytes_per_thread - 1, 255);
+    uint32_t thread_count = hardnested_thread_count(num_CPUs());
+    uint8_t args[HARDNESTED_MAX_THREADS][3];
+    for (uint32_t i = 0; i < thread_count; i++) {
+        hardnested_first_byte_range(i, thread_count, args[i]);
         args[i][2] = time_budget;
     }
-    // args[][] is uint8_t so max 255, no need to check it
-    // args[NUM_CHECK_BITFLIPS_THREADS - 1][1] = MAX(args[NUM_CHECK_BITFLIPS_THREADS - 1][1], 255);
-
-    // start threads
-    for (uint32_t i = 0; i < NUM_CHECK_BITFLIPS_THREADS; i++) {
-        pthread_create(&thread_id[i], NULL, check_for_BitFlipProperties_thread, args[i]);
-    }
-
-    // wait for threads to terminate:
-    for (uint32_t i = 0; i < NUM_CHECK_BITFLIPS_THREADS; i++) {
-        pthread_join(thread_id[i], NULL);
-    }
+    hardnested_run_workers(thread_count, check_for_BitFlipProperties_thread, args, sizeof(args[0]));
 
     if (hardnested_stage & CHECK_2ND_BYTES) {
         hardnested_stage &= ~CHECK_1ST_BYTES; // we are done with 1st stage, except...
-        for (uint32_t i = 0; i < NUM_CHECK_BITFLIPS_THREADS; i++) {
+        for (uint32_t i = 0; i < thread_count; i++) {
             if (args[i][1] != 0) {
                 hardnested_stage |= CHECK_1ST_BYTES;  // ... when any of the threads didn't complete in time
                 break;
@@ -1811,21 +1785,14 @@ static void generate_candidates(uint8_t sum_a0_idx, uint8_t sum_a8_idx) {
     init_statelist_cache();
     init_book_of_work();
 
-    // create and run worker threads
-    pthread_t thread_id[NUM_REDUCTION_WORKING_THREADS_ALLOC];
-
-    uint16_t sums1[NUM_REDUCTION_WORKING_THREADS_ALLOC][3];
-    for (uint32_t i = 0; i < NUM_REDUCTION_WORKING_THREADS; i++) {
+    uint32_t thread_count = hardnested_thread_count(num_CPUs());
+    uint16_t sums1[HARDNESTED_MAX_THREADS][3];
+    for (uint32_t i = 0; i < thread_count; i++) {
         sums1[i][0] = sum_a0_idx;
         sums1[i][1] = sum_a8_idx;
         sums1[i][2] = i + 1;
-        pthread_create(thread_id + i, NULL, generate_candidates_worker_thread, sums1[i]);
     }
-
-    // wait for threads to terminate:
-    for (uint32_t i = 0; i < NUM_REDUCTION_WORKING_THREADS; i++) {
-        pthread_join(thread_id[i], NULL);
-    }
+    hardnested_run_workers(thread_count, generate_candidates_worker_thread, sums1, sizeof(sums1[0]));
 
     maximum_states = 0;
     for (statelist_t *sl = candidates; sl != NULL; sl = sl->next) {
