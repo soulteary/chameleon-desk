@@ -132,36 +132,31 @@ int main(int argc, char *argv[]) {
     uint8_t par_packed;
     uint8_t par_enc1, par_enc2;
     size_t nonces_processed = 0; // Counts pairs of nonces (nt1, nt2)
+    bool first_bytes[256] = {false};
+    unsigned first_byte_count = 0;
 
     while (true) {
-        // *** Use Big-Endian reader for nonces ***
-        if (!read_uint32_be(bin_fp, &nt_enc1)) {
-            if (feof(bin_fp)) break; // Expected EOF after last full chunk
-            fprintf(stderr, "Error reading nt_enc1 (BE) from binary file body.\n");
+        uint8_t record[9];
+        size_t length = fread(record, 1, sizeof(record), bin_fp);
+        if (length == 0 && feof(bin_fp) && !ferror(bin_fp)) break;
+        if (length != sizeof(record)) {
+            fprintf(stderr, "Error reading nonce pair: truncated file or read failure\n");
             fclose(bin_fp);
             fclose(temp_fp);
             remove(temp_file);
             return 1;
         }
-
-        // *** Use Big-Endian reader for nonces ***
-        if (!read_uint32_be(bin_fp, &nt_enc2)) {
-            // Should not happen if nt_enc1 read succeeded, unless file is truncated
-            fprintf(stderr, "Error reading nt_enc2 (BE) from binary file body (truncated file?).\n");
-            fclose(bin_fp);
-            fclose(temp_fp);
-            remove(temp_file);
-            return 1;
-        }
-
-        // Read packed parity byte (single byte, no endianness issue)
-        if (!read_uint8(bin_fp, &par_packed)) {
-            // Should not happen if nt_enc2 read succeeded, unless file is truncated
-            fprintf(stderr, "Error reading packed parity from binary file body (truncated file?).\n");
-            fclose(bin_fp);
-            fclose(temp_fp);
-            remove(temp_file);
-            return 1;
+        nt_enc1 = (uint32_t)record[0] << 24 | (uint32_t)record[1] << 16 |
+                  (uint32_t)record[2] << 8 | record[3];
+        nt_enc2 = (uint32_t)record[4] << 24 | (uint32_t)record[5] << 16 |
+                  (uint32_t)record[6] << 8 | record[7];
+        par_packed = record[8];
+        for (unsigned i = 0; i < 2; i++) {
+            uint8_t first_byte = record[i * 4];
+            if (!first_bytes[first_byte]) {
+                first_bytes[first_byte] = true;
+                first_byte_count++;
+            }
         }
 
         // Extract individual parities
@@ -187,13 +182,23 @@ int main(int argc, char *argv[]) {
         nonces_processed++;
     }
 
-    fclose(bin_fp);
-    fclose(temp_fp); // Close temp file so mfnestedhard can read it
+    int input_error = fclose(bin_fp);
+    int output_error = fclose(temp_fp); // Flush before mfnestedhard reads it.
+    if (input_error != 0 || output_error != 0) {
+        fprintf(stderr, "Error closing nonce input or temporary file\n");
+        remove(temp_file);
+        return 1;
+    }
 
     printf("Processed %zu nonce pairs (total %zu nonces) from binary file.\n", nonces_processed, nonces_processed * 2);
 
     if (nonces_processed == 0) {
         fprintf(stderr, "Error: No nonce data chunks found in the binary file after the header.\n");
+        remove(temp_file);
+        return 1;
+    }
+    if (first_byte_count != 256) {
+        fprintf(stderr, "Insufficient nonce data: %u of 256 first-byte classes; collect more nonces\n", first_byte_count);
         remove(temp_file);
         return 1;
     }
