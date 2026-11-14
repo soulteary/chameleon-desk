@@ -32,6 +32,7 @@
 #include <math.h>
 #include <time.h> // MingW
 #include <stdint.h>
+#include <ctype.h>
 
 #include "crapto1.h"
 #include "parity.h"
@@ -1168,14 +1169,60 @@ static void apply_sum_a0(void) {
     }
 }
 
+static bool read_nonce_decimal(const char **cursor, uint32_t limit, uint32_t *value) {
+    const char *p = *cursor;
+    if (!isdigit((unsigned char)*p)) return false;
+    uint32_t result = 0;
+    while (isdigit((unsigned char)*p)) {
+        uint32_t digit = (uint32_t)(*p++ - '0');
+        if (result > (limit - digit) / 10) return false;
+        result = result * 10 + digit;
+    }
+    *cursor = p;
+    *value = result;
+    return true;
+}
+
+/* Return one record, clean EOF, or an input failure. */
+static int read_nonce_record(FILE *fp, uint32_t *nonce, uint8_t *parity) {
+    char line[100];
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        if (ferror(fp)) {
+            perror("Error reading nonce file");
+            return -1;
+        }
+        return 0;
+    }
+    if (strchr(line, '\n') == NULL && !feof(fp)) {
+        if (fgetc(fp) != EOF || ferror(fp)) {
+            fprintf(stderr, "Invalid or overlong nonce record\n");
+            return -1;
+        }
+    }
+    const char *cursor = line;
+    uint32_t value, par;
+    if (!read_nonce_decimal(&cursor, UINT32_MAX, &value) || *cursor++ != '|' ||
+        !read_nonce_decimal(&cursor, 15, &par)) {
+        fprintf(stderr, "Invalid nonce record\n");
+        return -1;
+    }
+    while (isspace((unsigned char)*cursor)) cursor++;
+    if (*cursor != '\0') {
+        fprintf(stderr, "Invalid nonce record\n");
+        return -1;
+    }
+    *nonce = value;
+    *parity = (uint8_t)par;
+    return 1;
+}
+
 static int simulate_acquire_nonces(uint32_t uid, char* path) {
-    time_t time1 = time(NULL);
     last_sample_clock = 0;
     sample_period = 1000; // for emulation
     hardnested_stage = CHECK_1ST_BYTES;
     bool acquisition_completed = false;
     uint32_t total_num_nonces = 0;
-    float brute_force_depth;
+    float brute_force_depth = (float)(1LL << 47);
     bool reported_suma8 = false;
     bool got_invalid = false;
 
@@ -1183,23 +1230,38 @@ static int simulate_acquire_nonces(uint32_t uid, char* path) {
 
     num_acquired_nonces = 0;
 
-    FILE *fp;
-    char line[100];
-    fp = fopen(path, "r");
+    FILE *fp = fopen(path, "r");
     if (fp == NULL) {
         perror("Error opening file");
-        exit(EXIT_FAILURE);
+        return -1;
     }
+    int result = -1;
 
     do {
         uint32_t nt_enc = 0;
         uint8_t par_enc = 0;
 
-        if (fgets(line, sizeof(line), fp) != NULL) {
-            sscanf(line, "%u|%hhu", &nt_enc, &par_enc);
-            num_acquired_nonces += add_nonce(nt_enc, par_enc);
-            total_num_nonces++;
+        int record = read_nonce_record(fp, &nt_enc, &par_enc);
+        if (record < 0) goto done;
+        if (record == 0) {
+            if (first_byte_num < 256) {
+                fprintf(stderr, "Insufficient nonce data: %u of 256 first-byte classes; collect more nonces\n", first_byte_num);
+                goto done;
+            }
+            /* Finish time-budgeted reductions once, then settle the four-sample
+             * reduction-rate window without attempting to read past EOF. */
+            update_nonce_data(false);
+            for (unsigned i = 0; i < QUEUE_LEN && !acquisition_completed; i++) {
+                acquisition_completed = shrink_key_space(&brute_force_depth);
+            }
+            if (!acquisition_completed || brute_force_depth <= 0) {
+                fprintf(stderr, "Insufficient or inconsistent nonce data; collect more nonces\n");
+                goto done;
+            }
+            break;
         }
+        num_acquired_nonces += add_nonce(nt_enc, par_enc);
+        total_num_nonces++;
 
         if (num_acquired_nonces % 256 == 0) {
             hardnested_print_progress(num_acquired_nonces, "Loading nonces from file", brute_force_depth, 0);
@@ -1222,7 +1284,7 @@ static int simulate_acquire_nonces(uint32_t uid, char* path) {
                 if (got_match == false) {
                     PrintAndLogEx(FAILED, "No match for the First_Byte_Sum (%u), is the card a genuine MFC Ev1? ",
                                   first_byte_Sum);
-                    return -1;
+                    goto done;
                 }
 
                 hardnested_stage |= CHECK_2ND_BYTES;
@@ -1246,31 +1308,43 @@ static int simulate_acquire_nonces(uint32_t uid, char* path) {
                 // something went wrong, wipe nonce memory and skip this nonce
                 if (got_invalid) {
                     hardnested_print_progress(num_acquired_nonces, "Too many invalid nonces", brute_force_depth, 0);
-                    return -1;
+                    goto done;
                 }
                 hardnested_print_progress(num_acquired_nonces, "Found invalid nonce! Trying without it...", brute_force_depth, 0);
                 got_invalid = true;
-                fclose(fp);
-                fp = fopen(path, "r");
+                if (fseek(fp, 0, SEEK_SET) != 0) {
+                    perror("Error rewinding nonce file");
+                    goto done;
+                }
+                clearerr(fp);
+                free_nonces_memory();
                 init_nonce_memory();
                 uint32_t to = total_num_nonces - 1;
                 num_acquired_nonces = 0;
                 total_num_nonces = 0;
                 for (uint32_t i = 0; i < to; i++) {
-                    if (fgets(line, sizeof(line), fp) != NULL) {
-                        sscanf(line, "%u|%hhu", &nt_enc, &par_enc);
-                        num_acquired_nonces += add_nonce(nt_enc, par_enc);
-                        total_num_nonces++;
+                    if (read_nonce_record(fp, &nt_enc, &par_enc) != 1) {
+                        fprintf(stderr, "Nonce file ended while replaying records\n");
+                        goto done;
                     }
+                    num_acquired_nonces += add_nonce(nt_enc, par_enc);
+                    total_num_nonces++;
                 }
-                fgets(line, sizeof(line), fp); // skip line
+                if (read_nonce_record(fp, &nt_enc, &par_enc) != 1) {
+                    fprintf(stderr, "Nonce file ended while skipping invalid record\n");
+                    goto done;
+                }
             }
         }
     } while (!acquisition_completed);
 
-    time_t end_time = time(NULL);
-
-    return 0;
+    result = 0;
+done:
+    if (fclose(fp) != 0) {
+        perror("Error closing nonce file");
+        return -1;
+    }
+    return result;
 }
 
 static inline bool invariant_holds(uint_fast8_t byte_diff, uint_fast32_t state1, uint_fast32_t state2, uint_fast8_t bit,
@@ -1900,6 +1974,12 @@ mfnestedhard(uint8_t blockNo, uint8_t keyType, uint8_t *key, uint8_t trgBlockNo,
 
     int res = simulate_acquire_nonces(uid, path);
     if (res != 0) {
+        free_bitflip_bitarrays();
+        free_nonces_memory();
+        free_bitarray(all_bitflips_bitarray[ODD_STATE]);
+        free_bitarray(all_bitflips_bitarray[EVEN_STATE]);
+        free_sum_bitarrays();
+        free_part_sum_bitarrays();
         return -1;
     }
 
