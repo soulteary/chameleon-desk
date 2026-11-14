@@ -1,0 +1,34 @@
+diff --git a/software/src/nested.c b/software/src/nested.c
+index 801acad..7f500d0 100644
+--- a/software/src/nested.c
++++ b/software/src/nested.c
+@@ -8,2 +8,16 @@
+
++static int parse_distance(const char *text, uint32_t *distance) {
++    uint32_t value = 0;
++    if (*text == '\0') return 0;
++    for (; *text != '\0'; text++) {
++        if (*text < '0' || *text > '9') return 0;
++        uint32_t digit = (uint32_t)(*text - '0');
++        if (value > (UINT32_MAX - digit) / 10) return 0;
++        value = value * 10 + digit;
++    }
++    if (value < 14 || value > UINT32_MAX - 14) return 0;
++    *distance = value;
++    return 1;
++}
++
+ int main(int argc, char *const argv[]) {
+@@ -20,3 +34,6 @@ int main(int argc, char *const argv[]) {
+     uint32_t authuid = atoui(argv[1]);   // uid
+-    dist = atoui(argv[2]);  // dist
++    if (!parse_distance(argv[2], &dist)) {
++        fprintf(stderr, "Distance must be a decimal integer from 14 to %" PRIu32 "\n", UINT32_MAX - 14);
++        return EXIT_FAILURE;
++    }
+
+@@ -37,3 +54,3 @@ int main(int argc, char *const argv[]) {
+         nttest = prng_successor(nt1, dist - 14);
+-        for (m = dist - 14; m <= dist + 14; m += 1) {
++        for (m = 0; m < 29; m++) {
+             ks1 = nt2 ^ nttest;

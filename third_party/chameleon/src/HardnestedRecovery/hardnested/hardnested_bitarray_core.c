@@ -370,9 +370,8 @@ uint32_t *malloc_bitarray_dispatch(uint32_t x) {
 //            else
 //#endif
 //                malloc_bitarray_function_p = &malloc_bitarray_NOSIMD;
-    malloc_bitarray_function_p = &malloc_bitarray_NOSIMD;
     // call the most optimized function for this CPU
-    return (*malloc_bitarray_function_p)(x);
+    return malloc_bitarray_NOSIMD(x);
 }
 
 void free_bitarray_dispatch(uint32_t *x) {
@@ -393,9 +392,8 @@ void free_bitarray_dispatch(uint32_t *x) {
 //            else
 //#endif
 //                free_bitarray_function_p = &free_bitarray_NOSIMD;
-    free_bitarray_function_p = &free_bitarray_NOSIMD;
     // call the most optimized function for this CPU
-    (*free_bitarray_function_p)(x);
+    free_bitarray_NOSIMD(x);
 }
 
 uint32_t bitcount_dispatch(uint32_t a) {
@@ -416,9 +414,8 @@ uint32_t bitcount_dispatch(uint32_t a) {
 //            else
 //#endif
 //                bitcount_function_p = &bitcount_NOSIMD;
-    bitcount_function_p = &bitcount_NOSIMD;
     // call the most optimized function for this CPU
-    return (*bitcount_function_p)(a);
+    return bitcount_NOSIMD(a);
 }
 
 uint32_t count_states_dispatch(uint32_t *bitarray) {
@@ -439,9 +436,8 @@ uint32_t count_states_dispatch(uint32_t *bitarray) {
 //            else
 //#endif
 //                count_states_function_p = &count_states_NOSIMD;
-    count_states_function_p = &count_states_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_states_function_p)(bitarray);
+    return count_states_NOSIMD(bitarray);
 }
 
 void bitarray_AND_dispatch(uint32_t *A, uint32_t *B) {
@@ -462,9 +458,8 @@ void bitarray_AND_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                bitarray_AND_function_p = &bitarray_AND_NOSIMD;
-    bitarray_AND_function_p = &bitarray_AND_NOSIMD;
     // call the most optimized function for this CPU
-    (*bitarray_AND_function_p)(A, B);
+    bitarray_AND_NOSIMD(A, B);
 }
 
 void bitarray_low20_AND_dispatch(uint32_t *A, uint32_t *B) {
@@ -485,9 +480,8 @@ void bitarray_low20_AND_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                bitarray_low20_AND_function_p = &bitarray_low20_AND_NOSIMD;
-    bitarray_low20_AND_function_p = &bitarray_low20_AND_NOSIMD;
     // call the most optimized function for this CPU
-    (*bitarray_low20_AND_function_p)(A, B);
+    bitarray_low20_AND_NOSIMD(A, B);
 }
 
 uint32_t count_bitarray_AND_dispatch(uint32_t *A, uint32_t *B) {
@@ -508,9 +502,8 @@ uint32_t count_bitarray_AND_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                count_bitarray_AND_function_p = &count_bitarray_AND_NOSIMD;
-    count_bitarray_AND_function_p = &count_bitarray_AND_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_bitarray_AND_function_p)(A, B);
+    return count_bitarray_AND_NOSIMD(A, B);
 }
 
 uint32_t count_bitarray_low20_AND_dispatch(uint32_t *A, uint32_t *B) {
@@ -531,9 +524,8 @@ uint32_t count_bitarray_low20_AND_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                count_bitarray_low20_AND_function_p = &count_bitarray_low20_AND_NOSIMD;
-    count_bitarray_low20_AND_function_p = &count_bitarray_low20_AND_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_bitarray_low20_AND_function_p)(A, B);
+    return count_bitarray_low20_AND_NOSIMD(A, B);
 }
 
 void bitarray_AND4_dispatch(uint32_t *A, uint32_t *B, uint32_t *C, uint32_t *D) {
@@ -554,9 +546,8 @@ void bitarray_AND4_dispatch(uint32_t *A, uint32_t *B, uint32_t *C, uint32_t *D) 
 //            else
 //#endif
 //                bitarray_AND4_function_p = &bitarray_AND4_NOSIMD;
-    bitarray_AND4_function_p = &bitarray_AND4_NOSIMD;
     // call the most optimized function for this CPU
-    (*bitarray_AND4_function_p)(A, B, C, D);
+    bitarray_AND4_NOSIMD(A, B, C, D);
 }
 
 void bitarray_OR_dispatch(uint32_t *A, uint32_t *B) {
@@ -577,9 +568,8 @@ void bitarray_OR_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                bitarray_OR_function_p = &bitarray_OR_NOSIMD;
-    bitarray_OR_function_p = &bitarray_OR_NOSIMD;
     // call the most optimized function for this CPU
-    (*bitarray_OR_function_p)(A, B);
+    bitarray_OR_NOSIMD(A, B);
 }
 
 uint32_t count_bitarray_AND2_dispatch(uint32_t *A, uint32_t *B) {
@@ -600,9 +590,8 @@ uint32_t count_bitarray_AND2_dispatch(uint32_t *A, uint32_t *B) {
 //            else
 //#endif
 //                count_bitarray_AND2_function_p = &count_bitarray_AND2_NOSIMD;
-    count_bitarray_AND2_function_p = &count_bitarray_AND2_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_bitarray_AND2_function_p)(A, B);
+    return count_bitarray_AND2_NOSIMD(A, B);
 }
 
 uint32_t count_bitarray_AND3_dispatch(uint32_t *A, uint32_t *B, uint32_t *C) {
@@ -623,9 +612,8 @@ uint32_t count_bitarray_AND3_dispatch(uint32_t *A, uint32_t *B, uint32_t *C) {
 //            else
 //#endif
 //                count_bitarray_AND3_function_p = &count_bitarray_AND3_NOSIMD;
-    count_bitarray_AND3_function_p = &count_bitarray_AND3_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_bitarray_AND3_function_p)(A, B, C);
+    return count_bitarray_AND3_NOSIMD(A, B, C);
 }
 
 uint32_t count_bitarray_AND4_dispatch(uint32_t *A, uint32_t *B, uint32_t *C, uint32_t *D) {
@@ -646,9 +634,8 @@ uint32_t count_bitarray_AND4_dispatch(uint32_t *A, uint32_t *B, uint32_t *C, uin
 //            else
 //#endif
 //                count_bitarray_AND4_function_p = &count_bitarray_AND4_NOSIMD;
-    count_bitarray_AND4_function_p = &count_bitarray_AND4_NOSIMD;
     // call the most optimized function for this CPU
-    return (*count_bitarray_AND4_function_p)(A, B, C, D);
+    return count_bitarray_AND4_NOSIMD(A, B, C, D);
 }
 
 
