@@ -72,7 +72,9 @@ int main(int argc, char *const argv[]) {
     }
     fflush(stdout);
     free(keys);
+    free(pNK);
     exit(EXIT_SUCCESS);
 error:
+    free(pNK);
     exit(EXIT_FAILURE);
 }

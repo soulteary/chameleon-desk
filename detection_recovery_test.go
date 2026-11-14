@@ -3,6 +3,7 @@ package chameleon
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +94,27 @@ func TestDetectionLogCountBound(t *testing.T) {
 func TestDetectionRecoveryRejectsMalformed(t *testing.T) {
 	if _, e := RecoverDetectionLogs(context.Background(), []AuthLog{{UID: []byte{1}}}, "tools/bin", time.Second, 10); e == nil {
 		t.Fatal("malformed record accepted")
+	}
+}
+
+func TestDetectionRecoveryHonorsCancellationWithoutCompatiblePairs(t *testing.T) {
+	logs := []AuthLog{
+		{KeyType: "A", UID: HexBytes{1, 2, 3, 4}, NT: make(HexBytes, 4), NR: make(HexBytes, 4), AR: make(HexBytes, 4)},
+		{KeyType: "A", UID: HexBytes{5, 6, 7, 8}, NT: make(HexBytes, 4), NR: make(HexBytes, 4), AR: make(HexBytes, 4)},
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, stop := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer stop()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{{"canceled", canceled, context.Canceled}, {"expired", expired, context.DeadlineExceeded}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, e := RecoverDetectionLogs(tc.ctx, logs, t.TempDir(), time.Minute, 1); !errors.Is(e, tc.want) {
+				t.Fatalf("recovery ignored cancellation without a helper call: %v", e)
+			}
+		})
 	}
 }
