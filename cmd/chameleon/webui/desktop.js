@@ -168,7 +168,9 @@
       if (!database && result.dataset.ready !== "true") throw new Error("请先完成操作");
       const content = database ? document.querySelector("#db-json").value : result.dataset.exportJson || result.textContent;
       const parsed = JSON.parse(content);
-      if (!parsed || typeof parsed !== "object" || parsed.error) throw new Error("请先完成操作");
+      if (!parsed || typeof parsed !== "object") throw new Error("请先完成操作");
+      const metadata = database || (Number.isInteger(parsed.tag) && Array.isArray(parsed.data)) || (typeof parsed.id === "string" && Array.isArray(parsed.keys));
+      if (!metadata && parsed.error) throw new Error("请先完成操作");
       if (database && Array.isArray(parsed)) throw new Error("数据库必须是 JSON 对象");
       if (b.hasAttribute("data-export-card") && (!parsed.tag || !parsed.data)) throw new Error("请先查看一张卡片");
       const url = URL.createObjectURL(new Blob([JSON.stringify(parsed, null, 2)], { type: "application/json" }));

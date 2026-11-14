@@ -645,3 +645,21 @@ test('a timed-out simulated write is not retried automatically or offered a retr
   assert.equal(p.requests.filter(r => r.url === '/api/slot/load-card').length, 1);
   assert.equal(p.$('#slots').hasAttribute('aria-busy'), false);
 });
+
+for (const kind of ['database', 'card', 'dictionary']) test(`successful ${kind} exports preserve a user metadata field named error`, async (t) => {
+  const metadata = { message: 'User-defined metadata', keep: true };
+  const p = await page(t, {
+    '/api/database': () => response({ ...card, error: metadata }),
+    '/api/dictionary/download': () => response({ id: 'metadata', name: 'sample', keyLength: 8, keys: [[1, 2, 3, 4]], error: metadata })
+  });
+  if (kind === 'database') {
+    p.input('#db-json', JSON.stringify({ cards: [], error: metadata }));
+    await p.click('[data-export="db-out"]:not([data-export-card])');
+  } else if (kind === 'card') {
+    p.input('#db-id', card.id); await p.click('#db-show'); await p.click('[data-export-card]');
+  } else {
+    await p.click('#dict-download'); await p.click('[data-export="dict-out"]');
+  }
+  assert.equal(p.downloads.length, 1);
+  assert.deepEqual(JSON.parse(await p.downloads[0].blob.text()).error, metadata);
+});
