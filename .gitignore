@@ -5,6 +5,7 @@
 /node_modules/
 /vendor/
 __pycache__/
+/tools/ble_bridge/.venv/
 /coverage.out
 *.test
 *.exe
