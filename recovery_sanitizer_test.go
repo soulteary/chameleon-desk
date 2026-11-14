@@ -115,4 +115,11 @@ func TestRecoveryHelpersMemorySafety(t *testing.T) {
 	if output := run(mfkey, 1, "1", "2", "3", "4", "5"); !strings.Contains(output, "No recovery state found") || strings.Contains(output, "Found Key:") {
 		t.Fatal("missing recovery state was reported as a key")
 	}
+	ownership := build("darkside-ownership", "testdata/recovery/darkside_ownership.c", filepath.Join(src, "common.c"))
+	run(ownership, 0)
+	darksideFiles := append([]string{filepath.Join(src, "darkside.c"), filepath.Join(src, "mfkey.c"), filepath.Join(src, "common.c")}, common...)
+	darkside := build("darkside", darksideFiles...)
+	if output := run(darkside, 0, "1", "2", "0", "0", "3", "4", "2", "0", "0", "3", "4"); !strings.Contains(output, "key not found") || strings.Contains(output, "Key1:") {
+		t.Fatal("empty darkside captures were reported as recovered keys")
+	}
 }

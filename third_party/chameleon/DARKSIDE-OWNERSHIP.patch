@@ -1,0 +1,106 @@
+diff --git a/software/src/darkside.c b/software/src/darkside.c
+index 963df08..ea267ee 100644
+--- a/software/src/darkside.c
++++ b/software/src/darkside.c
+@@ -5,2 +5,3 @@
+ #include <ctype.h>
++#include <errno.h>
+
+@@ -33,2 +34,3 @@ int main(int argc, char *argv[]) {
+     bool no_key_recover = true;
++    int status = EXIT_SUCCESS;
+
+@@ -37,4 +39,5 @@ int main(int argc, char *argv[]) {
+         if (pTmp == NULL) {
+-            printf("Can't malloc at param construct.");
+-            return EXIT_FAILURE;
++            fprintf(stderr, "Can't allocate darkside parameters\n");
++            status = EXIT_FAILURE;
++            goto cleanup;
+         }
+@@ -67,5 +70,14 @@ int main(int argc, char *argv[]) {
+         // start decrypting
++        keylist = NULL;
+         keycount = nonce2key(uid, nt, nr, ar, par_list, ks_list, &keylist);
++        int recovery_error = errno;
++        if (recovery_error != 0 || (keycount > 0 && keylist == NULL)) {
++            fprintf(stderr, "Darkside candidate recovery failed: %s\n", strerror(recovery_error ? recovery_error : ENOMEM));
++            status = EXIT_FAILURE;
++            goto cleanup;
++        }
+
+         if (keycount == 0) {
++            free(keylist);
++            keylist = NULL;
+             continue;
+@@ -80,2 +92,3 @@ int main(int argc, char *argv[]) {
+                 last_keylist = keylist;
++                keylist = NULL; // Transfer ownership to the parity-zero history.
+                 continue;
+@@ -95,2 +108,4 @@ int main(int argc, char *argv[]) {
+         }
++        free(keylist);
++        keylist = NULL;
+     }
+@@ -101,14 +116,7 @@ int main(int argc, char *argv[]) {
+
+-    if (last_keylist == keylist && last_keylist != NULL) {
+-        free(keylist);
+-    } else {
+-        if (last_keylist) {
+-            free(last_keylist);
+-        }
+-        if (keylist) {
+-            free(keylist);
+-        }
+-    }
++cleanup:
++    free(last_keylist);
++    free(keylist);
+     free(dps);
+-    return EXIT_SUCCESS;
++    return status;
+ }
+diff --git a/software/src/mfkey.c b/software/src/mfkey.c
+index 0e566fb..fb26625 100644
+--- a/software/src/mfkey.c
++++ b/software/src/mfkey.c
+@@ -13,2 +13,4 @@
+ #include "crapto1.h"
++#include <stdlib.h>
++#include <errno.h>
+
+@@ -47,2 +49,8 @@ uint32_t intersection(uint64_t *listA, uint64_t *listB) {
+ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t par_info, uint64_t ks_info, uint64_t **keys) {
++    errno = 0;
++    if (keys == NULL) {
++        errno = EINVAL;
++        return 0;
++    }
++    *keys = NULL;
+     union {
+@@ -76,3 +84,3 @@ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t
+     if (!unionstate.states) {
+-        *keys = NULL;
++        errno = ENOMEM;
+         return 0;
+@@ -86,4 +94,9 @@ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t
+     unionstate.keylist[i] = -1;
+-
++    if (i == 0) {
++        free(unionstate.keylist);
++        errno = 0;
++        return 0;
++    }
+     *keys = unionstate.keylist;
++    errno = 0;
+     return i;
+diff --git a/software/src/mfkey.h b/software/src/mfkey.h
+index 4f974fe..69db276 100644
+--- a/software/src/mfkey.h
++++ b/software/src/mfkey.h
+@@ -17,2 +17,4 @@
+
++/* The caller owns nonempty, UINT64_MAX-terminated key lists. Empty results
++ * have *keys == NULL and errno == 0; failures set errno. */
+ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t par_info, uint64_t ks_info, uint64_t **keys);

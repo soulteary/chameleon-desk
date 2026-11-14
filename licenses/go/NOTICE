@@ -1,0 +1,34 @@
+Go module licenses
+
+The following module versions are recorded in go.mod and go.sum.
+Original license and patent notices are retained below for each module.
+
+Module: github.com/creack/goselect
+Version: v0.1.2
+Source: https://github.com/creack/goselect/tree/v0.1.2
+Notices: github.com/creack/goselect/LICENSE
+
+Module: github.com/konsorten/go-windows-terminal-sequences
+Version: v1.0.1
+Source: https://github.com/konsorten/go-windows-terminal-sequences/tree/v1.0.1
+Notices: github.com/konsorten/go-windows-terminal-sequences/LICENSE
+
+Module: github.com/sirupsen/logrus
+Version: v1.5.0
+Source: https://github.com/sirupsen/logrus/tree/v1.5.0
+Notices: github.com/sirupsen/logrus/LICENSE
+
+Module: github.com/tinygo-org/cbgo
+Version: v0.0.4
+Source: https://github.com/tinygo-org/cbgo/tree/v0.0.4
+Notices: github.com/tinygo-org/cbgo/LICENSE
+
+Module: go.bug.st/serial
+Version: v1.6.4
+Source: https://github.com/bugst/go-serial/tree/v1.6.4
+Notices: go.bug.st/serial/LICENSE
+
+Module: golang.org/x/sys
+Version: v0.19.0
+Source: https://github.com/golang/sys/tree/v0.19.0
+Notices: golang.org/x/sys/LICENSE, golang.org/x/sys/PATENTS
