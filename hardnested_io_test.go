@@ -126,7 +126,7 @@ func TestHardnestedNonceFiles(t *testing.T) {
 		if runtime.GOOS == "darwin" {
 			strip = "-Wl,-dead_strip"
 		}
-		reader := build(t, "hardnested-reader", append([]string{"-ffunction-sections", "-fdata-sections", strip, "testdata/recovery/hardnested_reader.c"}, lzma...)...)
+		reader := build(t, "hardnested-reader", append([]string{"-ffunction-sections", "-fdata-sections", strip, "testdata/recovery/hardnested_reader.c"}, append(lzma, "-lm")...)...)
 		run(t, reader, 0, filepath.Join(dir, "write-only.txt"))
 	})
 }

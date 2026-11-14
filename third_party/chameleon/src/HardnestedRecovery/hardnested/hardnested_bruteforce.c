@@ -63,12 +63,7 @@ THE SOFTWARE.
 #include "../cmdhfmfhard.h"
 #include "hardnested_benchmark_data.h"
 
-#define NUM_BRUTE_FORCE_THREADS         (num_CPUs())
-#ifdef _WIN32
-#define NUM_BRUTE_FORCE_THREADS_ALLOC   128
-#else
-#define NUM_BRUTE_FORCE_THREADS_ALLOC   (num_CPUs())
-#endif
+#define MAX_BRUTE_FORCE_THREADS         128
 #define DEFAULT_BRUTE_FORCE_RATE        (120000000.0) // if benchmark doesn't succeed
 #define TEST_BENCH_SIZE                 (6000)        // number of odd and even states for brute force benchmark
 
@@ -128,10 +123,28 @@ static uint32_t bf_test_nonce[256];
 static uint8_t bf_test_nonce_2nd_byte[256];
 static uint8_t bf_test_nonce_par[256];
 static uint32_t bucket_count = 0;
-static statelist_t *buckets[128];
+static statelist_t **buckets = NULL;
 static uint32_t keys_found = 0;
 static uint64_t num_keys_tested;
 static uint64_t found_bs_key = 0;
+
+static uint32_t brute_force_thread_count(void) {
+    int detected = num_CPUs();
+    if (detected <= 0) return 1;
+    if (detected > MAX_BRUTE_FORCE_THREADS) return MAX_BRUTE_FORCE_THREADS;
+    return (uint32_t)detected;
+}
+
+typedef struct {
+    bool silent;
+    int thread_ID;
+    uint32_t thread_count;
+    uint32_t cuid;
+    uint32_t num_acquired_nonces;
+    uint64_t maximum_states;
+    noncelist_t *nonces;
+    uint8_t *best_first_bytes;
+} brute_force_args_t;
 
 uint8_t trailing_zeros(uint8_t byte) {
     static const uint8_t trailing_zeros_LUT[256] = {
@@ -190,24 +203,14 @@ __attribute__((force_align_arg_pointer))
 #endif
 #endif
 crack_states_thread(void *x) {
-    struct arg {
-        bool silent;
-        int thread_ID;
-        uint32_t cuid;
-        uint32_t num_acquired_nonces;
-        uint64_t maximum_states;
-        noncelist_t *nonces;
-        uint8_t *best_first_bytes;
-    } *thread_arg;
-
-    thread_arg = (struct arg *)x;
+    brute_force_args_t *thread_arg = x;
     const int thread_id = thread_arg->thread_ID;
-    uint32_t current_bucket = thread_id;
+    uint64_t current_bucket = (uint32_t)thread_id;
     while (current_bucket < bucket_count) {
         statelist_t *bucket = buckets[current_bucket];
         if (bucket) {
 #if defined (DEBUG_BRUTE_FORCE)
-            PrintAndLogEx(INFO, "Thread " _YELLOW_("%u") " starts working on bucket " _YELLOW_("%u") "\n", thread_id, current_bucket);
+            PrintAndLogEx(INFO, "Thread " _YELLOW_("%u") " starts working on bucket " _YELLOW_("%" PRIu64) "\n", thread_id, current_bucket);
 #endif
             const uint64_t key = crack_states_bitsliced(thread_arg->cuid, thread_arg->best_first_bytes, bucket, &keys_found, &num_keys_tested, nonces_to_bruteforce, bf_test_nonce_2nd_byte, thread_arg->nonces);
             if (key != -1) {
@@ -231,7 +234,7 @@ crack_states_thread(void *x) {
                 }
             }
         }
-        current_bucket += NUM_BRUTE_FORCE_THREADS;
+        current_bucket += thread_arg->thread_count;
     }
     return NULL;
 }
@@ -311,6 +314,7 @@ bool brute_force_bs(float *bf_rate, statelist_t *candidates, uint32_t cuid, uint
     write_benchfile(candidates);
 #endif
     bool silent = (bf_rate != NULL);
+    if (bf_rate != NULL) *bf_rate = DEFAULT_BRUTE_FORCE_RATE;
 
     keys_found = 0;
     num_keys_tested = 0;
@@ -319,54 +323,68 @@ bool brute_force_bs(float *bf_rate, statelist_t *candidates, uint32_t cuid, uint
     bitslice_test_nonces(nonces_to_bruteforce, bf_test_nonce, bf_test_nonce_par);
 
     // count number of states to go
+    uint64_t count = 0;
+    for (statelist_t *p = candidates; p != NULL; p = p->next) {
+        if (p->states[ODD_STATE] != NULL && p->states[EVEN_STATE] != NULL) {
+            count++;
+        }
+    }
+    if (count == 0) return false;
+    if (count > UINT32_MAX || count > SIZE_MAX / sizeof(*buckets)) {
+        fprintf(stderr, "Too many hardnested candidate buckets\n");
+        return false;
+    }
+    buckets = malloc((size_t)count * sizeof(*buckets));
+    if (buckets == NULL) {
+        fprintf(stderr, "Cannot allocate hardnested candidate buckets\n");
+        return false;
+    }
     bucket_count = 0;
     for (statelist_t *p = candidates; p != NULL; p = p->next) {
         if (p->states[ODD_STATE] != NULL && p->states[EVEN_STATE] != NULL) {
-            buckets[bucket_count] = p;
-            bucket_count++;
+            buckets[bucket_count++] = p;
         }
     }
+    uint32_t thread_count = brute_force_thread_count();
+    if (thread_count > bucket_count) thread_count = bucket_count;
 
     uint64_t start_time = msclock();
 
-#if defined(__linux__) ||  defined(__APPLE__)
-    if (NUM_BRUTE_FORCE_THREADS < 0)
-        return false;
-#endif
+    pthread_t threads[MAX_BRUTE_FORCE_THREADS];
+    bool started[MAX_BRUTE_FORCE_THREADS] = {false};
+    brute_force_args_t thread_args[MAX_BRUTE_FORCE_THREADS];
 
-    pthread_t threads[NUM_BRUTE_FORCE_THREADS_ALLOC];
-    struct args {
-        bool silent;
-        int thread_ID;
-        uint32_t cuid;
-        uint32_t num_acquired_nonces;
-        uint64_t maximum_states;
-        noncelist_t *nonces;
-        uint8_t *best_first_bytes;
-    } thread_args[NUM_BRUTE_FORCE_THREADS_ALLOC];
-
-    for (uint32_t i = 0; i < NUM_BRUTE_FORCE_THREADS; i++) {
+    for (uint32_t i = 0; i < thread_count; i++) {
         thread_args[i].thread_ID = i;
+        thread_args[i].thread_count = thread_count;
         thread_args[i].silent = silent;
         thread_args[i].cuid = cuid;
         thread_args[i].num_acquired_nonces = num_acquired_nonces;
         thread_args[i].maximum_states = maximum_states;
         thread_args[i].nonces = nonces;
         thread_args[i].best_first_bytes = best_first_bytes;
-        pthread_create(&threads[i], NULL, crack_states_thread, (void *)&thread_args[i]);
+        if (pthread_create(&threads[i], NULL, crack_states_thread, &thread_args[i]) == 0) {
+            started[i] = true;
+        } else {
+            /* Process this partition inline if an OS thread cannot be started. */
+            crack_states_thread(&thread_args[i]);
+        }
     }
-    for (uint32_t i = 0; i < NUM_BRUTE_FORCE_THREADS; i++) {
-        pthread_join(threads[i], 0);
+    for (uint32_t i = 0; i < thread_count; i++) {
+        if (started[i]) pthread_join(threads[i], NULL);
     }
 
     uint64_t elapsed_time = msclock() - start_time;
 
     if (bf_rate != NULL)
-        *bf_rate = (float)num_keys_tested / ((float)elapsed_time / 1000.0);
+        *bf_rate = elapsed_time == 0 ? DEFAULT_BRUTE_FORCE_RATE : (float)num_keys_tested / ((float)elapsed_time / 1000.0);
 
     if (keys_found > 0)
         *found_key = found_bs_key;
 
+    free(buckets);
+    buckets = NULL;
+    bucket_count = 0;
     return (keys_found != 0);
 }
 
@@ -438,31 +456,39 @@ static bool read_bench_data(statelist_t *test_candidates) {
 
 
 float brute_force_benchmark(void) {
-    statelist_t test_candidates[NUM_BRUTE_FORCE_THREADS_ALLOC];
+    uint32_t thread_count = brute_force_thread_count();
+    statelist_t test_candidates[MAX_BRUTE_FORCE_THREADS] = {0};
 
     test_candidates[0].states[ODD_STATE] = calloc(1, (TEST_BENCH_SIZE + 1) * sizeof(uint32_t));
     test_candidates[0].states[EVEN_STATE] = calloc(1, (TEST_BENCH_SIZE + 1) * sizeof(uint32_t));
-    for (uint32_t i = 0; i < NUM_BRUTE_FORCE_THREADS - 1; i++) {
+    if (test_candidates[0].states[ODD_STATE] == NULL || test_candidates[0].states[EVEN_STATE] == NULL) {
+        free(test_candidates[0].states[ODD_STATE]);
+        free(test_candidates[0].states[EVEN_STATE]);
+        return DEFAULT_BRUTE_FORCE_RATE;
+    }
+    for (uint32_t i = 0; i < thread_count - 1; i++) {
         test_candidates[i].next = test_candidates + i + 1;
         test_candidates[i + 1].states[ODD_STATE] = test_candidates[0].states[ODD_STATE];
         test_candidates[i + 1].states[EVEN_STATE] = test_candidates[0].states[EVEN_STATE];
     }
-    test_candidates[NUM_BRUTE_FORCE_THREADS - 1].next = NULL;
+    test_candidates[thread_count - 1].next = NULL;
 
     if (!read_bench_data(test_candidates)) {
+        free(test_candidates[0].states[ODD_STATE]);
+        free(test_candidates[0].states[EVEN_STATE]);
         return DEFAULT_BRUTE_FORCE_RATE;
     }
 
-    for (uint32_t i = 0; i < NUM_BRUTE_FORCE_THREADS; i++) {
+    for (uint32_t i = 0; i < thread_count; i++) {
         test_candidates[i].len[ODD_STATE] = TEST_BENCH_SIZE;
         test_candidates[i].len[EVEN_STATE] = TEST_BENCH_SIZE;
         test_candidates[i].states[ODD_STATE][TEST_BENCH_SIZE] = -1;
         test_candidates[i].states[EVEN_STATE][TEST_BENCH_SIZE] = -1;
     }
 
-    uint64_t maximum_states = TEST_BENCH_SIZE * TEST_BENCH_SIZE * (uint64_t)NUM_BRUTE_FORCE_THREADS;
+    uint64_t maximum_states = TEST_BENCH_SIZE * TEST_BENCH_SIZE * (uint64_t)thread_count;
 
-    float bf_rate;
+    float bf_rate = DEFAULT_BRUTE_FORCE_RATE;
     uint64_t found_key = 0;
     brute_force_bs(&bf_rate, test_candidates, 0, 0, maximum_states, NULL, 0, &found_key);
 
@@ -470,7 +496,7 @@ float brute_force_benchmark(void) {
     free(test_candidates[0].states[EVEN_STATE]);
     test_candidates[0].len[ODD_STATE] = 0;
     test_candidates[0].len[EVEN_STATE] = 0;
-    return bf_rate;
+    return bf_rate > 0 ? bf_rate : DEFAULT_BRUTE_FORCE_RATE;
 }
 
 
