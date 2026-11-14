@@ -72,7 +72,7 @@ func classicDictionary(path, keyText string) ([]chameleon.HexBytes, error) {
 		keys = append(keys, key)
 	}
 	if path != "" {
-		b, e := readLimitedFile(path)
+		b, e := readDictionaryFile(path)
 		if e != nil {
 			return nil, e
 		}
@@ -162,6 +162,11 @@ func runWorkflow(args []string) (retErr error) {
 	}
 	if f.NArg() != 0 || *timeout <= 0 || *limit <= 0 {
 		return fmt.Errorf("invalid arguments or timeouts")
+	}
+	if *binaryOutput && !(group == "mfc" && action == "dump-keys" ||
+		group == "rf" && (action == "lf-samples" || action == "adc") ||
+		group == "ulc" && (action == "read" || action == "version" || action == "signature" || action == "counter" || action == "authnonce")) {
+		return fmt.Errorf("--binary requires a byte-returning read or dump action")
 	}
 	if !(group == "mfc" && action == "recover-compute" && *resume) {
 		if e := checkNewOutput(*output); e != nil {
@@ -519,7 +524,7 @@ func runWorkflow(args []string) (retErr error) {
 					keys = append(keys, key)
 				}
 				if *dictionary != "" {
-					b, err := readLimitedFile(*dictionary)
+					b, err := readFileWithLimit(*dictionary, dictionaryTextLimit)
 					if err != nil {
 						return err
 					}

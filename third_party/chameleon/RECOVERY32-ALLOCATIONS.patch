@@ -1,0 +1,47 @@
+diff --git a/software/src/crapto1.c b/software/src/crapto1.c
+index 5891728..7d2f3bf 100644
+--- a/software/src/crapto1.c
++++ b/software/src/crapto1.c
+@@ -20,2 +20,3 @@
+ #include <stdlib.h>
++#include <errno.h>
+ #include "parity.h"
+@@ -134,3 +135,4 @@ recover(uint32_t *o_head, uint32_t *o_tail, uint32_t oks,
+ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
+-    struct Crypto1State *statelist;
++    struct Crypto1State *statelist = NULL;
++    bucket_array_t bucket = {0};
+     uint32_t *odd_head = 0, *odd_tail = 0, oks = 0;
+@@ -148,7 +150,5 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
+     statelist =  malloc(sizeof(struct Crypto1State) << 18);
+-    if (!odd_tail-- || !even_tail-- || !statelist) {
+-        free(statelist);
+-        statelist = 0;
+-        goto out;
+-    }
++    if (!odd_head || !even_head || !statelist) goto allocation_failure;
++    odd_tail--;
++    even_tail--;
+
+@@ -157,4 +157,2 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
+     // allocate memory for out of place bucket_sort
+-    bucket_array_t bucket;
+-
+     for (i = 0; i < 2; i++) {
+@@ -163,3 +161,3 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
+             if (!bucket[i][j].head) {
+-                goto out;
++                goto allocation_failure;
+             }
+@@ -187,3 +185,7 @@ struct Crypto1State *lfsr_recovery32(uint32_t ks2, uint32_t in) {
+     recover(odd_head, odd_tail, oks, even_head, even_tail, eks, 11, statelist, in << 1, bucket);
++    goto out;
+
++allocation_failure:
++    free(statelist);
++    statelist = NULL;
+ out:
+@@ -194,2 +196,3 @@ out:
+     free(even_head);
++    errno = statelist == NULL ? ENOMEM : 0;
+     return statelist;

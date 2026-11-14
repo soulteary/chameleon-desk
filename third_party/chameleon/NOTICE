@@ -9,6 +9,7 @@ Local modifications:
 - hardnested_main.c rejects incomplete binary records and captures missing first-byte classes before recovery initialization, and checks temporary-file close errors.
 - HardnestedRecovery/cmdhfmfhard.c distinguishes EOF and malformed/read failures, finishes pending reductions with a bounded EOF step, validates replay reads, and releases input/recovery buffers on failure.
 - hardnested_bruteforce.c sizes bucket storage from the complete candidate list, snapshots a positive bounded worker count, processes failed thread partitions inline, and frees benchmark and bucket buffers.
-The cryptographic primitives are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, and HARDNESTED-BOUNDS.patch.
+- crapto1.c initializes recovery32 bucket ownership before allocation failures can reach cleanup, frees partial results, and returns NULL with ENOMEM on allocation failure.
+Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, and RECOVERY32-ALLOCATIONS.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
 The offline C workers are optional executables; no Python is required at runtime.

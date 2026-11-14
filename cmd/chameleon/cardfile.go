@@ -9,15 +9,32 @@ import (
 	"os"
 )
 
+// Indented numeric arrays for 100,000 maximum-width keys exceed 32MiB.
+const dictionaryJSONLimit = 64 << 20
+const dictionaryTextLimit = 8 << 20
+
 func readLimitedFile(path string) ([]byte, error) {
+	return readFileWithLimit(path, 4<<20)
+}
+
+func readDictionaryFile(path string) ([]byte, error) {
+	return readFileWithLimit(path, dictionaryJSONLimit)
+}
+
+func readFileWithLimit(path string, limit int64) ([]byte, error) {
 	f, e := os.Open(path)
 	if e != nil {
 		return nil, e
 	}
 	defer f.Close()
-	b, e := io.ReadAll(io.LimitReader(f, 4<<20+1))
-	if len(b) > 4<<20 {
-		return nil, fmt.Errorf("input exceeds 4MiB")
+	if info, e := f.Stat(); e != nil {
+		return nil, e
+	} else if info.Size() > limit {
+		return nil, fmt.Errorf("input exceeds %dMiB", limit>>20)
+	}
+	b, e := io.ReadAll(io.LimitReader(f, limit+1))
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("input exceeds %dMiB", limit>>20)
 	}
 	return b, e
 }
@@ -43,7 +60,13 @@ func runCardfile(args []string) error {
 	if sameFilePath(*output, *input) || sameFilePath(*output, *template) {
 		return fmt.Errorf("output must be separate from input and template")
 	}
-	b, e := readLimitedFile(*input)
+	readInput := readLimitedFile
+	if action == "dict-to-text" {
+		readInput = readDictionaryFile
+	} else if action == "dict-from-text" {
+		readInput = func(path string) ([]byte, error) { return readFileWithLimit(path, dictionaryTextLimit) }
+	}
+	b, e := readInput(*input)
 	if e != nil {
 		return e
 	}
@@ -59,7 +82,7 @@ func runCardfile(args []string) error {
 			}
 			return result([]byte(text), *output, true)
 		}
-		tb, e := readLimitedFile(*template)
+		tb, e := readDictionaryFile(*template)
 		if e != nil {
 			return e
 		}
