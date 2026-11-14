@@ -275,6 +275,12 @@ func runWorkflow(args []string) (retErr error) {
 		if *kindCapture != "nested" && *kindCapture != "hardnested" && *kindCapture != "darkside" {
 			return fmt.Errorf("--kind must be nested, hardnested, or darkside")
 		}
+		if *kindCapture != "darkside" && len(key) != 6 {
+			return fmt.Errorf("%s recover-collect requires --key (six-byte known key)", *kindCapture)
+		}
+		if !strings.EqualFold(*dstType, "A") && !strings.EqualFold(*dstType, "B") {
+			return fmt.Errorf("dst-key-type must be A/B")
+		}
 	}
 	if group == "mfc" && action == "recover-verify" {
 		b, err := chameleon.ReadRecoveryBundle(*input)
@@ -337,9 +343,6 @@ func runWorkflow(args []string) (retErr error) {
 	case "mfc":
 		switch action {
 		case "recover-collect":
-			if len(key) != 6 {
-				return fmt.Errorf("recover-collect requires --key (six-byte known key)")
-			}
 			bundle, collectErr := c.CollectRecoveryBundle(ctx, *block, kind, key, *dst, func() chameleon.KeyType {
 				if strings.EqualFold(*dstType, "B") {
 					return chameleon.KeyB
