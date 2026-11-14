@@ -10,7 +10,7 @@ Source: https://github.com/RfidResearchGroup/ChameleonUltra
 Revision: 6009a5fb8adbb92d3efb548eaac9e501bd179801
 License: GNU General Public License version 3; see chameleon-ultra/LICENSE.
 The command catalog includes upstream parameter descriptions and source
-references. Optional recovery workers retain their notices and local patch
+references. Optional recovery workers retain their notices and local patches
 under third_party/chameleon/.
 
 GameTec-live/ChameleonUltraGUI

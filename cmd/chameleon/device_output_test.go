@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	chameleon "github.com/soulteary/chameleon-desk"
 	"os"
@@ -82,7 +83,7 @@ func TestRecoveryResumeKeepsCompletedOutput(t *testing.T) {
 	if e := chameleon.WriteRecoveryBundle(capture, b); e != nil {
 		t.Fatal(e)
 	}
-	prior := chameleon.OfflineRecovery{CaptureSHA256: b.Checksum, UID: b.UID, Candidates: []chameleon.HexBytes{{1, 2, 3, 4, 5, 6}}}
+	prior := offlineRecoveryCheckpoint{OfflineRecovery: chameleon.OfflineRecovery{Kind: b.Kind, CaptureSHA256: b.Checksum, UID: b.UID, Block: b.TargetBlock, KeyType: b.TargetType, Candidates: []chameleon.HexBytes{{1, 2, 3, 4, 5, 6}}, Tool: chameleon.RecoveryResult{Tool: b.Tool}}, Completed: true}
 	if e := result(prior, output, false); e != nil {
 		t.Fatal(e)
 	}
@@ -93,5 +94,88 @@ func TestRecoveryResumeKeepsCompletedOutput(t *testing.T) {
 	after, _ := os.ReadFile(output)
 	if string(before) != string(after) {
 		t.Fatal("cached output changed")
+	}
+}
+
+func TestRecoveryResumeRejectsFailedAndIncompleteResults(t *testing.T) {
+	for _, name := range []string{"missing-helper", "failed-helper", "legacy-result", "wrong-target", "invalid-candidate"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			capture, output := filepath.Join(dir, "capture.json"), filepath.Join(dir, "offline.json")
+			bundle := chameleon.RecoveryBundle{Schema: 1, Kind: "nested", UID: chameleon.HexBytes{1, 2, 3, 4}, TargetBlock: 4, TargetType: chameleon.KeyA, Tool: "staticnested", Arguments: []string{"16909060", "96", "1", "2"}}
+			if err := bundle.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			if err := chameleon.WriteRecoveryBundle(capture, bundle); err != nil {
+				t.Fatal(err)
+			}
+			tools := filepath.Join(dir, "tools")
+			if err := os.Mkdir(tools, 0700); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"mfc", "recover-compute", "--input", capture, "--output", output, "--tools-dir", tools}
+			if name == "failed-helper" {
+				if err := os.WriteFile(filepath.Join(tools, "staticnested"), []byte("#!/bin/sh\nprintf 'Key 1... 010203040506\\n'\nexit 1\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if name == "missing-helper" || name == "failed-helper" {
+				if err := runWorkflow(args); err == nil {
+					t.Fatal("helper failure reported success")
+				}
+				var failed offlineRecoveryCheckpoint
+				raw, err := os.ReadFile(output)
+				if err != nil || json.Unmarshal(raw, &failed) != nil || failed.Completed || failed.Error == "" {
+					t.Fatalf("failed run did not persist an incomplete checkpoint: %s %v", raw, err)
+				}
+			} else {
+				prior := offlineRecoveryCheckpoint{OfflineRecovery: chameleon.OfflineRecovery{Kind: bundle.Kind, CaptureSHA256: bundle.Checksum, UID: bundle.UID, Block: bundle.TargetBlock, KeyType: bundle.TargetType, Candidates: []chameleon.HexBytes{{1, 2, 3, 4, 5, 6}}, Tool: chameleon.RecoveryResult{Tool: bundle.Tool}}, Completed: true}
+				var value any = prior
+				switch name {
+				case "legacy-result":
+					value = prior.OfflineRecovery
+				case "wrong-target":
+					prior.Block++
+					value = prior
+				case "invalid-candidate":
+					prior.Candidates = []chameleon.HexBytes{{1}}
+					value = prior
+				}
+				if err := result(value, output, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, _ := os.ReadFile(output)
+			if err := runWorkflow(append(args, "--resume")); err == nil || !strings.Contains(err.Error(), "incomplete or does not match") {
+				t.Fatalf("incomplete checkpoint resumed successfully: %v", err)
+			}
+			after, _ := os.ReadFile(output)
+			if string(before) != string(after) {
+				t.Fatal("rejected checkpoint was overwritten")
+			}
+		})
+	}
+}
+
+func TestRecoveryResumeAcceptsCompletedSearchWithoutCandidates(t *testing.T) {
+	dir := t.TempDir()
+	capture, output := filepath.Join(dir, "capture.json"), filepath.Join(dir, "offline.json")
+	bundle := chameleon.RecoveryBundle{Schema: 1, Kind: "nested", UID: chameleon.HexBytes{1, 2, 3, 4}, TargetBlock: 4, TargetType: chameleon.KeyA, Tool: "staticnested", Arguments: []string{"16909060", "96", "1", "2"}}
+	if err := chameleon.WriteRecoveryBundle(capture, bundle); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(dir, "staticnested")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf 'No matching key\\n'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"mfc", "recover-compute", "--input", capture, "--output", output, "--tools-dir", dir}
+	if err := runWorkflow(args); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(helper); err != nil {
+		t.Fatal(err)
+	}
+	if err := runWorkflow(append(args, "--resume")); err != nil {
+		t.Fatalf("completed empty result did not resume: %v", err)
 	}
 }

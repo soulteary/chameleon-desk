@@ -1,11 +1,95 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/json"
+	chameleon "github.com/soulteary/chameleon-desk"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestDetectionWorkflowUsesRequestedFamilyAndRestoresSlot(t *testing.T) {
+	for _, family := range []string{"mfc", "type2", "emulator"} {
+		t.Run(family, func(t *testing.T) {
+			var mu sync.Mutex
+			active := byte(0)
+			var commands []uint16
+			port := workflowSimulator(t, func(cmd uint16, payload []byte) (uint16, []byte) {
+				mu.Lock()
+				defer mu.Unlock()
+				commands = append(commands, cmd)
+				switch cmd {
+				case 1002:
+					return 0x68, []byte{0}
+				case 1018:
+					return 0x68, []byte{active}
+				case 1003:
+					active = payload[0]
+					return 0x68, nil
+				case 1019:
+					types := make([]byte, 32)
+					tag := uint16(1100)
+					if family == "mfc" {
+						tag = 1001
+					}
+					binary.BigEndian.PutUint16(types[int(active)*4:], tag)
+					return 0x68, types
+				case 4005, 4034:
+					return 0x68, []byte{0, 0, 0, 3}
+				case 4030:
+					return 0x68, []byte{45}
+				case 4006, 4035:
+					if len(payload) != 4 || binary.BigEndian.Uint32(payload) != 1 {
+						t.Errorf("requested log offset %X", payload)
+					}
+					if cmd == 4006 {
+						return 0x68, []byte{4, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+					}
+					return 0x68, []byte{1, 2, 3, 4}
+				default:
+					t.Errorf("unexpected simulated command %d", cmd)
+					return 0x67, nil
+				}
+			})
+			action := "edetect"
+			if family == "emulator" {
+				action = "password-log"
+			}
+			output := filepath.Join(t.TempDir(), "logs.json")
+			if err := runMappedWorkflow([]string{family, action, "--port", port, "--slot", "2", "--yes", "--start", "1", "--limit", "1", "--output", output}); err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if active != 0 {
+				t.Fatal("original slot not restored", active)
+			}
+			for _, cmd := range commands {
+				if family == "mfc" && (cmd == 4034 || cmd == 4035) || family != "mfc" && (cmd == 4005 || cmd == 4006) {
+					t.Fatalf("wrong detection command family: %d", cmd)
+				}
+			}
+			raw, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if family == "mfc" {
+				var logs []chameleon.AuthLog
+				if err := json.Unmarshal(raw, &logs); err != nil || len(logs) != 1 || logs[0].KeyType != "B" || logs[0].Block != 4 {
+					t.Fatalf("invalid Classic detection output %s: %v", raw, err)
+				}
+			} else {
+				var logs []chameleon.HexBytes
+				if err := json.Unmarshal(raw, &logs); err != nil || len(logs) != 1 || logs[0].String() != "01020304" {
+					t.Fatalf("invalid Type2 detection output %s: %v", raw, err)
+				}
+			}
+		})
+	}
+}
 
 func TestMappedMutationsRequireYesBeforeDeviceOpen(t *testing.T) {
 	for _, args := range [][]string{{"mfc", "eload"}, {"type2", "eload"}, {"emulator", "configure"}, {"slot", "openall"}, {"slot", "nickname-delete"}, {"slot", "nickname-set"}, {"settings", "configure"}, {"lf", "clone"}} {

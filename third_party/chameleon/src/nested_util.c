@@ -22,7 +22,7 @@
 
 typedef struct {
     uint64_t       key;
-    int            count;
+    uint32_t       count;
 } countKeys;
 
 typedef struct {
@@ -31,6 +31,7 @@ typedef struct {
 
     uint64_t *keys;
     uint32_t keyCount;
+    bool failed;
 
     uint32_t startPos;
     uint32_t endPos;
@@ -45,48 +46,48 @@ inline static int compar_int(const void *a, const void *b) {
 
 // Compare countKeys structure
 int compar_special_int(const void *a, const void *b) {
-    return (((countKeys *)b)->count - ((countKeys *)a)->count);
+    const countKeys *left = a, *right = b;
+    if (left->count != right->count) return left->count < right->count ? 1 : -1;
+    return compar_int(&left->key, &right->key);
 }
 
 // keys qsort and unique.
-countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size) {
-    unsigned int i, j = 0;
-    int count = 0;
-    countKeys *our_counts;
+static bool allocation_fits(uint64_t count, size_t width) {
+    return count <= SIZE_MAX / width;
+}
 
-    qsort(possibleKeys, size, sizeof(uint64_t), compar_int);
-
-    our_counts = calloc(size, sizeof(countKeys));
+countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size, uint32_t *uniqueCount) {
+    *uniqueCount = 0;
+    if (size == 0 || possibleKeys == NULL || !allocation_fits(size, sizeof(countKeys))) return NULL;
+    countKeys *our_counts = calloc(size, sizeof(countKeys));
     if (our_counts == NULL) {
-        printf("Memory allocation error for our_counts");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Memory allocation error for our_counts\n");
+        return NULL;
     }
-
-    for (i = 0; i < size; i++) {
-        if (possibleKeys[i + 1] == possibleKeys[i]) {
-            count++;
-        } else {
-            our_counts[j].key = possibleKeys[i];
-            our_counts[j].count = count;
-            j++;
-            count = 0;
-        }
+    qsort(possibleKeys, size, sizeof(uint64_t), compar_int);
+    for (uint32_t i = 0; i < size;) {
+        uint32_t start = i;
+        uint64_t key = possibleKeys[i++];
+        while (i < size && possibleKeys[i] == key) i++;
+        our_counts[*uniqueCount].key = key;
+        our_counts[*uniqueCount].count = i - start;
+        (*uniqueCount)++;
     }
-    qsort(our_counts, j, sizeof(countKeys), compar_special_int);
-    return (our_counts);
+    qsort(our_counts, *uniqueCount, sizeof(countKeys), compar_special_int);
+    return our_counts;
 }
 
 // nested decrypt
 static void *nested_revover(void *args) {
     struct Crypto1State *revstate, *revstate_start = NULL;
     uint64_t lfsr = 0;
-    uint32_t i, kcount = 0;
-    bool is_ok = true;
+    uint32_t i, kcount = 0, capacity = 0;
 
     RecPar *rp = (RecPar *)args;
 
     rp->keyCount = 0;
     rp->keys = NULL;
+    rp->failed = false;
 
     //printf("Start pos is %d, End pos is %d\r\n", rp->startPos, rp->endPos);
 
@@ -102,150 +103,117 @@ static void *nested_revover(void *args) {
 
         // And finally recover the first 32 bits of the key
         revstate = lfsr_recovery32(ks1, nt_probe);
-        if (revstate_start == NULL) {
-            revstate_start = revstate;
+        revstate_start = revstate;
+        if (revstate == NULL) {
+            rp->failed = true;
+            break;
         }
 
         while ((revstate->odd != 0x0) || (revstate->even != 0x0)) {
             lfsr_rollback_word(revstate, nt_probe, 0);
             crypto1_get_lfsr(revstate, &lfsr);
-            if (((kcount % MEM_CHUNK) == 0) || (kcount >= rp->keyCount)) {
-                rp->keyCount += MEM_CHUNK;
-                // printf("New chunk by %d, sizeof %lu\n", kcount, rp->keyCount * sizeof(uint64_t));
-                void *tmp = realloc(rp->keys, rp->keyCount * sizeof(uint64_t));
+            if (kcount == capacity) {
+                uint32_t next = capacity > UINT32_MAX - MEM_CHUNK ? UINT32_MAX : capacity + MEM_CHUNK;
+                if (next <= kcount || !allocation_fits(next, sizeof(uint64_t))) {
+                    rp->failed = true;
+                    break;
+                }
+                void *tmp = realloc(rp->keys, next * sizeof(uint64_t));
                 if (tmp == NULL) {
-                    printf("Memory allocation error for pk->possibleKeys");
-                    rp->keyCount = 0;
-                    is_ok = false;
+                    fprintf(stderr, "Memory allocation error for possible keys\n");
+                    rp->failed = true;
                     break;
                 }
                 rp->keys = (uint64_t *)tmp;
+                capacity = next;
             }
             rp->keys[kcount] = lfsr;
             kcount++;
             revstate++;
         }
-        --kcount;
         free(revstate_start);
         revstate_start = NULL;
-        if (!is_ok) {
+        if (rp->failed) {
             break;
         }
     }
-    if (is_ok) {
-        if (kcount != 0) {
-            rp->keyCount = kcount;
-            void *tmp = (uint64_t *)realloc(rp->keys, rp->keyCount * sizeof(uint64_t));
-            if (tmp == NULL) {
-                printf("Memory allocation error for pk->possibleKeys");
-                rp->keyCount = 0;
-                free(rp->keys);
-            } else {
-                rp->keys = tmp;
-            }
-        }
-    } else {
-        rp->keyCount = 0;
+    if (rp->failed || kcount == 0) {
         free(rp->keys);
+        rp->keys = NULL;
+    } else {
+        rp->keyCount = kcount;
     }
     return NULL;
 }
 
 uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyCount) {
 #define THREAD_MAX 4
-
+    if (keyCount == NULL) return NULL;
     *keyCount = 0;
-    uint32_t i, j, manyThread;
-    uint64_t *keys = (uint64_t *)NULL;
+    if (pNK == NULL || sizePNK == 0) return NULL;
 
-    manyThread = THREAD_MAX;
-    if (manyThread > sizePNK) {
-        manyThread = sizePNK;
-    }
-
-    // pthread handle
-    pthread_t *threads = calloc(sizePNK, sizeof(pthread_t));
-    if (threads == NULL)  return NULL;
-
-    // Param
-    RecPar *pRPs = calloc(sizePNK, sizeof(RecPar));
-    if (pRPs == NULL) {
-        free(threads);
-        return NULL;
-    }
-
+    uint32_t manyThread = sizePNK < THREAD_MAX ? sizePNK : THREAD_MAX;
+    pthread_t threads[THREAD_MAX];
+    RecPar params[THREAD_MAX] = {0};
+    uint32_t started = 0;
+    bool failed = false;
     uint32_t average = sizePNK / manyThread;
     uint32_t modules = sizePNK % manyThread;
 
-    // Assign tasks
-    for (i = 0, j = 0; i < manyThread; i++, j += average) {
-        pRPs[i].pNK = pNK;
-        pRPs[i].authuid = authuid;
-        pRPs[i].startPos = j;
-        pRPs[i].endPos = j + average;
-        pRPs[i].keys = NULL;
-        // last thread can decrypt more pNK
-        if (i == (manyThread - 1) && modules > 0) {
-            (pRPs[i].endPos) += modules;
+    for (uint32_t i = 0, pos = 0; i < manyThread; i++, pos += average) {
+        params[i].pNK = pNK;
+        params[i].authuid = authuid;
+        params[i].startPos = pos;
+        params[i].endPos = pos + average;
+        if (i == manyThread - 1) params[i].endPos += modules;
+        if (pthread_create(&threads[i], NULL, nested_revover, &params[i]) != 0) {
+            fprintf(stderr, "Cannot start recovery thread\n");
+            failed = true;
+            break;
         }
-        pthread_create(&threads[i], NULL, nested_revover, &(pRPs[i]));
+        started++;
     }
-
-    for (i = 0; i < manyThread; i++) {
-        // wait thread exit...
+    uint64_t total = 0;
+    for (uint32_t i = 0; i < started; i++) {
         pthread_join(threads[i], NULL);
-        *keyCount += pRPs[i].keyCount;
+        if (params[i].failed) failed = true;
+        total += params[i].keyCount;
     }
-    free(threads);
 
-    if (*keyCount != 0) {
-        keys = malloc((*keyCount) * sizeof(uint64_t));
-        if (keys != NULL) {
-            for (i = 0, j = 0; i < manyThread; i++) {
-                if (pRPs[i].keyCount > 0) {
-                    // printf("The thread %d recover %d keys.\r\n", i, pRPs[i].keyCount);
-                    if (pRPs[i].keys != NULL) {
-                        memcpy(
-                            keys + j,
-                            pRPs[i].keys,
-                            pRPs[i].keyCount * sizeof(uint64_t)
-                        );
-                        j += pRPs[i].keyCount;
-                        free(pRPs[i].keys);
-                    }
-                }
+    uint64_t *keys = NULL;
+    if (!failed && total > 0 && total <= UINT32_MAX && allocation_fits(total, sizeof(uint64_t))) {
+        keys = malloc((size_t)total * sizeof(uint64_t));
+        if (keys == NULL) fprintf(stderr, "Cannot allocate memory to merge keys\n");
+        else {
+            size_t pos = 0;
+            for (uint32_t i = 0; i < started; i++) {
+                if (params[i].keyCount == 0) continue;
+                memcpy(keys + pos, params[i].keys, params[i].keyCount * sizeof(uint64_t));
+                pos += params[i].keyCount;
             }
-
-            countKeys *ck = uniqsort(keys, *keyCount);
-            free(keys);
-            keys = (uint64_t *)NULL;
-            *keyCount = 0;
-
-            if (ck != NULL) {
-                for (i = 0; i < TRY_KEYS; i++) {
-                    // We don't known this key, try to break it
-                    // This key can be found here two or more times
-                    if (ck[i].count > 0) {
-                        *keyCount += 1;
-                        void *tmp = realloc(keys, sizeof(uint64_t) * (*keyCount));
-                        if (tmp != NULL) {
-                            keys = tmp;
-                            keys[*keyCount - 1] = ck[i].key;
-                        } else {
-                            printf("Cannot allocate memory for keys on merge.");
-                            free(keys);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                printf("Cannot allocate memory for ck on uniqsort.");
-            }
-        } else {
-            printf("Cannot allocate memory to merge keys.\r\n");
         }
     }
-    free(pRPs);
+    for (uint32_t i = 0; i < started; i++) free(params[i].keys);
+    if (keys == NULL) return NULL;
+
+    uint32_t uniqueCount = 0;
+    countKeys *counts = uniqsort(keys, (uint32_t)total, &uniqueCount);
+    free(keys);
+    keys = NULL;
+    if (counts == NULL) return NULL;
+
+    uint32_t limit = uniqueCount < TRY_KEYS ? uniqueCount : TRY_KEYS;
+    uint32_t selected = 0;
+    while (selected < limit && counts[selected].count >= 2) selected++;
+    if (selected > 0) {
+        keys = malloc(selected * sizeof(uint64_t));
+        if (keys == NULL) fprintf(stderr, "Cannot allocate memory for selected keys\n");
+        else {
+            for (uint32_t i = 0; i < selected; i++) keys[i] = counts[i].key;
+            *keyCount = selected;
+        }
+    }
+    free(counts);
     return keys;
 }
 
