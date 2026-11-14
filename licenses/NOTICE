@@ -66,6 +66,7 @@ Revision: 7487046b73b43a8e729e2757d5c15663c7b578dd
 No license file or license statement was found in the inspected repository.
 No license grant is assumed; no files from this project are distributed.
 
-Vendored Go dependencies retain their LICENSE and PATENTS files in vendor/.
+Go dependency versions, sources, LICENSE and PATENTS files are recorded in
+licenses/go/NOTICE and its component directories.
 The separate C recovery sources retain file-level copyright and license
 notices in third_party/chameleon/src/.

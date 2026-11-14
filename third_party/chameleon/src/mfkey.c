@@ -11,6 +11,8 @@
 //-----------------------------------------------------------------------------
 #include "mfkey.h"
 #include "crapto1.h"
+#include <stdlib.h>
+#include <errno.h>
 
 // MIFARE
 extern int compare_uint64(const void *a, const void *b);
@@ -45,6 +47,12 @@ uint32_t intersection(uint64_t *listA, uint64_t *listB) {
 // Darkside attack (hf mf mifare)
 // if successful it will return a list of keys, not just one.
 uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t par_info, uint64_t ks_info, uint64_t **keys) {
+    errno = 0;
+    if (keys == NULL) {
+        errno = EINVAL;
+        return 0;
+    }
+    *keys = NULL;
     union {
         struct Crypto1State *states;
         uint64_t *keylist;
@@ -74,7 +82,7 @@ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t
     unionstate.states = lfsr_common_prefix(nr, ar, ks3x, par, (par_info == 0));
 
     if (!unionstate.states) {
-        *keys = NULL;
+        errno = ENOMEM;
         return 0;
     }
 
@@ -84,7 +92,12 @@ uint32_t nonce2key(uint32_t uid, uint32_t nt, uint32_t nr, uint32_t ar, uint64_t
         unionstate.keylist[i] = key_recovered;
     }
     unionstate.keylist[i] = -1;
-
+    if (i == 0) {
+        free(unionstate.keylist);
+        errno = 0;
+        return 0;
+    }
     *keys = unionstate.keylist;
+    errno = 0;
     return i;
 }
