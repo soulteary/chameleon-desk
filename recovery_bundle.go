@@ -59,6 +59,9 @@ func (b RecoveryBundle) Validate(checksum bool) error {
 	if _, err := keyPayload(b.TargetBlock, b.TargetType, make([]byte, 6)); err != nil {
 		return err
 	}
+	if b.Runs < 0 || b.Runs > maxRecoveryRuns {
+		return fmt.Errorf("recovery runs must be 0..%d", maxRecoveryRuns)
+	}
 	switch b.Kind {
 	case "nested":
 		if b.Tool != "nested" && b.Tool != "staticnested" {
@@ -68,15 +71,57 @@ func (b RecoveryBundle) Validate(checksum bool) error {
 			return fmt.Errorf("nested arguments missing")
 		}
 	case "darkside":
-		if b.Tool != "darkside" || len(b.Arguments) < 6 || len(b.Samples) == 0 {
+		if b.Tool != "darkside" || len(b.Arguments) < 6 || len(b.Samples) == 0 || len(b.Samples) > maxRecoveryRuns {
 			return fmt.Errorf("invalid darkside capture")
 		}
 	case "hardnested":
 		if b.Tool != "hardnested" || len(b.HardnestedFile) < 6+9*256 || len(b.HardnestedFile) > 4<<20+6 {
 			return fmt.Errorf("invalid hardnested capture")
 		}
+		if !bytes.Equal(b.HardnestedFile[:4], b.UID[len(b.UID)-4:]) || int(b.HardnestedFile[4]) != b.TargetBlock || b.HardnestedFile[5] != byte(b.TargetType)&1 {
+			return fmt.Errorf("hardnested header does not match capture identity or target")
+		}
+		var collector HardnestedCollector
+		if err := collector.Add(b.HardnestedFile[6:]); err != nil {
+			return err
+		}
+		if !collector.Ready() {
+			return fmt.Errorf("hardnested capture is incomplete or has an invalid parity sum")
+		}
 	default:
 		return fmt.Errorf("unsupported recovery bundle kind")
+	}
+	if b.Kind != "hardnested" {
+		if err := validateRecoveryArgs(b.Tool, b.Arguments); err != nil {
+			return err
+		}
+		uid, _ := strconv.ParseUint(b.Arguments[0], 10, 32)
+		if uint32(uid) != binary.BigEndian.Uint32(b.UID[len(b.UID)-4:]) {
+			return fmt.Errorf("recovery arguments do not match capture UID")
+		}
+		if b.Tool == "staticnested" {
+			kind, _ := strconv.ParseUint(b.Arguments[1], 10, 32)
+			if KeyType(kind) != b.TargetType {
+				return fmt.Errorf("staticnested arguments do not match target key type")
+			}
+		}
+	}
+	if b.Kind == "darkside" {
+		if len(b.Samples) != (len(b.Arguments)-1)/5 || b.Runs != 0 && b.Runs != len(b.Samples) {
+			return fmt.Errorf("darkside sample and argument counts do not match")
+		}
+		for i, sample := range b.Samples {
+			if len(sample) != 33 || sample[0] != 0 || !bytes.Equal(sample[1:5], b.UID[len(b.UID)-4:]) {
+				return fmt.Errorf("invalid darkside sample identity or status")
+			}
+			values := []uint64{uint64(binary.BigEndian.Uint32(sample[5:])), binary.BigEndian.Uint64(sample[17:]), binary.BigEndian.Uint64(sample[9:]), uint64(binary.BigEndian.Uint32(sample[25:])), uint64(binary.BigEndian.Uint32(sample[29:]))}
+			for j, want := range values {
+				got, _ := strconv.ParseUint(b.Arguments[1+i*5+j], 10, 64)
+				if got != want {
+					return fmt.Errorf("darkside arguments do not match captured sample %d", i+1)
+				}
+			}
+		}
 	}
 	if checksum {
 		sum, err := b.checksum()
@@ -228,7 +273,7 @@ func (c *Client) VerifyRecoveryCandidate(ctx context.Context, uid []byte, block 
 }
 
 func (c *Client) CollectRecoveryBundle(ctx context.Context, knownBlock int, knownType KeyType, knownKey []byte, targetBlock int, targetType KeyType, kind string, maxRuns int, slow bool, syncMax byte) (out RecoveryBundle, err error) {
-	if maxRuns < 1 || maxRuns > 1000 {
+	if maxRuns < 1 || maxRuns > maxRecoveryRuns {
 		return out, fmt.Errorf("max runs must be 1..1000")
 	}
 	if kind == "nested" {
@@ -312,6 +357,7 @@ func (c *Client) CollectRecoveryBundle(ctx context.Context, knownBlock int, know
 					return fmt.Errorf("invalid darkside response")
 				}
 				out.Samples = append(out.Samples, append([]byte(nil), raw...))
+				out.Runs++
 				args = append(args, decimal(binary.BigEndian.Uint32(raw[5:])), strconv.FormatUint(binary.BigEndian.Uint64(raw[17:]), 10), strconv.FormatUint(binary.BigEndian.Uint64(raw[9:]), 10), decimal(binary.BigEndian.Uint32(raw[25:])), decimal(binary.BigEndian.Uint32(raw[29:])))
 			}
 			out.Arguments = args

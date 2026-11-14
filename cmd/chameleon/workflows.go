@@ -10,6 +10,7 @@ import (
 	chameleon "github.com/soulteary/chameleon-desk"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -98,7 +99,16 @@ func classicDictionary(path, keyText string) ([]chameleon.HexBytes, error) {
 	}
 	return keys, nil
 }
-func runWorkflow(args []string) (retErr error) {
+func runWorkflow(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runWorkflowWithContext(ctx, args)
+}
+
+func runWorkflowWithContext(ctx context.Context, args []string) (retErr error) {
+	if len(args) == 0 {
+		return fmt.Errorf("workflow requires a group and action")
+	}
 	group := args[0]
 	if group == "type2" {
 		group = "ulc"
@@ -111,6 +121,17 @@ func runWorkflow(args []string) (retErr error) {
 		return fmt.Errorf("%s requires an action", group)
 	}
 	action := args[1]
+	actions := map[string]string{
+		"mfc":  "clone auth-log recover-log dictionary autopwn dump-keys value-get value-set value-inc value-dec value-copy value-decode recover-collect recover-compute recover-verify",
+		"ulc":  "auth read write set-key password-read password-write version signature counter authnonce ulcg-collect ulcg-recover",
+		"rf":   "info config config-set auth-trace lf-samples adc",
+		"des":  "info auth check",
+		"emv":  "debug scan load tlv",
+		"seos": "get set keys",
+	}
+	if !slices.Contains(strings.Fields(actions[group]), action) {
+		return fmt.Errorf("unknown workflow action %s %s", group, action)
+	}
 	f := flag.NewFlagSet(group+" "+action, flag.ContinueOnError)
 	port := f.String("port", "", "USB, ble:UUID, tcp:HOST:PORT; defaults to one USB device")
 	timeout := f.Duration("timeout", 60*time.Second, "per-command timeout")
@@ -204,7 +225,7 @@ func runWorkflow(args []string) (retErr error) {
 		if e != nil {
 			return e
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), *limit)
+		ctx, cancel := context.WithTimeout(ctx, *limit)
 		defer cancel()
 		out, e := chameleon.RecoverULCG(ctx, v, *tools, *threads, *limit)
 		return errors.Join(e, result(out, *output, false))
@@ -236,7 +257,7 @@ func runWorkflow(args []string) (retErr error) {
 		if e = json.Unmarshal(b, &logs); e != nil {
 			return e
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), *limit)
+		ctx, cancel := context.WithTimeout(ctx, *limit)
 		defer cancel()
 		v, e := chameleon.RecoverDetectionLogs(ctx, logs, *tools, *limit, *maxPairs)
 		return errors.Join(e, result(v, *output, false))
@@ -261,7 +282,7 @@ func runWorkflow(args []string) (retErr error) {
 		if err := checkNewOutput(*output); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), *limit)
+		ctx, cancel := context.WithTimeout(ctx, *limit)
 		defer cancel()
 		v, err := chameleon.ComputeRecovery(ctx, *tools, b)
 		checkpoint := offlineRecoveryCheckpoint{OfflineRecovery: v, Completed: err == nil}
@@ -280,6 +301,9 @@ func runWorkflow(args []string) (retErr error) {
 		if *kindCapture != "nested" && *kindCapture != "hardnested" && *kindCapture != "darkside" {
 			return fmt.Errorf("--kind must be nested, hardnested, or darkside")
 		}
+		if *maxRuns < 1 || *maxRuns > 1000 {
+			return fmt.Errorf("max-runs must be 1..1000")
+		}
 		if *kindCapture != "darkside" && len(key) != 6 {
 			return fmt.Errorf("%s recover-collect requires --key (six-byte known key)", *kindCapture)
 		}
@@ -296,14 +320,15 @@ func runWorkflow(args []string) (retErr error) {
 		if err != nil {
 			return err
 		}
+		if len(candidate) != 6 {
+			return fmt.Errorf("recovery candidate must be six bytes")
+		}
 		if *port == "" {
 			*port, err = autoPort()
 			if err != nil {
 				return err
 			}
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, *limit)
 		defer cancel()
 		c, err := chameleon.OpenContext(ctx, *port, *timeout)
@@ -344,8 +369,6 @@ func runWorkflow(args []string) (retErr error) {
 		}
 		defer func() { retErr = errors.Join(retErr, journal.Close()) }()
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, *limit)
 	defer cancel()
 	if *port == "" {

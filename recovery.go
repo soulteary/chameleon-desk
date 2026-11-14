@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 var recoveryToolNames = []string{"nested", "staticnested", "darkside", "mfkey32", "mfkey32v2", "mfkey64", "staticnested_1nt", "staticnested_2x1nt_rf08s", "staticnested_2x1nt_rf08s_1key", "mfulc_des_brute", "hardnested"}
@@ -79,6 +80,8 @@ func runRecoveryIn(ctx context.Context, directory, workspace, tool string, args 
 		defer os.RemoveAll(work)
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
+	// Bound pipe draining if a helper exits but a descendant retains its output.
+	cmd.WaitDelay = time.Second
 	if work != "" {
 		cmd.Dir = work
 	}

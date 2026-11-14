@@ -9,7 +9,7 @@ import (
 )
 
 func testNestedBundle() RecoveryBundle {
-	return RecoveryBundle{Schema: RecoveryBundleSchema, Kind: "nested", UID: HexBytes{1, 2, 3, 4}, TargetBlock: 4, TargetType: KeyB, Tool: "staticnested", Arguments: []string{"16909060", "96", "1", "2"}}
+	return RecoveryBundle{Schema: RecoveryBundleSchema, Kind: "nested", UID: HexBytes{1, 2, 3, 4}, TargetBlock: 4, TargetType: KeyB, Tool: "staticnested", Arguments: []string{"16909060", "97", "1", "2"}}
 }
 func TestRecoveryBundleIntegrityAndExclusiveSave(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "capture.json")
