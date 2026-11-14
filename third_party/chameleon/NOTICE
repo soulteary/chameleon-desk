@@ -1,0 +1,6 @@
+C recovery sources and catalog metadata are derived from RfidResearchGroup/ChameleonUltra.
+Upstream: https://github.com/RfidResearchGroup/ChameleonUltra
+Commit: 6009a5fb8adbb92d3efb548eaac9e501bd179801
+Local modifications: nested.c, staticnested.c and darkside.c have argument-count guards before argv access. No recovery algorithm changes. Their copyright/license notices and GPL-3.0 LICENSE are retained.
+Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
+The offline C workers are optional executables; no Python is required at runtime.

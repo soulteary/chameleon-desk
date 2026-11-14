@@ -1,0 +1,37 @@
+--- a/software/src/nested.c
++++ b/software/src/nested.c
+@@ -6,6 +6,10 @@
+ #include "nested_util.h"
+ 
+ int main(int argc, char *const argv[]) {
++    if (argc < 6 || (argc - 3) % 3 != 0) {
++        fprintf(stderr, "Usage: %s UID DIST NT NT_ENC PARITY [triples...]\n", argv[0]);
++        return 1;
++    }
+     NtpKs1 *pNK = NULL;
+     uint32_t i, j, m;
+     uint32_t nt1, nt2, nttest, ks1, dist;
+--- a/software/src/staticnested.c
++++ b/software/src/staticnested.c
+@@ -6,6 +6,10 @@
+ #include "nested_util.h"
+ 
+ int main(int argc, char *const argv[]) {
++    if (argc < 5 || (argc - 3) % 2 != 0) {
++        fprintf(stderr, "Usage: %s UID KEY_TYPE NT NT_ENC [pairs...]\n", argv[0]);
++        return 1;
++    }
+     NtpKs1 *pNK = NULL;
+     uint32_t i, j, m;
+     uint32_t nt1, nt2, nttest, ks1, dist;
+--- a/software/src/darkside.c
++++ b/software/src/darkside.c
+@@ -20,7 +20,7 @@
+ 
+ int main(int argc, char *argv[]) {
+ 
+-    if (((argc - 2) % 5) != 0) {
++    if (argc < 7 || ((argc - 2) % 5) != 0) {
+         printf("Unexpected param count\n");
+         return EXIT_FAILURE;
+     }

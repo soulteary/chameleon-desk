@@ -1,0 +1,71 @@
+Third-party code and design references
+
+Chameleon Desk is licensed under the GNU Affero General Public License
+version 3. Third-party code retains its own license and copyright notices.
+
+Code and protocol references
+
+RfidResearchGroup/ChameleonUltra
+Source: https://github.com/RfidResearchGroup/ChameleonUltra
+Revision: 6009a5fb8adbb92d3efb548eaac9e501bd179801
+License: GNU General Public License version 3; see chameleon-ultra/LICENSE.
+The command catalog includes upstream parameter descriptions and source
+references. Optional recovery workers retain their notices and local patch
+under third_party/chameleon/.
+
+GameTec-live/ChameleonUltraGUI
+Source: https://github.com/GameTec-live/ChameleonUltraGUI
+Revision: 0d0674e10b1fa5c254210ab236e3398f81402403
+License: GNU General Public License version 3; see chameleon-ultra-gui/LICENSE.
+Reference for card and dictionary interchange formats and workflows.
+
+Visual references
+
+The desktop interface uses independently authored HTML, CSS, JavaScript,
+and SVG. The following projects were considered as visual references.
+Their license texts are included for attribution; no theme files, fonts,
+images, or other assets from these projects are distributed by Chameleon Desk.
+These references do not imply affiliation or endorsement.
+
+B00merang-Project/OS-X-Leopard
+Source: https://github.com/B00merang-Project/OS-X-Leopard
+Revision: cf4db83440d45e02bb849e54003664b931386acd
+License: GNU General Public License version 3; see os-x-leopard/LICENSE.
+
+aohanhongzhi/GNOME-OSX-II-Theme
+Source: https://github.com/aohanhongzhi/GNOME-OSX-II-Theme
+Revision: cccb4430027be5c255b9ceed36c7e11dd3cdfa85
+License: GNU General Public License version 2; see gnome-osx-ii-theme/LICENSE.
+
+USBA/Apple-Arc-OSX-theme
+Source: https://github.com/USBA/Apple-Arc-OSX-theme
+Revision: fb48110251061df1722a018807a046a24807c50a
+License: GNU General Public License version 3; see apple-arc-osx-theme/LICENSE.
+
+harshp2035/Gnome-OSX
+Source: https://github.com/harshp2035/Gnome-OSX
+Revision: 1ed3715370542832787353b420cf1f1d9f6d9a42
+No license file or license statement was found in the inspected repository.
+No license grant is assumed; no files from this project are distributed.
+
+mkaminsky11/osx-css
+Source: https://github.com/mkaminsky11/osx-css
+Revision: 5598960130ad20de3d72ecf18f5d99abb5a62f8f
+No license file or license statement was found in the inspected repository.
+No license grant is assumed; no files from this project are distributed.
+
+almonk/atomkit
+Source: https://github.com/almonk/atomkit
+Revision: 8a72ed8b0ecd83f61bbadd506a82015ad5387bba
+No license file or license statement was found in the inspected repository.
+No license grant is assumed; no files from this project are distributed.
+
+mosincos/MacOSX_Gnome
+Source: https://github.com/mosincos/MacOSX_Gnome
+Revision: 7487046b73b43a8e729e2757d5c15663c7b578dd
+No license file or license statement was found in the inspected repository.
+No license grant is assumed; no files from this project are distributed.
+
+Vendored Go dependencies retain their LICENSE and PATENTS files in vendor/.
+The separate C recovery sources retain file-level copyright and license
+notices in third_party/chameleon/src/.
