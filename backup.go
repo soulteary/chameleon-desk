@@ -186,8 +186,11 @@ func (c *Client) backupLocked(ctx context.Context) (out DeviceBackup, err error)
 	}
 	out.Firmware = string(fw)
 	mode, e := q(1002)
-	if e != nil || len(mode) != 1 {
-		return out, fmt.Errorf("read mode: %w", e)
+	if e != nil {
+		return out, e
+	}
+	if len(mode) != 1 || mode[0] > 1 {
+		return out, fmt.Errorf("invalid device mode")
 	}
 	active, e := q(1018)
 	if e != nil || len(active) != 1 || active[0] > 7 {
@@ -406,9 +409,15 @@ func (c *Client) RestoreDevice(ctx context.Context, b DeviceBackup, o RestoreOpt
 	if e != nil {
 		return out, e
 	}
+	if len(mode) != 1 || mode[0] > 1 {
+		return out, fmt.Errorf("invalid device mode; no restore writes sent")
+	}
 	active, e := c.exchange(ctx, 1018, nil, 0x68)
 	if e != nil {
 		return out, e
+	}
+	if len(active) != 1 || active[0] > 7 {
+		return out, fmt.Errorf("invalid active slot; no restore writes sent")
 	}
 	success := false
 	defer func() {

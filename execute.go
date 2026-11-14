@@ -99,7 +99,13 @@ func (c *Client) ExecuteWithOptions(ctx context.Context, cmd Command, payload []
 	if !ok || (!meta.Registered && !options.AllowUnregistered) {
 		return Response{}, fmt.Errorf("%s is not registered in pinned firmware", cmd)
 	}
+	if len(payload) > MaxPayload {
+		return Response{}, fmt.Errorf("payload exceeds %d bytes", MaxPayload)
+	}
 	if cmd == CmdEnterBootloader {
+		if len(payload) != 0 {
+			return Response{}, fmt.Errorf("bootloader command requires an empty payload")
+		}
 		e := c.EnterBootloader(ctx)
 		return Response{Command: cmd, NoResponse: true}, e
 	}

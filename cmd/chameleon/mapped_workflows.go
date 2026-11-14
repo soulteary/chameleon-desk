@@ -49,10 +49,14 @@ func isMappedWorkflow(args []string) bool {
 }
 func fileMemoryFormat(path, format string) (string, error) {
 	if format != "" {
-		if format == "hex" {
+		switch format {
+		case "hex":
 			return "eml", nil
+		case "bin", "eml", "json":
+			return format, nil
+		default:
+			return "", fmt.Errorf("unknown memory format; use --format bin|eml|json")
 		}
-		return format, nil
 	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".bin":
@@ -147,6 +151,18 @@ func runMappedWorkflow(args []string) (retErr error) {
 	}
 	if action == "esave" && *output == "" {
 		return fmt.Errorf("esave requires --output")
+	}
+	var memoryFormat string
+	if (group == "mfc" || group == "type2") && (action == "esave" || action == "eload") {
+		path := *output
+		if action == "eload" {
+			path = *input
+		}
+		var err error
+		memoryFormat, err = fileMemoryFormat(path, *format)
+		if err != nil {
+			return err
+		}
 	}
 	if action == "openall" {
 		if err := checkNewOutput(*backup); err != nil {
@@ -356,26 +372,18 @@ func runMappedWorkflow(args []string) (retErr error) {
 				return fmt.Errorf("selected slot memory family does not match command")
 			}
 			if e == nil && action == "esave" {
-				kind, err := fileMemoryFormat(*output, *format)
-				if err != nil {
-					return err
-				}
-				b, err := chameleon.EncodeMemoryFile(image, kind)
+				b, err := chameleon.EncodeMemoryFile(image, memoryFormat)
 				if err != nil {
 					return err
 				}
 				return saveResultFile(*output, b)
 			}
 		case "eload":
-			kind, err := fileMemoryFormat(*input, *format)
-			if err != nil {
-				return err
-			}
 			family := "classic"
 			if group == "type2" {
 				family = "type2"
 			}
-			out, e = c.LoadSlotMemoryFile(ctx, *slot, *start, inputBytes, kind, family, *persist)
+			out, e = c.LoadSlotMemoryFile(ctx, *slot, *start, inputBytes, memoryFormat, family, *persist)
 		case "config", "econfig", "configure":
 			if group == "settings" {
 				out, e = c.ConfigureSettings(ctx, settingsPatch, *persist)

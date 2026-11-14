@@ -346,6 +346,12 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		if readerMode && cmd == chameleon.CmdEnterBootloader {
 			return fmt.Errorf("bootloader cannot run inside reader session")
 		}
+		if len(payload) > chameleon.MaxPayload {
+			return fmt.Errorf("payload exceeds %d bytes", chameleon.MaxPayload)
+		}
+		if cmd == chameleon.CmdEnterBootloader && len(payload) != 0 {
+			return fmt.Errorf("bootloader command requires an empty payload")
+		}
 		meta, _ := chameleon.LookupCommand(cmd)
 		if !force && !meta.Registered {
 			hint := map[chameleon.Command]string{

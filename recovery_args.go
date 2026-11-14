@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const maxRecoveryRuns = 1000
+
 func RecoveryUsage(tool string) string {
 	m := map[string]string{
 		"nested":                        "UID(dec) DIST(dec) NT(dec) NT_ENC(dec) PARITY(dec) [more NT/NT_ENC/PARITY triples]",
@@ -47,7 +49,11 @@ func validateRecoveryArgs(tool string, args []string) error {
 	case "hardnested":
 		valid = len(args) == 1
 	}
-	if !valid || len(args) > 1024 {
+	maxArgs := 1024
+	if tool == "darkside" {
+		maxArgs = 1 + 5*maxRecoveryRuns
+	}
+	if !valid || len(args) > maxArgs {
 		return fmt.Errorf("usage: %s %s", tool, RecoveryUsage(tool))
 	}
 	for _, arg := range args {
@@ -56,9 +62,15 @@ func validateRecoveryArgs(tool string, args []string) error {
 		}
 	}
 	if tool == "nested" || tool == "staticnested" || tool == "darkside" {
-		for _, a := range args {
-			if _, e := strconv.ParseUint(a, 10, 64); e != nil {
-				return fmt.Errorf("%s expects decimal integers: %w", tool, e)
+		for i, a := range args {
+			bits := 32
+			if tool == "darkside" && i > 0 && ((i-1)%5 == 1 || (i-1)%5 == 2) {
+				bits = 64
+			} else if tool == "nested" && i >= 2 && (i-2)%3 == 2 {
+				bits = 8
+			}
+			if _, e := strconv.ParseUint(a, 10, bits); e != nil {
+				return fmt.Errorf("%s argument %d requires an unsigned %d-bit decimal integer: %w", tool, i+1, bits, e)
 			}
 		}
 	}
