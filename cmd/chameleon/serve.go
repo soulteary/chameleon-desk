@@ -607,6 +607,8 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		body.Sense = "all"
 	}
 	switch body.Op {
+	case "validate":
+		writeJSON(w, map[string]bool{"valid": true})
 	case "list":
 		v, e := db.Records(false, body.Query, body.Sense)
 		if e != nil {
@@ -641,7 +643,7 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"removed": removed, "database": out})
 	default:
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be list, show, add or delete"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add or delete"))
 	}
 }
 
