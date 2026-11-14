@@ -4,6 +4,14 @@ Desk Web UI saves the card database in the browser's IndexedDB. It does not
 write a server-side library file, synchronize browsers, or alter cards on a
 connected device. Library saving works with the default read-only server.
 
+## Upgrading from an earlier version
+
+Before refreshing or closing a page loaded from a version without persistence,
+export its database file. That older page still holds edits only in memory;
+installing a new server binary does not update its already-loaded JavaScript.
+After upgrading, import the exported database once and wait for the saved status.
+The new storage cannot recover data from an older page that was already closed.
+
 ## Automatic save and recovery
 
 Changes to the database JSON, imported database files, and successful add/delete
