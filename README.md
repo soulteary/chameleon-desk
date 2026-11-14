@@ -81,7 +81,8 @@ the build script also supports Homebrew's `openssl@3` and `xz` installations.
 
 ## Tests
 
-Install Node.js 18 or later and download the test and Go dependencies once:
+Install Node.js 20 or later (required by the browser test driver) and download
+the test and Go dependencies once:
 
 ```sh
 npm ci --ignore-scripts
