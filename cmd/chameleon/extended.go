@@ -343,6 +343,9 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		if e != nil {
 			return e
 		}
+		if readerMode && cmd == chameleon.CmdEnterBootloader {
+			return fmt.Errorf("bootloader cannot run inside reader session")
+		}
 		meta, _ := chameleon.LookupCommand(cmd)
 		if !force && !meta.Registered {
 			hint := map[chameleon.Command]string{
@@ -408,13 +411,15 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 			}
 		}
 		var r chameleon.Response
+		options := chameleon.CommandOptions{AllowUnregistered: force}
 		if readerMode {
-			if cmd == chameleon.CmdEnterBootloader {
-				return fmt.Errorf("bootloader cannot run inside reader session")
-			}
-			e = c.Reader(ctx, func(s *chameleon.ReaderSession) error { var err error; r, err = s.Do(ctx, cmd, payload); return err })
+			e = c.Reader(ctx, func(s *chameleon.ReaderSession) error {
+				var err error
+				r, err = s.DoWithOptions(ctx, cmd, payload, options)
+				return err
+			})
 		} else {
-			r, e = c.Execute(ctx, cmd, payload)
+			r, e = c.ExecuteWithOptions(ctx, cmd, payload, options)
 		}
 		if e != nil {
 			return e
