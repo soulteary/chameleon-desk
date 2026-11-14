@@ -52,6 +52,7 @@ static int bin_to_uint8_arr(const char *bin_str, uint8_t bit_arr[], uint8_t arr_
 
 static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, uint32_t nt_par_enc, uint32_t *keyCount) {
 
+    *keyCount = 0;
     uint64_t *result_keys = (uint64_t *)calloc(1, KEY_SPACE_SIZE * sizeof(uint64_t));
     if (result_keys == NULL) {
         fprintf(stderr, "\nCalloc error in generate_and_intersect_keys!\n");
@@ -76,7 +77,7 @@ static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, u
         fprintf(stderr, "\nCalloc error in generate_keys!\n");
         free(result_keys);
         crypto1_destroy(revstate_start);
-        return 0;
+        return NULL;
     }
 
     while ((revstate->odd != 0x0) || (revstate->even != 0x0)) {
@@ -93,11 +94,15 @@ static uint64_t *generate_keys(uint64_t authuid, uint32_t nt, uint32_t nt_enc, u
         kslastp = (ks2 >> 24) & 1;
         lastpar2 = (nt_par_enc & 1) ^ kslastp;
         if (lastpar1 == lastpar2) {
-            result_keys[(*keyCount)++] = lfsr;
             if (*keyCount == KEY_SPACE_SIZE) {
                 fprintf(stderr, "No space left on result_keys, abort! Increase KEY_SPACE_SIZE\n");
-                break;
+                free(result_keys);
+                crypto1_destroy(s);
+                crypto1_destroy(revstate_start);
+                *keyCount = 0;
+                return NULL;
             }
+            result_keys[(*keyCount)++] = lfsr;
         }
         revstate++;
     }
@@ -159,26 +164,40 @@ int main(int argc, char *const argv[]) {
     printf("Finding key candidates...\n");
     keys = generate_keys(authuid, nt, nt_enc, nt_par_enc, &keyCount);
 
+    if (keys == NULL) {
+        fprintf(stderr, "Key candidate generation failed\n");
+        return EXIT_FAILURE;
+    }
+
     printf("Finding phase complete, found %u keys\n", keyCount);
 
     FILE *fptr;
-    char filename[30];
+    char filename[48];
+    int status = EXIT_SUCCESS;
     snprintf(filename, sizeof(filename), "keys_%08x_%02u_%08x.dic", authuid, sector, nt);
 
     fptr = fopen(filename, "w");
     if (fptr != NULL) {
         if (keyCount > 0) {
             for (uint32_t j = 0; j < keyCount; j++) {
-                fprintf(fptr, "%012" PRIx64 "\n", keys[j]);
+                if (fprintf(fptr, "%012" PRIx64 "\n", keys[j]) < 0) {
+                    perror("Cannot write key dictionary");
+                    status = EXIT_FAILURE;
+                    break;
+                }
             }
         }
-        fclose(fptr);
+        if (fclose(fptr) != 0) {
+            perror("Cannot close key dictionary");
+            status = EXIT_FAILURE;
+        }
     } else {
-        fprintf(stderr, "Warning: Cannot save keys in %s\n", filename);
+        fprintf(stderr, "Cannot save keys in %s\n", filename);
+        status = EXIT_FAILURE;
     }
 
     if (keys != NULL) {
         free(keys);
     }
-    return 0;
+    return status;
 }

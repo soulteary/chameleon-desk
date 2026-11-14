@@ -52,6 +52,11 @@ int main(int argc, char *argv[]) {
 
     s = lfsr_recovery32(ar0_enc ^ p64, 0);
 
+    if (s == NULL) {
+        perror("Key recovery failed");
+        return EXIT_FAILURE;
+    }
+
     for (t = s; t->odd | t->even; ++t) {
         lfsr_rollback_word(t, 0, 0);
         lfsr_rollback_word(t, nr0_enc, 1);
