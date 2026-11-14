@@ -5,7 +5,7 @@ index 9659ef9..3f96511 100644
 @@ -6,8 +6,27 @@
  #include <stdlib.h>
  #include "crapto1.h"
- 
+
 +static int hex_digit(char value) {
 +    if (value >= '0' && value <= '9') return value - '0';
 +    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
@@ -34,7 +34,7 @@ index 9659ef9..3f96511 100644
 @@ -25,32 +44,41 @@ int main(int argc, char *argv[]) {
          return 1;
      }
- 
+
 -    int encc = argc - 6;
 -    int *enclen = malloc(sizeof(int) * encc);
 -    if (enclen == NULL) {
@@ -94,9 +94,9 @@ index 9659ef9..3f96511 100644
 +            enc[i][i2] = (uint8_t)((high << 4) | low);
          }
      }
- 
+
 @@ -64,7 +92,7 @@ int main(int argc, char *argv[]) {
- 
+
      for (int i = 0; i < encc; i++) {
          printf("{enc%d}: ", i);
 -        for (int i2 = 0; i2 < enclen[i]; i2++) {
@@ -106,13 +106,13 @@ index 9659ef9..3f96511 100644
          printf("\n");
 @@ -84,22 +112,26 @@ int main(int argc, char *argv[]) {
      printf("  ks3: %08x\n", ks3);
- 
+
      revstate = lfsr_recovery64(ks2, ks3);
 +    if (revstate == NULL || (revstate->odd == 0 && revstate->even == 0)) {
 +        fprintf(stderr, "No recovery state found\n");
 +        goto cleanup;
 +    }
- 
+
      // Decrypting communication using keystream if presented
      if (argc > 6) {
          printf("\nDecrypted communication:\n");
@@ -133,7 +133,7 @@ index 9659ef9..3f96511 100644
 +        for (size_t i = 0; i < rollb; i++)
              lfsr_rollback_byte(revstate, 0, 0);
      }
- 
+
 @@ -109,6 +141,13 @@ int main(int argc, char *argv[]) {
      lfsr_rollback_word(revstate, uid ^ nt, 0);
      crypto1_get_lfsr(revstate, &key);
@@ -150,10 +150,33 @@ index 9659ef9..3f96511 100644
 +    return status;
  }
 diff --git a/software/src/nested.c b/software/src/nested.c
-index 47ff262..0feafad 100644
+index 47ff262..801acad 100644
 --- a/software/src/nested.c
 +++ b/software/src/nested.c
-@@ -62,7 +62,9 @@ int main(int argc, char *const argv[]) {
+@@ -2,6 +2,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <inttypes.h>
++#include <errno.h>
+ #include "common.h"
+ #include "nested_util.h"
+
+@@ -53,6 +54,14 @@ int main(int argc, char *const argv[]) {
+
+     uint32_t keyCount = 0;
+     uint64_t *keys = nested(pNK, j, authuid, &keyCount);
++    int recovery_error = errno;
++    if (recovery_error != 0) {
++        errno = recovery_error;
++        perror("Nested recovery failed");
++        free(keys);
++        free(pNK);
++        return EXIT_FAILURE;
++    }
+
+     if (keyCount > 0) {
+         for (i = 0; i < keyCount; i++) {
+@@ -62,7 +71,9 @@ int main(int argc, char *const argv[]) {
      }
      fflush(stdout);
      free(keys);
@@ -164,28 +187,36 @@ index 47ff262..0feafad 100644
      exit(EXIT_FAILURE);
  }
 diff --git a/software/src/nested_util.c b/software/src/nested_util.c
-index 613f9cd..5b59416 100644
+index 613f9cd..ca53fcc 100644
 --- a/software/src/nested_util.c
 +++ b/software/src/nested_util.c
-@@ -22,7 +22,7 @@
- 
+@@ -4,6 +4,7 @@
+ #include <time.h>
+ #include <inttypes.h>
+ #include <ctype.h>
++#include <errno.h>
+ #include "parity.h"
+
+ #if WIN32
+@@ -22,7 +23,7 @@
+
  typedef struct {
      uint64_t       key;
 -    int            count;
 +    uint32_t       count;
  } countKeys;
- 
+
  typedef struct {
-@@ -31,6 +31,7 @@ typedef struct {
- 
+@@ -31,6 +32,7 @@ typedef struct {
+
      uint64_t *keys;
      uint32_t keyCount;
-+    bool failed;
- 
++    int error;
+
      uint32_t startPos;
      uint32_t endPos;
-@@ -45,48 +46,48 @@ inline static int compar_int(const void *a, const void *b) {
- 
+@@ -45,48 +47,59 @@ inline static int compar_int(const void *a, const void *b) {
+
  // Compare countKeys structure
  int compar_special_int(const void *a, const void *b) {
 -    return (((countKeys *)b)->count - ((countKeys *)a)->count);
@@ -193,7 +224,7 @@ index 613f9cd..5b59416 100644
 +    if (left->count != right->count) return left->count < right->count ? 1 : -1;
 +    return compar_int(&left->key, &right->key);
  }
- 
+
  // keys qsort and unique.
 -countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size) {
 -    unsigned int i, j = 0;
@@ -204,16 +235,26 @@ index 613f9cd..5b59416 100644
 +static bool allocation_fits(uint64_t count, size_t width) {
 +    return count <= SIZE_MAX / width;
 +}
- 
+
 -    our_counts = calloc(size, sizeof(countKeys));
 +countKeys *uniqsort(uint64_t *possibleKeys, uint32_t size, uint32_t *uniqueCount) {
++    errno = 0;
 +    *uniqueCount = 0;
-+    if (size == 0 || possibleKeys == NULL || !allocation_fits(size, sizeof(countKeys))) return NULL;
++    if (size == 0) return NULL;
++    if (possibleKeys == NULL) {
++        errno = EINVAL;
++        return NULL;
++    }
++    if (!allocation_fits(size, sizeof(countKeys))) {
++        errno = EOVERFLOW;
++        return NULL;
++    }
 +    countKeys *our_counts = calloc(size, sizeof(countKeys));
      if (our_counts == NULL) {
 -        printf("Memory allocation error for our_counts");
 -        exit(EXIT_FAILURE);
 +        fprintf(stderr, "Memory allocation error for our_counts\n");
++        errno = ENOMEM;
 +        return NULL;
      }
 -
@@ -238,9 +279,10 @@ index 613f9cd..5b59416 100644
 -    qsort(our_counts, j, sizeof(countKeys), compar_special_int);
 -    return (our_counts);
 +    qsort(our_counts, *uniqueCount, sizeof(countKeys), compar_special_int);
++    errno = 0;
 +    return our_counts;
  }
- 
+
  // nested decrypt
  static void *nested_revover(void *args) {
      struct Crypto1State *revstate, *revstate_start = NULL;
@@ -248,27 +290,27 @@ index 613f9cd..5b59416 100644
 -    uint32_t i, kcount = 0;
 -    bool is_ok = true;
 +    uint32_t i, kcount = 0, capacity = 0;
- 
+
      RecPar *rp = (RecPar *)args;
- 
+
      rp->keyCount = 0;
      rp->keys = NULL;
-+    rp->failed = false;
- 
++    rp->error = 0;
+
      //printf("Start pos is %d, End pos is %d\r\n", rp->startPos, rp->endPos);
- 
-@@ -102,150 +103,117 @@ static void *nested_revover(void *args) {
- 
+
+@@ -102,150 +115,139 @@ static void *nested_revover(void *args) {
+
          // And finally recover the first 32 bits of the key
          revstate = lfsr_recovery32(ks1, nt_probe);
 -        if (revstate_start == NULL) {
 -            revstate_start = revstate;
 +        revstate_start = revstate;
 +        if (revstate == NULL) {
-+            rp->failed = true;
++            rp->error = ENOMEM;
 +            break;
          }
- 
+
          while ((revstate->odd != 0x0) || (revstate->even != 0x0)) {
              lfsr_rollback_word(revstate, nt_probe, 0);
              crypto1_get_lfsr(revstate, &lfsr);
@@ -279,7 +321,7 @@ index 613f9cd..5b59416 100644
 +            if (kcount == capacity) {
 +                uint32_t next = capacity > UINT32_MAX - MEM_CHUNK ? UINT32_MAX : capacity + MEM_CHUNK;
 +                if (next <= kcount || !allocation_fits(next, sizeof(uint64_t))) {
-+                    rp->failed = true;
++                    rp->error = EOVERFLOW;
 +                    break;
 +                }
 +                void *tmp = realloc(rp->keys, next * sizeof(uint64_t));
@@ -288,7 +330,7 @@ index 613f9cd..5b59416 100644
 -                    rp->keyCount = 0;
 -                    is_ok = false;
 +                    fprintf(stderr, "Memory allocation error for possible keys\n");
-+                    rp->failed = true;
++                    rp->error = ENOMEM;
                      break;
                  }
                  rp->keys = (uint64_t *)tmp;
@@ -302,7 +344,7 @@ index 613f9cd..5b59416 100644
          free(revstate_start);
          revstate_start = NULL;
 -        if (!is_ok) {
-+        if (rp->failed) {
++        if (rp->error != 0) {
              break;
          }
      }
@@ -320,7 +362,7 @@ index 613f9cd..5b59416 100644
 -        }
 -    } else {
 -        rp->keyCount = 0;
-+    if (rp->failed || kcount == 0) {
++    if (rp->error != 0 || kcount == 0) {
          free(rp->keys);
 +        rp->keys = NULL;
 +    } else {
@@ -328,19 +370,22 @@ index 613f9cd..5b59416 100644
      }
      return NULL;
  }
- 
+
  uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyCount) {
  #define THREAD_MAX 4
 -
-+    if (keyCount == NULL) return NULL;
-     *keyCount = 0;
+-    *keyCount = 0;
 -    uint32_t i, j, manyThread;
 -    uint64_t *keys = (uint64_t *)NULL;
 -
 -    manyThread = THREAD_MAX;
 -    if (manyThread > sizePNK) {
 -        manyThread = sizePNK;
--    }
++    errno = 0;
++    if (keyCount == NULL) {
++        errno = EINVAL;
++        return NULL;
+     }
 -
 -    // pthread handle
 -    pthread_t *threads = calloc(sizePNK, sizeof(pthread_t));
@@ -350,18 +395,21 @@ index 613f9cd..5b59416 100644
 -    RecPar *pRPs = calloc(sizePNK, sizeof(RecPar));
 -    if (pRPs == NULL) {
 -        free(threads);
--        return NULL;
--    }
-+    if (pNK == NULL || sizePNK == 0) return NULL;
- 
++    *keyCount = 0;
++    if (sizePNK == 0) return NULL;
++    if (pNK == NULL) {
++        errno = EINVAL;
+         return NULL;
+     }
+
 +    uint32_t manyThread = sizePNK < THREAD_MAX ? sizePNK : THREAD_MAX;
 +    pthread_t threads[THREAD_MAX];
 +    RecPar params[THREAD_MAX] = {0};
 +    uint32_t started = 0;
-+    bool failed = false;
++    int error = 0;
      uint32_t average = sizePNK / manyThread;
      uint32_t modules = sizePNK % manyThread;
- 
+
 -    // Assign tasks
 -    for (i = 0, j = 0; i < manyThread; i++, j += average) {
 -        pRPs[i].pNK = pNK;
@@ -378,9 +426,10 @@ index 613f9cd..5b59416 100644
 +        params[i].startPos = pos;
 +        params[i].endPos = pos + average;
 +        if (i == manyThread - 1) params[i].endPos += modules;
-+        if (pthread_create(&threads[i], NULL, nested_revover, &params[i]) != 0) {
++        int thread_error = pthread_create(&threads[i], NULL, nested_revover, &params[i]);
++        if (thread_error != 0) {
 +            fprintf(stderr, "Cannot start recovery thread\n");
-+            failed = true;
++            error = thread_error;
 +            break;
          }
 -        pthread_create(&threads[i], NULL, nested_revover, &(pRPs[i]));
@@ -393,11 +442,11 @@ index 613f9cd..5b59416 100644
 +    for (uint32_t i = 0; i < started; i++) {
          pthread_join(threads[i], NULL);
 -        *keyCount += pRPs[i].keyCount;
-+        if (params[i].failed) failed = true;
++        if (error == 0 && params[i].error != 0) error = params[i].error;
 +        total += params[i].keyCount;
      }
 -    free(threads);
- 
+
 -    if (*keyCount != 0) {
 -        keys = malloc((*keyCount) * sizeof(uint64_t));
 -        if (keys != NULL) {
@@ -415,22 +464,41 @@ index 613f9cd..5b59416 100644
 -                    }
 -                }
 +    uint64_t *keys = NULL;
-+    if (!failed && total > 0 && total <= UINT32_MAX && allocation_fits(total, sizeof(uint64_t))) {
++    if (total > UINT32_MAX || !allocation_fits(total, sizeof(uint64_t))) error = EOVERFLOW;
++    if (error == 0 && total > 0) {
 +        keys = malloc((size_t)total * sizeof(uint64_t));
-+        if (keys == NULL) fprintf(stderr, "Cannot allocate memory to merge keys\n");
-+        else {
++        if (keys == NULL) {
++            fprintf(stderr, "Cannot allocate memory to merge keys\n");
++            error = ENOMEM;
++        } else {
 +            size_t pos = 0;
 +            for (uint32_t i = 0; i < started; i++) {
 +                if (params[i].keyCount == 0) continue;
 +                memcpy(keys + pos, params[i].keys, params[i].keyCount * sizeof(uint64_t));
 +                pos += params[i].keyCount;
              }
--
++        }
++    }
++    for (uint32_t i = 0; i < started; i++) free(params[i].keys);
++    if (keys == NULL) {
++        errno = error;
++        return NULL;
++    }
+
 -            countKeys *ck = uniqsort(keys, *keyCount);
 -            free(keys);
 -            keys = (uint64_t *)NULL;
 -            *keyCount = 0;
--
++    uint32_t uniqueCount = 0;
++    countKeys *counts = uniqsort(keys, (uint32_t)total, &uniqueCount);
++    error = errno;
++    free(keys);
++    keys = NULL;
++    if (counts == NULL) {
++        errno = error;
++        return NULL;
++    }
+
 -            if (ck != NULL) {
 -                for (i = 0; i < TRY_KEYS; i++) {
 -                    // We don't known this key, try to break it
@@ -451,40 +519,67 @@ index 613f9cd..5b59416 100644
 -            } else {
 -                printf("Cannot allocate memory for ck on uniqsort.");
 -            }
--        } else {
--            printf("Cannot allocate memory to merge keys.\r\n");
-         }
-     }
--    free(pRPs);
-+    for (uint32_t i = 0; i < started; i++) free(params[i].keys);
-+    if (keys == NULL) return NULL;
-+
-+    uint32_t uniqueCount = 0;
-+    countKeys *counts = uniqsort(keys, (uint32_t)total, &uniqueCount);
-+    free(keys);
-+    keys = NULL;
-+    if (counts == NULL) return NULL;
-+
 +    uint32_t limit = uniqueCount < TRY_KEYS ? uniqueCount : TRY_KEYS;
 +    uint32_t selected = 0;
 +    while (selected < limit && counts[selected].count >= 2) selected++;
 +    if (selected > 0) {
 +        keys = malloc(selected * sizeof(uint64_t));
-+        if (keys == NULL) fprintf(stderr, "Cannot allocate memory for selected keys\n");
-+        else {
++        if (keys == NULL) {
++            fprintf(stderr, "Cannot allocate memory for selected keys\n");
++            error = ENOMEM;
+         } else {
+-            printf("Cannot allocate memory to merge keys.\r\n");
 +            for (uint32_t i = 0; i < selected; i++) keys[i] = counts[i].key;
 +            *keyCount = selected;
-+        }
-+    }
+         }
+     }
+-    free(pRPs);
 +    free(counts);
++    errno = error;
      return keys;
  }
- 
+
+diff --git a/software/src/nested_util.h b/software/src/nested_util.h
+index 2d569ec..3dd4801 100644
+--- a/software/src/nested_util.h
++++ b/software/src/nested_util.h
+@@ -9,6 +9,8 @@ typedef struct {
+ } NtpKs1;
+
+ uint8_t valid_nonce(uint32_t Nt, uint32_t NtEnc, uint32_t Ks1, uint8_t *parity);
++/* Empty results have keyCount == 0 and errno == 0. Failures return NULL,
++ * set keyCount to zero, and report an errno value. The caller owns the result. */
+ uint64_t *nested(NtpKs1 *pNK, uint32_t sizePNK, uint32_t authuid, uint32_t *keyCount);
+
+ #endif
 diff --git a/software/src/staticnested.c b/software/src/staticnested.c
-index bf19d4e..6a7e882 100644
+index bf19d4e..408181b 100644
 --- a/software/src/staticnested.c
 +++ b/software/src/staticnested.c
-@@ -72,7 +72,9 @@ int main(int argc, char *const argv[]) {
+@@ -2,6 +2,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <inttypes.h>
++#include <errno.h>
+ #include "common.h"
+ #include "nested_util.h"
+
+@@ -63,6 +64,14 @@ int main(int argc, char *const argv[]) {
+     }
+     uint32_t keyCount = 0;
+     uint64_t *keys = nested(pNK, j, authuid, &keyCount);
++    int recovery_error = errno;
++    if (recovery_error != 0) {
++        errno = recovery_error;
++        perror("Nested recovery failed");
++        free(keys);
++        free(pNK);
++        return EXIT_FAILURE;
++    }
+
+     if (keyCount > 0) {
+         for (i = 0; i < keyCount; i++) {
+@@ -72,7 +81,9 @@ int main(int argc, char *const argv[]) {
      }
      fflush(stdout);
      free(keys);

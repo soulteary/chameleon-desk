@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <errno.h>
 #include "common.h"
 #include "nested_util.h"
 
@@ -63,6 +64,14 @@ int main(int argc, char *const argv[]) {
     }
     uint32_t keyCount = 0;
     uint64_t *keys = nested(pNK, j, authuid, &keyCount);
+    int recovery_error = errno;
+    if (recovery_error != 0) {
+        errno = recovery_error;
+        perror("Nested recovery failed");
+        free(keys);
+        free(pNK);
+        return EXIT_FAILURE;
+    }
 
     if (keyCount > 0) {
         for (i = 0; i < keyCount; i++) {
