@@ -10,7 +10,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1 || ! no
   echo 'Web UI regression tests require Node.js 18+ and npm ci (test dependencies only).' >&2
   exit 1
 fi
-if ! "$CARD_GO" test -race -p 1 -coverpkg=./... -coverprofile=reports/coverage.out ./... > reports/unit-tests.txt 2>&1; then
+if ! "$CARD_GO" test -race -count=1 -p 1 -coverpkg=./... -coverprofile=reports/coverage.out ./... > reports/unit-tests.txt 2>&1; then
   cat reports/unit-tests.txt
   exit 1
 fi
