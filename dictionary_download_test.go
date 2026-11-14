@@ -39,6 +39,20 @@ func TestNewGUIDictionaryFromText(t *testing.T) {
 	}
 }
 
+func TestDictionaryCommentsDoNotSelectKeyLength(t *testing.T) {
+	for _, comment := range []string{"# 11223344", "  # FFFFFFFFFFFF", "\t# 00112233445566778899AABBCCDDEEFF"} {
+		t.Run(comment, func(t *testing.T) {
+			d, e := NewGUIDictionaryFromText("keys", comment+"\nFFFFFFFFFFFF\tfirst key\nA0A1A2A3A4A5#11223344\n")
+			if e != nil || d.KeyLength != 12 || len(d.Keys) != 2 || d.Keys[0].String() != "FFFFFFFFFFFF" || d.Keys[1].String() != "A0A1A2A3A4A5" {
+				t.Fatalf("comment changed dictionary contents: %+v %v", d, e)
+			}
+		})
+	}
+	if _, e := NewGUIDictionaryFromText("keys", "# 11223344\n# FFFFFFFFFFFF\n# 00112233445566778899AABBCCDDEEFF"); e == nil {
+		t.Fatal("commented keys accepted as a dictionary")
+	}
+}
+
 func TestDownloadDictionary(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.Header.Get("User-Agent"), "chameleon-go/") {

@@ -326,14 +326,20 @@ func DetectNdef(tag uint16, blocks [][]byte) (*NdefContainer, error) {
 }
 
 func detectType2Ndef(blocks [][]byte) (*NdefContainer, error) {
-	if len(blocks) <= 4 || len(blocks[3]) < 4 || blocks[3][0] != 0xE1 {
+	if len(blocks) <= 4 || len(blocks[3]) != 4 || blocks[3][0] != 0xE1 {
 		return nil, fmt.Errorf("no NFC Forum Type 2 capability container (page 3)")
 	}
 	advertised := int(blocks[3][2]) * 8
+	if len(blocks)-4 < advertised/4 {
+		return nil, fmt.Errorf("dump is shorter than the Type 2 capability-container region")
+	}
 	var region []byte
 	var locations []ndefLocation
 	for page := 4; page < len(blocks) && len(region) < advertised; page++ {
-		for col := 0; col < len(blocks[page]) && len(region) < advertised; col++ {
+		if len(blocks[page]) != 4 {
+			return nil, fmt.Errorf("invalid Type 2 page %d: expected four bytes", page)
+		}
+		for col := 0; col < 4 && len(region) < advertised; col++ {
 			locations = append(locations, ndefLocation{page, col})
 			region = append(region, blocks[page][col])
 		}

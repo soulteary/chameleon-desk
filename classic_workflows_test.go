@@ -120,3 +120,45 @@ func TestReadableKeyBIsNotMisreportedAsFailedRecovery(t *testing.T) {
 		t.Fatal(v, e)
 	}
 }
+
+func TestAutopwnReadsKeyBAfterRecoveringKeyA(t *testing.T) {
+	scan := []byte{4, 1, 2, 3, 4, 4, 0, 8, 0}
+	key := bytes.Repeat([]byte{255}, 6)
+	reply := make([]byte, 490)
+	reply[0] = 0x30 // Only sector 1 keys are found in the initial dictionary.
+	copy(reply[22:34], bytes.Repeat([]byte{255}, 12))
+	mask := bytes.Repeat([]byte{255}, 10)
+	mask[0] = 0x0f
+	steps := []readerStep{
+		{command: 1002, status: 0x68, data: []byte{1}},
+		{command: 2000, data: scan},
+		{command: 2000, data: scan},
+		{command: 2012, request: append(mask, key...), data: reply},
+	}
+	for _, kind := range []byte{0x60, 0x61} {
+		steps = append(steps,
+			readerStep{command: 2000, data: scan},
+			readerStep{command: 2007, request: append([]byte{kind, 4}, key...)})
+	}
+	// Reusing sector 1's A recovers sector 0's A. B is readable under A,
+	// so its bytes must be read rather than passed through authentication.
+	steps = append(steps,
+		readerStep{command: 1002, status: 0x68, data: []byte{1}},
+		readerStep{command: 2000, data: scan},
+		readerStep{command: 2007, request: append([]byte{0x60, 0}, key...)},
+		readerStep{command: 1002, status: 0x68, data: []byte{1}},
+		readerStep{command: 2000, data: scan})
+	trailer := make([]byte, 16)
+	copy(trailer[6:9], []byte{255, 7, 128})
+	copy(trailer[10:16], []byte{1, 2, 3, 4, 5, 6})
+	steps = append(steps, readerStep{command: 2008, request: append([]byte{0x60, 3}, key...), data: trailer})
+	c := readerSimulator(t, steps)
+	c.timeout = 5 * time.Second
+	v, e := c.Autopwn(context.Background(), AutopwnOptions{Sectors: 2, Dictionary: []HexBytes{key}, Recovery: AdvancedRecoveryOptions{Limit: time.Minute, MaxRuns: 1, MaxAttempts: 1}})
+	if e != nil || !v.Complete || !v.Sectors[0].BReadable || v.Sectors[0].B.String() != "010203040506" {
+		t.Fatalf("readable B was not recovered from its trailer: %+v %v", v, e)
+	}
+	if e := v.Validate(); e != nil {
+		t.Fatal(e)
+	}
+}
