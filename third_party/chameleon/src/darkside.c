@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 
 #include "parity.h"
 #include "crapto1.h"
@@ -31,12 +32,14 @@ int main(int argc, char *argv[]) {
     uint64_t *keylist = NULL, *last_keylist = NULL;
     DarksideParam *dps = NULL;
     bool no_key_recover = true;
+    int status = EXIT_SUCCESS;
 
     for (i = 1; i + 5 < argc;) {
         void *pTmp = realloc(dps, sizeof(DarksideParam) * ++count);
         if (pTmp == NULL) {
-            printf("Can't malloc at param construct.");
-            return EXIT_FAILURE;
+            fprintf(stderr, "Can't allocate darkside parameters\n");
+            status = EXIT_FAILURE;
+            goto cleanup;
         }
         dps = pTmp;
         dps[count - 1].nt = (uint32_t)atoui(argv[++i]);
@@ -65,9 +68,18 @@ int main(int argc, char *argv[]) {
         */
 
         // start decrypting
+        keylist = NULL;
         keycount = nonce2key(uid, nt, nr, ar, par_list, ks_list, &keylist);
+        int recovery_error = errno;
+        if (recovery_error != 0 || (keycount > 0 && keylist == NULL)) {
+            fprintf(stderr, "Darkside candidate recovery failed: %s\n", strerror(recovery_error ? recovery_error : ENOMEM));
+            status = EXIT_FAILURE;
+            goto cleanup;
+        }
 
         if (keycount == 0) {
+            free(keylist);
+            keylist = NULL;
             continue;
         }
 
@@ -78,6 +90,7 @@ int main(int argc, char *argv[]) {
             if (keycount == 0) {
                 free(last_keylist);
                 last_keylist = keylist;
+                keylist = NULL; // Transfer ownership to the parity-zero history.
                 continue;
             }
         }
@@ -93,22 +106,17 @@ int main(int argc, char *argv[]) {
                 printf("Key%d: %02X%02X%02X%02X%02X%02X\r\n", j + 1, key_tmp[0], key_tmp[1], key_tmp[2], key_tmp[3], key_tmp[4], key_tmp[5]);
             }
         }
+        free(keylist);
+        keylist = NULL;
     }
 
     if (no_key_recover) {
         printf("key not found\r\n");
     }
 
-    if (last_keylist == keylist && last_keylist != NULL) {
-        free(keylist);
-    } else {
-        if (last_keylist) {
-            free(last_keylist);
-        }
-        if (keylist) {
-            free(keylist);
-        }
-    }
+cleanup:
+    free(last_keylist);
+    free(keylist);
     free(dps);
-    return EXIT_SUCCESS;
+    return status;
 }
