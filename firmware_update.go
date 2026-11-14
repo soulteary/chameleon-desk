@@ -180,7 +180,7 @@ func (u *FirmwareUpdater) ActionsBuild(ctx context.Context, model string) (Firmw
 		return FirmwareBuild{}, fmt.Errorf("artifact has an invalid commit")
 	}
 	return FirmwareBuild{Model: model, Asset: name + ".zip", Commit: best.Run.SHA, Source: "actions", RunID: best.Run.ID, ArtifactID: best.ID, CreatedAt: best.CreatedAt,
-		URL: fmt.Sprintf("%s/suites/%d/artifacts/%d", u.NightlyBase, best.Run.ID, best.ID), Bytes: best.Size}, nil
+		URL: fmt.Sprintf("%s/actions/artifacts/%d.zip", u.NightlyBase, best.ID), Bytes: best.Size}, nil
 }
 
 // ReleaseBuild returns the asset of one release. An empty tag selects the
