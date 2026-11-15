@@ -8,8 +8,8 @@
    read('slot-edit-read').onclick=()=>run('hardware',()=>this.load('slot'));
    for(const kind of ['settings','slot']){
     read(kind==='settings'?'settings-apply':'slot-edit-apply').onclick=()=>run('hardware',()=>this.apply(kind));
-    read(kind==='settings'?'settings-editor':'slot-editor').addEventListener('input',()=>this.preview(kind));
-    read(kind==='settings'?'settings-editor':'slot-editor').addEventListener('change',event=>{if(event.target.tagName==='SELECT'||event.target.type==='checkbox')this.preview(kind);});
+    read(kind==='settings'?'settings-editor':'slot-editor').addEventListener('input',event=>{if(event.target.id==='settings-field')this.read('settings-value').value='';this.preview(kind);});
+    read(kind==='settings'?'settings-editor':'slot-editor').addEventListener('change',event=>{if(event.target.tagName==='SELECT'||event.target.type==='checkbox'){if(event.target.id==='settings-field')this.read('settings-value').value='';this.preview(kind);}});
    }
    document.addEventListener('desk-feature-device',()=>{this.clear();this.preview('settings');this.preview('slot');});
    const tags=[[100,'EM410X'],[101,'EM410X/16'],[102,'EM410X/32'],[103,'EM410X/64'],[104,'EM410X Electra'],[150,'PAC'],[170,'Viking'],[180,'Jablotron'],[200,'HIDProx'],[201,'ioProx'],[202,'Pyramid'],[310,'IDTECK'],[1000,'Mini'],[1001,'Classic 1K'],[1002,'Classic 2K'],[1003,'Classic 4K'],[1100,'NTAG213'],[1101,'NTAG215'],[1102,'NTAG216'],[1103,'Ultralight'],[1104,'Ultralight C'],[1105,'Ultralight EV1 640'],[1106,'Ultralight EV1 1312'],[1107,'NTAG210'],[1108,'NTAG212'],[3000,'ISO14443-4'],[3001,'SEOS']];

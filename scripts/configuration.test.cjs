@@ -21,3 +21,6 @@ test('readback mismatch is displayed with partial result and never automatically
 test('text-field blur does not replace an already completed capability preview',async t=>{
  const p=fixture(t);p.$('settings-value').value='2';p.$('settings-value').dispatchEvent(new p.dom.window.Event('input',{bubbles:true}));await tick();const before=p.calls.length;assert.equal(p.$('settings-apply').disabled,false);p.$('settings-value').dispatchEvent(new p.dom.window.Event('change',{bubbles:true}));await tick();assert.equal(p.calls.length,before);assert.equal(p.$('settings-apply').disabled,false);
 });
+test('selecting another setting clears PIN input before changing its display type',async t=>{
+ const p=fixture(t);p.$('settings-field').value='ble_key';p.$('settings-value').value='123456';await p.controller.preview('settings');assert.equal(p.$('settings-value').type,'password');p.$('settings-field').value='animation';p.$('settings-field').dispatchEvent(new p.dom.window.Event('input',{bubbles:true}));await tick();assert.equal(p.$('settings-value').value,'');assert.equal(p.$('settings-value').type,'text');assert.equal(p.$('settings-apply').disabled,true);
+});

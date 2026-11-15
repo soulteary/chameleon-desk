@@ -37,7 +37,8 @@ hardware. Submitted preview facts do not authorize real writes.
   patch containing a restricted field is rejected as a whole. Bond clearing and
   factory reset are not exposed in this form.
 
-PIN input uses a password field and is cleared after submission. Preview and
+PIN input uses a password field and is cleared after submission or selecting a
+different setting. Preview and
 execution use only the local server; values are not stored in browser receipts
 or echoed into task results. The task worker necessarily holds the submitted
 payload in memory until execution completes; this is not encrypted storage.
