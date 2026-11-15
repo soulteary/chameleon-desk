@@ -9,7 +9,7 @@ const el = (tag, cls, text) => {
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
 let backgroundTasks = null;
-let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false;
+let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
@@ -608,6 +608,10 @@ async function loadCapabilities() {
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
     if (!featureAvailability.configure(caps)) throw new Error("功能清单版本或内容不受支持，请重试或更新服务后刷新");
     sessionsEnabled = caps.device_sessions_enabled === true;
+    nativeMaintenanceEnabled = caps.native_usb_maintenance_enabled === true;
+    $("#session-tcp-label").hidden = nativeMaintenanceEnabled;
+    $("#session-connect").textContent = nativeMaintenanceEnabled ? "连接维护端口" : "连接";
+    $("#session-note").textContent = nativeMaintenanceEnabled ? "原生 USB 维护模式：仅用于配对设置和维护。请刷新功能状态；常规 USB 操作使用 Python 桥。" : "USB 应用操作请连接 Python 桥的 TCP 地址。连接由此 Desk 服务的所有页面共享。";
     if (caps.ble_bridge_enabled === true && caps.usb_bridge_enabled === true) throw new Error("服务同时声明了两种设备桥，请检查配置");
     bridgeMedium = caps.usb_bridge_enabled === true ? "usb-serial" : "ble";
     bridgeEnabled = caps.ble_bridge_enabled === true || caps.usb_bridge_enabled === true;
@@ -646,22 +650,13 @@ function showDeviceSession(value) {
 }
 async function refreshDeviceSession() {
  showDeviceSession(await api("/api/session/status"));
- if (!bridgeEnabled) {
-  try {
-   const value = await api("/api/session/ports");
-   if (!Array.isArray(value.ports) || value.ports.some(port=>typeof port!=="string")) throw new Error("串口列表无效");
-   const select = $("#session-ports"), selected = select.value;
-   select.replaceChildren(el("option",null,"选择串口")); select.firstChild.value="";
-   for (const port of value.ports) { const option=el("option",null,port);option.value=port;select.append(option); }
-   select.value=selected;
-  } catch (error) { $("#session-ports").replaceChildren(el("option",null,"无法枚举串口")); $("#session-ports").firstChild.value=""; $("#session-state").textContent += " · " + error.message + "；仍可指定 TCP 地址"; }
- }
+
 }
 async function sessionAction(action) {
  sessionEpoch++; clearBridgeDeviceView();
  try {
   const input = { session_id: deviceSession?.session_id || "" };
-  if (action === "connect") input.target = $("#session-tcp").value.trim() || $("#session-ports").value;
+  if (action === "connect") input.target = nativeMaintenanceEnabled ? "" : $("#session-tcp").value.trim();
   showDeviceSession(await postJSON("/api/session/"+action,input));
  } catch (error) {
   $("#session-state").textContent = error.message;
@@ -674,6 +669,5 @@ function updateSessionButtons() {
  $("#session-connect").disabled=blocked;
  $("#session-disconnect").disabled=blocked || !deviceSession?.connected;
  $("#session-refresh").disabled=busy.has("hardware");
- $("#session-ports").disabled=busy.has("hardware");
  $("#session-tcp").disabled=busy.has("hardware");
 }

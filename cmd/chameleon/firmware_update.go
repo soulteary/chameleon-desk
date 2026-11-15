@@ -29,7 +29,7 @@ func runFirmwareUpdate(args []string) (retErr error) {
 	source := f.String("source", "auto", "download: auto, release (github.com) or actions (via nightly.link)")
 	tag := f.String("tag", "", "download: a specific release tag, e.g. v2.3.0, instead of the latest build")
 	output := f.String("output", "", "check: optional result file; download: new firmware ZIP (never overwritten)")
-	port := f.String("port", "", "USB serial or TCP application port (Python bridge for BLE); otherwise select one USB device")
+	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
 	if e := f.Parse(args[2:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {

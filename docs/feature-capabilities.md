@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 83 workflows; this is not a coverage percentage.
+sources. It currently groups 84 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -77,7 +77,9 @@ client's existing immutable transport information.
 ```sh
 ./chameleon features
 ./chameleon features --surface web --id reader.hf-scan
-./chameleon features --surface sdk --port /dev/ttyACM0
+./chameleon features --surface sdk --port tcp:127.0.0.1:12345
+./chameleon features --surface sdk --native-usb --port /dev/ttyACM0
+./chameleon features --surface cli --bridge-configured --bridge-medium usb-serial --id bridge.usb-scan
 ./chameleon features --surface cli --allow-writes
 ```
 
@@ -118,8 +120,12 @@ endpoints and SDK retain parameter checks, write permission/token checks,
 transport restrictions and firmware responses. A caller can submit fictitious
 facts to an offline preview, but that does not grant device permissions.
 
-Pairing/reset and full-device restore policies require a declared direct serial
-connection. The optional [USB serial TCP bridge](usb-bridge.md) declares its
+Pairing/reset and full-device restore policies require an explicit native USB
+maintenance connection. `native_usb_maintenance` scopes the native opener to
+maintenance workflows and blocks routine application commands before transmission.
+Web disables those workflows with `usb_bridge_required`; pairing-only settings
+patches and feature/settings inspection remain available in maintenance mode.
+The [USB serial TCP bridge](usb-bridge.md) declares its
 `usb-serial` medium without granting direct-USB permissions and also blocks
 bootloader entry. TCP, including unknown TCP or a self-declared serial permission,
 cannot grant these permissions. An opaque caller-managed stream is not certified
@@ -148,8 +154,11 @@ connection invalidation, schema mismatch and stale previews. The real Chromium
 suite uses a loopback protocol simulator for model/command changes; it does not
 access physical RFID/NFC or Bluetooth hardware.
 
-USB/TCP connection management uses its own lifecycle controller; see [Web device sessions](web-sessions.md). Device facts and card previews are cleared when the observed session changes.
+TCP bridge and explicit native-maintenance connection management use its own lifecycle controller; see [Web device sessions](web-sessions.md). Device facts and card previews are cleared when the observed session changes.
 
 The [background task layer](background-tasks.md) preserves operation checks and reports cancellation and unknown write outcomes separately from advisory availability.
 
 [Web settings and slot editing](web-configuration.md) resolve selected patches/operations, including readback, save commands and pairing transport restrictions. Slot read-only discovery has its own fixed feature entry.
+
+[USB migration](usb-migration.md) documents the removal of native application
+openers and auto-selection, explicit native maintenance flags, and retained DFU.

@@ -21,7 +21,7 @@ import (
 
 func extendedCommand(s string) bool {
 	switch s {
-	case "commands", "call", "settings", "slot", "mode", "emulator", "lf", "mfc", "type2", "raw", "apdu", "doctor", "recover", "image", "sniff", "firmware", "t55", "ble":
+	case "commands", "call", "settings", "slot", "mode", "emulator", "lf", "mfc", "type2", "raw", "apdu", "doctor", "recover", "image", "sniff", "firmware", "t55", "ble", "usb":
 		return true
 	}
 	return false
@@ -121,15 +121,16 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 	case "sniff":
 		action = "capture"
 	}
-	needsAction := group == "settings" || group == "slot" || group == "emulator" || group == "mfc" || group == "type2" || group == "call" || group == "image" || group == "firmware" || group == "ble"
+	needsAction := group == "settings" || group == "slot" || group == "emulator" || group == "mfc" || group == "type2" || group == "call" || group == "image" || group == "firmware" || group == "ble" || group == "usb"
 	if needsAction && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		action = rest[0]
 		rest = rest[1:]
 	}
 	f := flag.NewFlagSet(group, flag.ContinueOnError)
-	port := f.String("port", "", "USB serial path or tcp:HOST:PORT (Python bridge for BLE)")
+	port := f.String("port", "", "tcp:HOST:PORT; --native-usb requires a local maintenance port; firmware flash uses a physical DFU port")
+	nativeUSB := f.Bool("native-usb", false, "explicit native USB maintenance; pairing/reset/bootloader actions only")
 	defaultTimeout := 3 * time.Second
-	if group == "ble" {
+	if group == "ble" || group == "usb" {
 		defaultTimeout = 30 * time.Second
 	}
 	if group == "mfc" && (action == "recover" || action == "senested" || action == "collect") {
@@ -224,9 +225,13 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		f.BoolVar(&checkCRC, "check-crc", true, "check/strip response CRC")
 	case "sniff":
 		f.DurationVar(&rfTimeout, "duration", time.Second, "capture duration (1ms..30s); use --timeout longer than duration")
-	case "ble":
-		f.StringVar(&bridgeURL, "ble-bridge", "", "HTTP loopback origin of the Python BLE bridge")
-		f.StringVar(&bridgeTokenFile, "bridge-token-file", "", "private token file shared with the Python BLE bridge")
+	case "ble", "usb":
+		flagName := "ble-bridge"
+		if group == "usb" {
+			flagName = "usb-bridge"
+		}
+		f.StringVar(&bridgeURL, flagName, "", "HTTP loopback origin of the matching Python device bridge")
+		f.StringVar(&bridgeTokenFile, "bridge-token-file", "", "private token file shared with the Python device bridge")
 	case "recover":
 		f.StringVar(&kind, "tool", "", "offline recovery tool name")
 		f.StringVar(&name, "tools-dir", "tools/bin", "trusted tool directory")
@@ -245,6 +250,12 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 			return nil
 		}
 		return e
+	}
+	if *nativeUSB && !nativeUSBAction(group, action, name) {
+		return fmt.Errorf("--native-usb is limited to pairing, settings reset and bootloader maintenance; use the Python bridge for application commands")
+	}
+	if *nativeUSB && *port == "" {
+		return fmt.Errorf("--native-usb requires an explicit local --port")
 	}
 	if e := checkNewOutput(*output); e != nil {
 		return e
@@ -268,21 +279,26 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", f.Args())
 	}
-	if group == "ble" {
+	if group == "ble" || group == "usb" {
 		if action != "scan" {
-			return fmt.Errorf("BLE action: scan")
+			return fmt.Errorf("device bridge action: scan")
 		}
 		if bridgeURL == "" || bridgeTokenFile == "" {
-			return fmt.Errorf("BLE scanning requires --ble-bridge and --bridge-token-file; start tools/ble_bridge/bridge.py with --control-port and --token-file, or use its --scan option")
+			return fmt.Errorf("%s scanning requires --%s-bridge and --bridge-token-file; configure the Python bridge management endpoint", group, group)
 		}
 		if *port != "" {
-			return fmt.Errorf("BLE scanning uses --ble-bridge, not --port")
+			return fmt.Errorf("bridge scanning uses its management URL, not --port")
 		}
 		token, e := readBridgeToken(bridgeTokenFile)
 		if e != nil {
 			return e
 		}
-		bridge, e := chameleon.NewBLEBridge(bridgeURL, token)
+		var bridge managedBridge
+		if group == "usb" {
+			bridge, e = chameleon.NewUSBBridge(bridgeURL, token)
+		} else {
+			bridge, e = chameleon.NewBLEBridge(bridgeURL, token)
+		}
 		if e != nil {
 			return e
 		}
@@ -360,6 +376,12 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 			return e
 		}
 	}
+	if *nativeUSB && group == "settings" && action == "set" && name == "ble-key" {
+		patch := chameleon.SettingsPatch{BLEKey: &keyText}
+		if err := patch.Validate(); err != nil {
+			return err
+		}
+	}
 	// Validate raw-call intent before opening any hardware.
 	var cmd chameleon.Command
 	if group == "call" {
@@ -400,7 +422,12 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 			return e
 		}
 	}
-	c, e := openDevice(*port, *timeout)
+	var c *chameleon.Client
+	if *nativeUSB {
+		c, e = openNativeUSB(ctx, *port, *timeout)
+	} else {
+		c, e = openDevice(*port, *timeout)
+	}
 	if e != nil {
 		return e
 	}
@@ -740,4 +767,20 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		out = map[string]any{"ok": true, "operation": group + " " + action}
 	}
 	return result(out, *output, *binaryOut)
+}
+
+func nativeUSBAction(group, action, name string) bool {
+	if group == "firmware" {
+		return action == "enter"
+	}
+	if group != "settings" {
+		return false
+	}
+	switch action {
+	case "get", "save", "reset", "factory-reset", "bootloader", "clear-bonds":
+		return true
+	case "set":
+		return name == "ble-key" || name == "ble-pairing"
+	}
+	return false
 }

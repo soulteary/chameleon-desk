@@ -14,8 +14,8 @@ Requires Go 1.22 or later; use Go 1.27 on macOS 26. Go dependency versions and
 checksums are recorded in `go.mod` and `go.sum`.
 The build script defaults to `CGO_ENABLED=0`. The Go workbench has no native
 BLE backend or third-party cgo dependency. Node.js and Python are not needed
-to build or run its USB serial, TCP or offline tools. BLE access requires the
-separate Python bridge.
+to build Go, run TCP/offline tools or use explicit native USB maintenance/DFU.
+Routine USB and BLE access require the separate Python bridge.
 
 ```sh
 git clone https://github.com/soulteary/chameleon-desk.git
@@ -34,13 +34,15 @@ Its authenticated management API can be enabled with `--control-port` and
 disconnect controls in the Web UI. BLE/TCP transport properties are checked
 before pairing changes or full device restore.
 
-The same Python entrypoint has an optional [USB serial TCP backend](docs/usb-bridge.md)
+The same Python entrypoint has a [USB serial TCP backend](docs/usb-bridge.md)
 using pySerial. Select a fixed application port with `--serial-port`, then use
-Desk's ordinary TCP connection. Native USB remains available. The USB bridge
-does not enable pairing changes, full-device restore or DFU. For scanning and
+Desk's ordinary TCP connection. Native USB is reserved for explicit maintenance
+and DFU. The USB bridge does not enable pairing changes, full-device restore or DFU. For scanning and
 selection from Web UI, start the bridge with `--usb --control-port ...
 --token-file ...`, then configure Desk with `serve --usb-bridge` and
-`--bridge-token-file`. BLE management and native USB remain available.
+`--bridge-token-file`. BLE management remains available. Existing native USB
+users should follow the
+[USB migration guide](docs/usb-migration.md).
 
 ## Web UI
 
@@ -52,12 +54,12 @@ Open <http://127.0.0.1:8088>. Use the Dock or sidebar to open a tool.
 The server listens on loopback addresses only. Device and card writes are
 disabled by default. To enable them, restart with `--allow-writes`.
 
-Use the device window to list/select a USB serial port or enter `tcp:host:port`, then connect or disconnect. The server owns one persistent session shared by all pages; no device is auto-selected when started without `--port`. See [Web device sessions](docs/web-sessions.md).
+Use managed USB bridge controls to scan/select a port on the Python host, or enter an explicit `tcp:host:port` for a fixed bridge, then connect or disconnect. The server owns one persistent session shared by all pages; no device is auto-selected when started without `--port`. See [Web device sessions](docs/web-sessions.md).
 
 Use `--port` to connect a device when the server starts:
 
 ```sh
-./chameleon serve --port /dev/ttyACM0
+./chameleon serve --port tcp:127.0.0.1:12345
 ```
 
 The [settings and slot editors](docs/web-configuration.md) provide settings readback, nickname/type/enable changes and explicitly confirmed single-channel initialization.
@@ -76,13 +78,18 @@ and storage limits. Dictionary downloads and firmware checks require internet ac
 
 ```sh
 ./chameleon --help
-./chameleon devices
-./chameleon info
-./chameleon scan --wait 15s
-./chameleon commands --supported
+./chameleon usb scan --usb-bridge http://127.0.0.1:12346 --bridge-token-file tools/ble_bridge/usb.key
+./chameleon info --port tcp:127.0.0.1:12345
+./chameleon scan --port tcp:127.0.0.1:12345 --wait 15s
+./chameleon commands --supported --port tcp:127.0.0.1:12345
 ./chameleon features --surface cli
 ./chameleon acl --help
 ```
+
+Pairing, reset and full restore use explicit native maintenance (`--native-usb`
+for CLI, `OpenNativeUSBContext` for SDK, or `serve --native-usb-maintenance PATH`
+for Web pairing). DFU retains its separate physical port. Routine application
+commands never auto-select or fall back to native USB.
 
 CLI mutation commands require `--yes`. Raw command interfaces expose firmware
 operations directly; inspect their arguments before use.

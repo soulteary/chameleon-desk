@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 )
@@ -211,7 +212,11 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 							transport.AllowsPairingChanges = false
 						}
 						if e := checkTransportCommand(transport, uint16(*request.Command)); e != nil {
-							reason("unavailable", "transport_restricted", e.Error())
+							code := "transport_restricted"
+							if errors.Is(e, ErrUSBBridgeRequired) {
+								code = "usb_bridge_required"
+							}
+							reason("unavailable", code, e.Error())
 						}
 					}
 				}
@@ -302,6 +307,18 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 			if err := checkTransportCommand(ctx.Device.Transport, uint16(cmd)); err != nil {
 				reason("unavailable", "transport_restricted", err.Error())
 			}
+		}
+	}
+	if ctx.Device != nil && ctx.Device.Transport.NativeUSBMaintenance && f.Device && f.RequirementMode != "command" {
+		allowed := false
+		switch f.ID {
+		case "device.features", "device.settings", "device.pairing", "device.reset", "backup.restore", "firmware.enter":
+			allowed = true
+		case "device.configure":
+			allowed = request == nil || request.SettingsPatch == nil || request.SettingsPatch.PairingOnly()
+		}
+		if !allowed {
+			reason("unavailable", "usb_bridge_required", ErrUSBBridgeRequired.Error())
 		}
 	}
 	if f.Transport == "pairing" || f.Transport == "restore" || f.Transport == "usb-dfu" {

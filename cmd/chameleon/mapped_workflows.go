@@ -71,7 +71,7 @@ func fileMemoryFormat(path, format string) (string, error) {
 func runMappedWorkflow(args []string) (retErr error) {
 	group, action := args[0], args[1]
 	f := flag.NewFlagSet(group+" "+action, flag.ContinueOnError)
-	port := f.String("port", "", "USB serial or TCP application port (Python bridge for BLE); otherwise select one USB device")
+	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
 	slot := f.Int("slot", 0, "0=active, or temporarily select slot 1..8 (requires --yes)")
 	input := f.String("input", "", "binary/EML/image/config/LF input file")

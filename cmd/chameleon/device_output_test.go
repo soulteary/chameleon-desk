@@ -24,7 +24,7 @@ func TestDeviceCLIsRejectOutputBeforeOpening(t *testing.T) {
 			{"ulc", "ulcg-collect", "--yes", "--erase-key", "--port", "must-not-open"},
 			{"gen3", "lock", "--yes", "--permanent-lock", "--port", "must-not-open"},
 			{"settings", "configure", "--yes", "--port", "must-not-open"},
-			{"backup", "restore", "--yes", "--port", "must-not-open"},
+			{"backup", "restore", "--native-usb", "--yes", "--port", "must-not-open"},
 			{"slot", "load-card", "--yes", "--port", "must-not-open"},
 			{"scan", "--port", "must-not-open"},
 			{"stress", "--port", "must-not-open"},

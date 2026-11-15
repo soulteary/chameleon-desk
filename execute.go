@@ -134,7 +134,7 @@ func (c *Client) request(ctx context.Context, cmd Command, data []byte, status u
 
 // EnterBootloader is send-only: the firmware disconnects without replying.
 func (c *Client) EnterBootloader(ctx context.Context) error {
-	if err := c.checkTransportCommand(uint16(CmdEnterBootloader)); err != nil {
+	if err := c.checkTransportCommand(ctx, uint16(CmdEnterBootloader)); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)

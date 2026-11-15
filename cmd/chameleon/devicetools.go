@@ -49,7 +49,7 @@ func runDeviceTool(args []string) (retErr error) {
 	// Common flags, then only the current group's flags, so --help lists just
 	// what this command accepts instead of every device tool's options.
 	output := f.String("output", "", "atomic JSON output file")
-	port := f.String("port", "", "USB serial or TCP application port (Python bridge for BLE); otherwise select one USB device")
+	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
 	yes := f.Bool("yes", false, "confirm writing the card")
 	var password, newPassword, uid, data, config, probeID, dictionary, passwords *string

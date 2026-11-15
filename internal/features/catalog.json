@@ -219,7 +219,8 @@
         ]
       },
       "notes": [
-        "Web returns a redacted SettingsView. Sleep/threshold getters are optional probes and unsupported fields remain unknown."
+        "Web returns a redacted SettingsView. Sleep/threshold getters are optional probes and unsupported fields remain unknown.",
+        "In native maintenance mode this read supports pairing inspection/readback. General settings changes remain on the Python bridge."
       ],
       "sources": [
         "settings_view.go",
@@ -302,7 +303,8 @@
         ]
       },
       "notes": [
-        "Selected settings expand exact getter/setter and final-read/save requirements. PIN/pairing changes require direct serial. Web submits background tasks and never retries writes."
+        "Selected settings expand exact getter/setter and final-read/save requirements. PIN/pairing changes require direct serial. Web submits background tasks and never retries writes.",
+        "Native USB maintenance accepts pairing-only patches. Ordinary and mixed patches require the Python bridge; a bridge still cannot change pairing."
       ],
       "sources": [
         "settings_workflow.go",
@@ -366,7 +368,8 @@
         ]
       },
       "notes": [
-        "Web supports PIN and pairing policy through settings; bond clearing has no Web entry."
+        "Web supports PIN and pairing policy through settings; bond clearing has no Web entry.",
+        "Native CLI operations require --native-usb and an explicit physical application port. SDK callers use OpenNativeUSBContext; USB bridge restrictions remain in force."
       ],
       "sources": [
         "settings.go",
@@ -419,7 +422,9 @@
           "Client.FactoryReset"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Native CLI operations require --native-usb and an explicit physical application port. SDK callers use OpenNativeUSBContext; USB bridge restrictions remain in force."
+      ],
       "sources": [
         "settings.go"
       ],
@@ -3154,11 +3159,14 @@
         "status": "supported",
         "entries": [
           "Client.RestoreDevice",
-          "DeviceBackup.RestorePlan"
+          "DeviceBackup.RestorePlan",
+          "Client.BackupForRestore"
         ]
       },
       "notes": [
-        "Requires a valid snapshot, pre-restore backup and direct serial. Non-atomic; exact commands come from the snapshot."
+        "Requires a valid snapshot, pre-restore backup and direct serial. Non-atomic; exact commands come from the snapshot.",
+        "Native CLI operations require --native-usb and an explicit physical application port. SDK callers use OpenNativeUSBContext; USB bridge restrictions remain in force.",
+        "Native pre-restore backup and restore use a private workflow scope that does not enable subsequent general application commands."
       ],
       "sources": [
         "backup.go"
@@ -3290,7 +3298,8 @@
       },
       "notes": [
         "Send-only; disconnect is expected.",
-        "The fixed-port USB serial TCP bridge rejects bootloader entry; direct USB and BLE behavior is unchanged."
+        "The fixed-port USB serial TCP bridge rejects bootloader entry; direct USB and BLE behavior is unchanged.",
+        "Native CLI operations require --native-usb and an explicit physical application port. SDK callers use OpenNativeUSBContext; USB bridge restrictions remain in force."
       ],
       "sources": [
         "execute.go",
@@ -3676,8 +3685,10 @@
         ]
       },
       "cli": {
-        "status": "missing",
-        "entries": []
+        "status": "supported",
+        "entries": [
+          "usb scan"
+        ]
       },
       "sdk": {
         "status": "supported",
@@ -3900,9 +3911,9 @@
         ]
       },
       "notes": [
-        "Fixed-port mode uses --serial-port. Managed mode uses --usb with an authenticated management port and token; the Web server connects through --usb-bridge.",
-        "Native USB remains available. Both USB bridge modes keep pairing, full-device restore and DFU restrictions and reject bootloader entry.",
-        "Port enumeration reports OS metadata, not verified device compatibility or physical identity."
+        "Routine USB application access uses the Python bridge; Open/OpenContext and ordinary CLI/Web sessions no longer open native serial ports.",
+        "Fixed mode uses --serial-port. Managed mode uses --usb with --control-port and --token-file; Desk Web uses --usb-bridge and CLI discovery uses usb scan.",
+        "Pairing, reset, full-device restore, bootloader entry and DFU remain restricted on USB bridges. Use the explicit native maintenance or DFU path for those operations."
       ],
       "sources": [
         "tools/ble_bridge/bridge.py",
@@ -3910,6 +3921,60 @@
         "transport_info.go"
       ],
       "effect": "offline"
+    },
+    {
+      "id": "transport.native-usb-maintenance",
+      "title": "Explicit native USB maintenance",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "pairing",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "partial",
+        "entries": [
+          "GET /api/settings/read",
+          "POST /api/settings/configure",
+          "GET /api/features/device"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "devices --native-usb",
+          "settings get",
+          "settings set",
+          "settings reset",
+          "settings factory-reset",
+          "firmware enter",
+          "backup restore"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "OpenNativeUSBContext",
+          "Client.BackupForRestore"
+        ]
+      },
+      "notes": [
+        "Native application serial access is limited to model/capability and settings inspection, pairing, reset, restore prerequisites, full restore and bootloader entry. General USB application commands require the Python bridge.",
+        "CLI requires --native-usb. Web requires serve --native-usb-maintenance PATH; Web exposes pairing readback and edits, not full-device restore or DFU.",
+        "Stop the bridge data session before opening native maintenance or DFU. No automatic fallback or command replay is performed."
+      ],
+      "sources": [
+        "native_usb.go",
+        "transport_info.go",
+        "backup.go",
+        "cmd/chameleon/serve.go"
+      ],
+      "effect": "parameter-dependent"
     },
     {
       "id": "transport.native-ble",
@@ -3950,7 +4015,7 @@
     },
     {
       "id": "device.session",
-      "title": "Web USB/TCP connection management",
+      "title": "Web TCP sessions and explicit native maintenance",
       "device": false,
       "write": false,
       "effect": "connection",
@@ -3964,7 +4029,6 @@
       "web": {
         "status": "supported",
         "entries": [
-          "GET /api/session/ports",
           "GET /api/session/status",
           "POST /api/session/connect",
           "POST /api/session/disconnect"
@@ -3974,7 +4038,8 @@
       "cli": {
         "status": "partial",
         "entries": [
-          "devices",
+          "devices --native-usb",
+          "usb scan",
           "serve"
         ]
       },
@@ -3986,9 +4051,8 @@
         ]
       },
       "notes": [
-        "Web sessions are server-wide and use a common operation gate with managed BLE. Connection controls have their own lifecycle checks.",
-        "Connecting replaces and closes the previous direct session; failure leaves it disconnected. No automatic reconnect or command replay.",
-        "CLI and SDK provide transport primitives, not the Web session registry. This phase does not provide background task IDs or cancellation."
+        "Ordinary sessions accept TCP targets only. USB selection uses Python bridge management; the former native ports endpoint returns an empty list for compatibility.",
+        "serve --native-usb-maintenance fixes an explicit maintenance port. Application endpoints stay disabled; connection changes retain existing session identity and serialization rules."
       ],
       "sources": [
         "cmd/chameleon/serve_session.go",

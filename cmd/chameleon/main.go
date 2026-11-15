@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"reflect"
 	"sort"
-	"strings"
 	"syscall"
 	"time"
 
@@ -29,23 +27,14 @@ func printJSON(v any) error {
 	e.SetIndent("", "  ")
 	return e.Encode(v)
 }
-func autoPort() (string, error) {
-	ports, e := chameleon.Ports()
-	if e != nil {
-		return "", e
-	}
-	var candidates []string
-	for _, p := range ports {
-		b := filepath.Base(p)
-		if strings.HasPrefix(b, "cu.usbmodem") || strings.HasPrefix(b, "ttyACM") {
-			candidates = append(candidates, p)
-		}
-	}
-	if len(candidates) != 1 {
-		return "", fmt.Errorf("found %d USB CDC candidates; use devices, then --port explicitly", len(candidates))
-	}
-	return candidates[0], nil
-}
+
+// Application commands never enumerate or auto-open native USB ports.
+func autoPort() (string, error) { return "", chameleon.ErrUSBBridgeRequired }
+
+const applicationPortHelp = "tcp:HOST:PORT of a Python USB/BLE bridge or compatible TCP peer"
+
+// Explicit maintenance opener; tests replace it without accessing serial hardware.
+var openNativeUSB = chameleon.OpenNativeUSBContext
 
 type report struct {
 	Started   string          `json:"started"`
@@ -174,7 +163,7 @@ func run() error {
 		return runCardfile(os.Args[2:])
 	}
 	if len(os.Args) < 2 {
-		return errors.New("usage: chameleon devices|info|slots|scan|stress|features|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [--port PATH] [--json]")
+		return errors.New("usage: chameleon devices|info|slots|scan|stress|features|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|usb|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [--port PATH] [--json]")
 	}
 	command := os.Args[1]
 	if command == "version" || command == "--version" {
@@ -185,11 +174,12 @@ func run() error {
 		return runExtended(os.Args[1:])
 	}
 	if command == "--help" || command == "-h" || command == "help" {
-		fmt.Println("Usage: chameleon devices|info|slots|scan|stress|features|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [options]\nRun chameleon <command> --help for options.")
+		fmt.Println("Usage: chameleon devices|info|slots|scan|stress|features|commands|call|settings|slot|mode|emulator|lf|mfc|type2|raw|apdu|doctor|recover|image|sniff|firmware|t55|ble|usb|cardfile|database|ndef|acl|vanity|dictionary|gen4|gen1a|gen3|serve|backup|ulc|rf|seos|emv|des [options]\nRun chameleon <command> --help for options.")
 		return nil
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
-	port := f.String("port", "", "serial port; auto-selects one USB CDC candidate")
+	port := f.String("port", "", applicationPortHelp)
+	nativeUSB := f.Bool("native-usb", false, "devices: enumerate local maintenance/DFU ports without opening them")
 	timeout := f.Duration("timeout", 3*time.Second, "timeout per command, including queue wait")
 	jsonOut := f.Bool("json", false, "JSON output")
 	count, interval, reopen := 100, 20*time.Millisecond, 0
@@ -224,7 +214,13 @@ func run() error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if *nativeUSB && command != "devices" {
+		return fmt.Errorf("--native-usb is reserved for maintenance entrypoints")
+	}
 	if command == "devices" {
+		if !*nativeUSB {
+			return fmt.Errorf("use usb scan --usb-bridge URL --bridge-token-file FILE for USB application discovery; devices --native-usb lists maintenance/DFU ports")
+		}
 		ports, e := chameleon.Ports()
 		if e != nil {
 			return e

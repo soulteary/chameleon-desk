@@ -13,8 +13,10 @@ func runFeatures(args []string) error {
 	f := flag.NewFlagSet("features", flag.ContinueOnError)
 	surface := f.String("surface", "cli", "web, cli or sdk")
 	port := f.String("port", "", "explicit device port; omitted means no device I/O")
+	nativeUSB := f.Bool("native-usb", false, "probe only model/capabilities on an explicit native USB maintenance port")
 	id := f.String("id", "", "one feature ID; omitted lists the catalog")
 	writes := f.Bool("allow-writes", false, "evaluate write workflows as permitted; does not execute writes")
+	bridgeMedium := f.String("bridge-medium", "ble", "configured bridge medium: ble or usb-serial")
 	bridge := f.Bool("bridge-configured", false, "evaluate with a managed bridge configured; does not connect")
 	timeout := f.Duration("timeout", 5*time.Second, "device query timeout")
 	_ = f.Bool("json", true, "JSON output")
@@ -26,6 +28,9 @@ func runFeatures(args []string) error {
 	}
 	if f.NArg() != 0 || *timeout <= 0 {
 		return fmt.Errorf("features requires no positional arguments and a positive timeout")
+	}
+	if *bridgeMedium != "ble" && *bridgeMedium != "usb-serial" {
+		return fmt.Errorf("--bridge-medium must be ble or usb-serial")
 	}
 	if *surface != "web" && *surface != "cli" && *surface != "sdk" {
 		return fmt.Errorf("surface must be web, cli or sdk")
@@ -41,11 +46,20 @@ func runFeatures(args []string) error {
 			return fmt.Errorf("unknown feature %q", *id)
 		}
 	}
-	facts := chameleon.FeatureContext{WritesAllowed: *writes, BridgeConfigured: *bridge}
+	if *nativeUSB && *port == "" {
+		return fmt.Errorf("--native-usb requires --port")
+	}
+	facts := chameleon.FeatureContext{WritesAllowed: *writes, BridgeConfigured: *bridge, BridgeMedium: *bridgeMedium}
 	if *port != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 3**timeout)
 		defer cancel()
-		c, e := chameleon.OpenContext(ctx, *port, *timeout)
+		var c *chameleon.Client
+		var e error
+		if *nativeUSB {
+			c, e = openNativeUSB(ctx, *port, *timeout)
+		} else {
+			c, e = chameleon.OpenContext(ctx, *port, *timeout)
+		}
 		if e != nil {
 			return e
 		}

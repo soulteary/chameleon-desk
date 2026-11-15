@@ -57,6 +57,9 @@ func (e *ModeRestoreError) Unwrap() error { return e.Err }
 // All calls on this Client wait until the whole sequence (including cleanup)
 // completes. Card type is a SAK-based family hint, not chip authentication.
 func (c *Client) ScanISO14443A(ctx context.Context) (cards []Card, err error) {
+	if c.transportInfo.NativeUSBMaintenance {
+		return nil, ErrUSBBridgeRequired
+	}
 	queued, cancel := context.WithTimeout(ctx, c.timeout)
 	err = c.acquire(queued)
 	cancel()

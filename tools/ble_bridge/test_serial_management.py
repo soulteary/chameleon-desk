@@ -285,6 +285,32 @@ class SerialManagementTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(self.factory.ports[-1].writes)
 
     @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a no-cgo CLI binary")
+    async def test_desk_usb_cli_scans_without_opening_serial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory)/"bridge.key"; key.write_text(self.token); key.chmod(0o600)
+            process = await asyncio.create_subprocess_exec(os.path.abspath(os.environ["CHAMELEON_BRIDGE_TEST_BINARY"]),
+                "usb", "scan", "--usb-bridge", "http://"+self.api.authority, "--bridge-token-file", str(key),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            output, errors = await asyncio.wait_for(process.communicate(), 10)
+            self.assertEqual(process.returncode, 0, errors)
+            result = json.loads(output)
+            self.assertEqual(result["devices"][0]["id"], "COM7")
+            self.assertNotIn(self.token.encode(), output+errors)
+            self.assertFalse(self.factory.ports)
+
+    @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a no-cgo CLI binary")
+    async def test_desk_routine_usb_addresses_have_explicit_migration_errors(self):
+        binary = os.path.abspath(os.environ["CHAMELEON_BRIDGE_TEST_BINARY"])
+        for args, message in ((["info"], b"Python bridge"), (["info", "--port", "COM7"], b"Python bridge"),
+                              (["devices"], b"usb scan"), (["settings", "set", "--name", "ble-key", "--key", "123456", "--yes", "--native-usb", "--port", "tcp:127.0.0.1:12345"], b"explicit local application"),
+                              (["backup", "restore", "--native-usb", "--port", "tcp:127.0.0.1:12345", "--yes"], b"direct serial")):
+            process = await asyncio.create_subprocess_exec(binary, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            output, errors = await asyncio.wait_for(process.communicate(), 10)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn(message, errors)
+        self.assertFalse(self.factory.ports)
+
+    @unittest.skipUnless(os.environ.get("CHAMELEON_BRIDGE_TEST_BINARY"), "set path to a no-cgo CLI binary")
     async def test_web_usb_management_reuses_session_and_tracks_background_task(self):
         self.factory.configure = configure_info_device
         with tempfile.TemporaryDirectory() as directory:

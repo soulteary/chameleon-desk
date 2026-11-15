@@ -1,4 +1,4 @@
-// Package chameleon provides USB device queries and ISO14443-A card discovery.
+// Package chameleon provides device workflows over TCP bridges and explicit USB maintenance.
 package chameleon
 
 import (
@@ -11,8 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"go.bug.st/serial"
 )
 
 var ErrClosed = errors.New("chameleon connection closed; open a new connection")
@@ -43,16 +41,16 @@ type Stats struct {
 	UnexpectedResponses uint64 `json:"unexpected_responses"`
 }
 
-// Ports lists serial ports without opening them.
-func Ports() ([]string, error) { return serial.GetPortsList() }
+// ErrUSBBridgeRequired identifies an application connection that must use a bridge.
+var ErrUSBBridgeRequired = errors.New("USB application access requires the Python bridge and --port tcp:HOST:PORT; use OpenNativeUSBContext or --native-usb only for USB maintenance")
 
-// Open configures 115200/8N1 and DTR, as required by the upstream client.
-// Open does not change mode, slots, persistent settings or firmware.
+// Open opens a TCP application transport. USB and BLE use the Python bridge.
 func Open(path string, timeout time.Duration) (*Client, error) {
 	return OpenContext(context.Background(), path, timeout)
 }
 
-// OpenContext bounds serial or TCP transport establishment. BLE uses the Python bridge.
+// OpenContext opens a TCP application transport without selecting a local port,
+// launching Python or falling back to native USB after a bridge failure.
 func OpenContext(ctx context.Context, path string, timeout time.Duration) (*Client, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -60,30 +58,14 @@ func OpenContext(ctx context.Context, path string, timeout time.Duration) (*Clie
 	if strings.HasPrefix(path, "ble:") {
 		return nil, ErrBLEUnavailable
 	}
-	if strings.HasPrefix(path, "tcp:") {
-		conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", strings.TrimPrefix(path, "tcp:"))
-		if err != nil {
-			return nil, err
-		}
-		return tcpClient(ctx, conn, timeout)
+	if !strings.HasPrefix(path, "tcp:") {
+		return nil, ErrUSBBridgeRequired
 	}
-	p, err := serial.Open(path, &serial.Mode{BaudRate: 115200, DataBits: 8, Parity: serial.NoParity, StopBits: serial.OneStopBit})
+	conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", strings.TrimPrefix(path, "tcp:"))
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
-	fail := func(err error) (*Client, error) { _ = p.Close(); return nil, err }
-	if err = p.SetDTR(true); err != nil {
-		return fail(fmt.Errorf("enable DTR: %w", err))
-	}
-	if err = p.SetReadTimeout(50 * time.Millisecond); err != nil {
-		return fail(err)
-	}
-	if err = p.ResetInputBuffer(); err != nil {
-		return fail(err)
-	}
-	c := newClient(p, timeout)
-	c.transportInfo = serialTransport()
-	return c, nil
+	return tcpClient(ctx, conn, timeout)
 }
 
 func newClient(p transport, timeout time.Duration) *Client {
@@ -159,7 +141,7 @@ func (c *Client) exchange(ctx context.Context, command uint16, payload []byte, s
 }
 
 func (c *Client) exchangeFrame(ctx context.Context, command uint16, payload []byte) (frame, error) {
-	if err := c.checkTransportCommand(command); err != nil {
+	if err := c.checkTransportCommand(ctx, command); err != nil {
 		return frame{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)

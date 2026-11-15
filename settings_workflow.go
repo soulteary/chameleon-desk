@@ -45,6 +45,9 @@ func (p SettingsPatch) Validate() error {
 // serializes the update, verifies each result, then optionally saves settings.
 // A connection loss can leave earlier updates applied; no blind write retries.
 func (c *Client) ConfigureSettings(ctx context.Context, p SettingsPatch, persist bool) (out SettingsView, err error) {
+	if c.transportInfo.NativeUSBMaintenance && !p.PairingOnly() {
+		return out, ErrUSBBridgeRequired
+	}
 	if (p.BLEKey != nil || p.BLEPairing != nil) && !c.transportInfo.AllowsPairingChanges {
 		return out, fmt.Errorf("pairing changes require a direct serial connection")
 	}
@@ -142,4 +145,9 @@ func SettingsRequirements(p SettingsPatch, persist bool) ([]Command, error) {
 		out = append(out, CmdSaveSettings)
 	}
 	return uniqueCommands(out), nil
+}
+
+// PairingOnly reports whether the patch selects pairing fields and no ordinary settings.
+func (p SettingsPatch) PairingOnly() bool {
+	return (p.BLEKey != nil || p.BLEPairing != nil) && p.Animation == nil && p.SleepSeconds == nil && p.LongPressMS == nil && p.ShortA == nil && p.ShortB == nil && p.LongA == nil && p.LongB == nil
 }

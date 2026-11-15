@@ -20,6 +20,7 @@ type TransportInfo struct {
 	AllowsPairingChanges bool   `json:"allows_pairing_changes"`
 	AllowsDeviceRestore  bool   `json:"allows_device_restore"`
 	SupportsDFU          bool   `json:"supports_dfu"`
+	NativeUSBMaintenance bool   `json:"native_usb_maintenance,omitempty"`
 }
 
 func serialTransport() TransportInfo {
@@ -43,11 +44,20 @@ func (c *Client) IsClosed() bool {
 	}
 }
 
-func (c *Client) checkTransportCommand(command uint16) error {
-	return checkTransportCommand(c.transportInfo, command)
+type nativeRestoreContextKey struct{}
+
+func (c *Client) checkTransportCommand(ctx context.Context, command uint16) error {
+	info := c.transportInfo
+	if ctx.Value(nativeRestoreContextKey{}) == c {
+		info.NativeUSBMaintenance = false
+	}
+	return checkTransportCommand(info, command)
 }
 
 func checkTransportCommand(info TransportInfo, command uint16) error {
+	if info.NativeUSBMaintenance && !nativeMaintenanceCommand(Command(command)) {
+		return ErrUSBBridgeRequired
+	}
 	if info.Connection == "tcp" && info.Medium == "usb-serial" && Command(command) == CmdEnterBootloader {
 		return fmt.Errorf("bootloader entry is unavailable over the USB serial TCP bridge")
 	}
@@ -115,7 +125,7 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 		if e = json.Unmarshal(line[len("CHAMELEON_BRIDGE/1 "):], &declaration); e != nil ||
 			declaration.Version != 1 || declaration.Transport.Connection != "tcp" ||
 			(declaration.Transport.Medium != "ble" && declaration.Transport.Medium != "usb-serial") ||
-			declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
+			declaration.Transport.NativeUSBMaintenance || declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
 			conn.Close()
 			return nil, fmt.Errorf("unsupported bridge declaration")
 		}

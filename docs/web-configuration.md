@@ -119,3 +119,9 @@ before I/O, redaction, readback/save ordering, nickname mismatch, Lite slot edit
 initialization confirmation, stale previews/results and actual Chromium editing
 through a TCP simulator. These do not establish physical adapter/card behavior
 or power-loss durability.
+
+Routine USB settings and slot editing now use the Python bridge. Web pairing
+maintenance requires `serve --native-usb-maintenance PATH --allow-writes`; only
+pairing-only patches are accepted there. The native mode retains settings
+inspection, feature bootstrap, readback and optional save, while ordinary slot
+and application actions show `usb_bridge_required`. See [USB migration](usb-migration.md).

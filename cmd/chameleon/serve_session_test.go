@@ -16,7 +16,7 @@ import (
 func sessionFixture(t *testing.T) (*webServer, *atomic.Int32) {
 	t.Helper()
 	opens := new(atomic.Int32)
-	ws := &webServer{sessionEnabled: true, timeout: time.Second, listPorts: func() ([]string, error) { return []string{"COM7"}, nil }}
+	ws := &webServer{sessionEnabled: true, timeout: time.Second}
 	ws.openDevice = func(context.Context, string, time.Duration) (*chameleon.Client, error) {
 		opens.Add(1)
 		a, b := net.Pipe()
@@ -36,7 +36,7 @@ func TestDirectSessionLifecycleAndAuthorization(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := call("GET", "/api/session/ports", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "COM7") {
+	if w := call("GET", "/api/session/ports", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ports":[]`) {
 		t.Fatal(w)
 	}
 	if w := call("POST", "/api/session/connect", `{"target":"COM7","session_id":""}`, ""); w.Code != 403 {
@@ -45,7 +45,7 @@ func TestDirectSessionLifecycleAndAuthorization(t *testing.T) {
 	if opens.Load() != 0 {
 		t.Fatal("unauthorized open")
 	}
-	for _, target := range []string{"COM7", "tcp:127.0.0.1:2345"} {
+	for _, target := range []string{"tcp:127.0.0.1:1234", "tcp:127.0.0.1:2345"} {
 		old := ws.currentSessionID()
 		body, _ := json.Marshal(map[string]string{"target": target, "session_id": old})
 		w := call("POST", "/api/session/connect", string(body), ws.token)
@@ -143,13 +143,13 @@ func TestSessionGateAndFailedReplacement(t *testing.T) {
 	}
 }
 func TestSessionTargetValidation(t *testing.T) {
-	for _, target := range []string{"COM7", "tcp:localhost:1234", "tcp:[::1]:1"} {
-		if err := validateSessionTarget(target, []string{"COM7"}); err != nil {
+	for _, target := range []string{"tcp:localhost:1234", "tcp:[::1]:1"} {
+		if err := validateSessionTarget(target); err != nil {
 			t.Fatal(target, err)
 		}
 	}
-	for _, target := range []string{"", "/etc/passwd", "ble:device", "tcp::4", "tcp:localhost:0", "tcp:localhost:65536"} {
-		if validateSessionTarget(target, []string{"COM7"}) == nil {
+	for _, target := range []string{"", "COM7", "/etc/passwd", "ble:device", "tcp::4", "tcp:localhost:0", "tcp:localhost:65536"} {
+		if validateSessionTarget(target) == nil {
 			t.Fatal(target)
 		}
 	}

@@ -49,6 +49,9 @@ func (s *ReaderSession) expect(ctx context.Context, cmd Command, payload []byte,
 // Call only session.Do (or session methods) in fn; calling c methods would wait
 // on this same operation. fn must not retain or asynchronously use the session.
 func (c *Client) Reader(ctx context.Context, fn func(*ReaderSession) error) error {
+	if c.transportInfo.NativeUSBMaintenance {
+		return ErrUSBBridgeRequired
+	}
 	return c.withMode(ctx, 1, fn)
 }
 func (c *Client) Emulator(ctx context.Context, fn func(*ReaderSession) error) error {

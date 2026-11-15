@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Explicitly opt in after placing a card: CHAMELEON_TEST_PORT=/dev/cu... go test
+// Explicitly opt in after placing a card: CHAMELEON_TEST_PORT=tcp:127.0.0.1:12345 go test
 // -run TestHardwareScan -v . . Ordinary go test never opens real hardware.
 func TestHardwareScan(t *testing.T) {
 	port := os.Getenv("CHAMELEON_TEST_PORT")
