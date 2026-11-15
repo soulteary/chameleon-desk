@@ -97,6 +97,9 @@ type FeatureAvailability struct {
 // FeatureRequest resolves requirements for selected parameters without I/O.
 // Not all CLI workflows have resolvers; unresolved parameterized entries remain unknown.
 type FeatureRequest struct {
+	ClassicRead       *ClassicRead   `json:"classic_read,omitempty"`
+	Type2Read         *Type2Read     `json:"type2_read,omitempty"`
+	LFRead            *LFRead        `json:"lf_read,omitempty"`
 	SettingsPatch     *SettingsPatch `json:"settings_patch,omitempty"`
 	SlotEdit          *SlotEdit      `json:"slot_edit,omitempty"`
 	Card              *GUICard       `json:"-"`
@@ -186,6 +189,28 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 	}
 	unresolved := f.RequirementMode == "parameterized" || f.RequirementMode == "card-plan" || f.RequirementMode == "command" || f.RequirementMode == "external"
 	if request != nil {
+		var readCommands []Command
+		var readErr error
+		resolvedRead := false
+		switch {
+		case f.ID == "reader.classic-keyed" && request.ClassicRead != nil:
+			readCommands, readErr = request.ClassicRead.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.type2-range" && request.Type2Read != nil:
+			readCommands, readErr = request.Type2Read.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.lf" && request.LFRead != nil:
+			readCommands, readErr = request.LFRead.Requirements()
+			resolvedRead = true
+		}
+		if resolvedRead {
+			if readErr != nil {
+				reason("unavailable", "invalid_parameters", readErr.Error())
+			} else {
+				a.RequiredCommands = readCommands
+				unresolved = false
+			}
+		}
 		switch f.RequirementMode {
 		case "card-plan":
 			if request.Card != nil {

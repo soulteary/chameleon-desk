@@ -377,17 +377,9 @@ func (d ClassicCardDump) Validate() error {
 // and hidden Key B bytes in trailers are filled from supplied keys, not guessed.
 // Schema 2 explicitly records unknown keys; such dumps cannot write trailers.
 func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (out ClassicCardDump, err error) {
-	if e := k.Validate(); e != nil {
+	tag, e := classicReadGeometry(k)
+	if e != nil {
 		return out, e
-	}
-	tag, ok := map[int]uint16{5: 1000, 16: 1001, 32: 1002, 40: 1003}[len(k.Sectors)]
-	if !ok {
-		return out, fmt.Errorf("complete card geometry requires 5,16,32,40 sectors")
-	}
-	for _, s := range k.Sectors {
-		if len(s.A) == 0 && len(s.B) == 0 {
-			return out, fmt.Errorf("sector %d has no key", s.Sector)
-		}
 	}
 	out.Schema = 2
 	out.UID = append(HexBytes(nil), k.UID...)

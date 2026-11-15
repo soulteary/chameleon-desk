@@ -39,6 +39,9 @@ func (ws *webServer) handleFeatureDevice(w http.ResponseWriter, r *http.Request)
 func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
+		ClassicRead   *chameleon.ClassicRead   `json:"classic_read"`
+		Type2Read     *chameleon.Type2Read     `json:"type2_read"`
+		LFRead        *chameleon.LFRead        `json:"lf_read"`
 		SettingsPatch *chameleon.SettingsPatch `json:"settings_patch"`
 		SlotEdit      *chameleon.SlotEdit      `json:"slot_edit"`
 		ID            string                   `json:"id"`
@@ -53,9 +56,22 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	request := chameleon.FeatureRequest{Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
+	request.ClassicRead, request.Type2Read, request.LFRead = body.ClassicRead, body.Type2Read, body.LFRead
 	var result chameleon.FeatureAvailability
 	var err error
 	switch body.ID {
+	case "reader.classic-keyed":
+		if body.ClassicRead == nil {
+			err = fmt.Errorf("classic_read is required")
+		}
+	case "reader.type2-range":
+		if body.Type2Read == nil {
+			err = fmt.Errorf("type2_read is required")
+		}
+	case "reader.lf":
+		if body.LFRead == nil {
+			err = fmt.Errorf("lf_read is required")
+		}
 	case "slot.load-card":
 		var card chameleon.GUICard
 		card, err = chameleon.ParseGUICard(body.Card)

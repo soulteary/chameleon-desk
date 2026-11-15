@@ -294,9 +294,10 @@ type LFCard struct {
 	ID       HexBytes `json:"id"`
 }
 
+var lfScanCommands = map[string]Command{"em410x": CmdEm410xScan, "hidprox": CmdHidproxScan, "ioprox": CmdIoproxScan, "viking": CmdVikingScan, "pac": CmdPacScan, "jablotron": CmdJablotronScan, "pyramid": CmdPyramidScan, "em4x05": CmdEm4x05Scan}
+
 func (c *Client) ScanLF(ctx context.Context, protocol string, format byte) (out LFCard, err error) {
-	cmds := map[string]Command{"em410x": CmdEm410xScan, "hidprox": CmdHidproxScan, "ioprox": CmdIoproxScan, "viking": CmdVikingScan, "pac": CmdPacScan, "jablotron": CmdJablotronScan, "pyramid": CmdPyramidScan, "em4x05": CmdEm4x05Scan}
-	cmd, ok := cmds[protocol]
+	cmd, ok := lfScanCommands[protocol]
 	if !ok {
 		return out, fmt.Errorf("unknown LF protocol %q", protocol)
 	}

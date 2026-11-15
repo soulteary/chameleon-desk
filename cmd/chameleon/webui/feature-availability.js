@@ -62,6 +62,7 @@
     }
     apply() {
       const defaults = [
+        {id:"reader.classic-keyed",web:{controls:["#reader-classic-go"]}}, {id:"reader.type2-range",web:{controls:["#reader-type2-go"]}}, {id:"reader.lf",web:{controls:["#reader-lf-go"]}},
         {id:"reader.hf-scan",web:{controls:["#scan-hf"]}}, {id:"reader.lf-scan",web:{controls:["#scan-lf"]}},
         {id:"slot.load-card",write:true,web:{controls:["#load-card-go"]}},
         {id:"device.settings",web:{controls:["#settings-read"]}}, {id:"slot.read-details",web:{controls:["#slot-edit-read"]}},

@@ -8,7 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let backgroundTasks = null;
+let backgroundTasks = null, readerController = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
@@ -35,10 +35,10 @@ const groups = { hardware: ["device", "slots", "read"], database: ["cards"], nde
 
 async function api(path, opts = {}) {
   const epoch = sessionEpoch;
-  const deviceRequest = path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || path === "/api/features/check" || path === "/api/firmware/check";
+  const deviceRequest = path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || path === "/api/features/check" || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
+  if (path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
   if ((deviceRequest || path.startsWith("/api/bridge/")) && deviceSession) headers["X-Chameleon-Session"] = deviceSession.session_id;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
@@ -46,7 +46,7 @@ async function api(path, opts = {}) {
   const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
-    const taskPath = ["/api/settings/read","/api/settings/configure","/api/slot/details","/api/slot/edit","/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
+    const taskPath = ["/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/settings/read","/api/settings/configure","/api/slot/details","/api/slot/edit","/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
     if (backgroundTasks && taskPath) {
      const value=await backgroundTasks.execute(path,{...opts,headers});
      if(epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
@@ -70,7 +70,7 @@ async function api(path, opts = {}) {
     if (!r.ok) {
       const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
       error.status=r.status;
-      if (["/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path) && body?.result) error.result = body.result;
+      if (["/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path) && body?.result) error.result = body.result;
       throw error;
     }
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
@@ -99,6 +99,7 @@ function updateWriteButtons() {
   updateSessionButtons();
   updateLibraryButtons();
   featureAvailability?.apply();
+  readerController?.sync();
 }
 
 function updateLibraryButtons() {
@@ -454,6 +455,7 @@ function wire() {
       return busy.has(group) || (!!f.write && !writesEnabled) || button.dataset.slotActive === "true";
     }
   });
+  readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware")});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));
   for(const id of ["#load-card-json", "#load-slot", "#load-persist", "#load-activate"]) {
@@ -471,6 +473,7 @@ function wire() {
     const details = el("details", "raw-result"); details.hidden = true; details.append(el("summary", null, "查看完整结果 JSON")); pre.before(summary, details); details.append(pre);
   });
   document.querySelectorAll("textarea").forEach((area) => {
+    if (area.closest(".reader-workflows")) return;
     const details = el("details", "json-input"); details.append(el("summary", null, "或粘贴 / 查看 JSON")); area.before(details); details.append(area);
   });
   $("#refresh-info").addEventListener("click", () => runTask("hardware", loadInfo));

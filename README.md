@@ -69,6 +69,12 @@ Use `--port` to connect a device when the server starts:
 
 The [settings and slot editors](docs/web-configuration.md) provide settings readback, nickname/type/enable changes and explicitly confirmed single-channel initialization.
 
+The [Web reader workflows](docs/web-reader.md) add Classic per-sector supplied-key
+reading, UID-checked Type2 page ranges and LF protocol selection. They use the
+same session/task and capability checks, work in read-only mode, and distinguish
+partial results. This phase exports read results; it does not write physical
+cards or automatically import readings into the card library.
+
 Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task records are held in server memory and do not survive a server restart.
 
 Offline file tools work without a connected device. Valid card-library changes

@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-func (ws *webServer) configurationPreflight(ctx context.Context, c *chameleon.Client, id string, request *chameleon.FeatureRequest) error {
+func (ws *webServer) featurePreflight(ctx context.Context, c *chameleon.Client, id string, request *chameleon.FeatureRequest) error {
 	// Reject pairing changes before even probing the device on an unsuitable link.
 	if request != nil && request.SettingsPatch != nil && (request.SettingsPatch.BLEKey != nil || request.SettingsPatch.BLEPairing != nil) {
 		t := c.TransportInfo()
@@ -24,13 +24,13 @@ func (ws *webServer) configurationPreflight(ctx context.Context, c *chameleon.Cl
 		return err
 	}
 	if state.State != "available" {
-		return fmt.Errorf("configuration preflight: %v", state.Reasons)
+		return fmt.Errorf("feature preflight: %v", state.Reasons)
 	}
 	return nil
 }
 func (ws *webServer) handleSettingsRead(w http.ResponseWriter, r *http.Request) {
 	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
-		if err := ws.configurationPreflight(ctx, c, "device.settings", nil); err != nil {
+		if err := ws.featurePreflight(ctx, c, "device.settings", nil); err != nil {
 			return nil, err
 		}
 		return c.SettingsView(ctx, false)
@@ -38,7 +38,7 @@ func (ws *webServer) handleSettingsRead(w http.ResponseWriter, r *http.Request) 
 }
 func (ws *webServer) handleSlotDetails(w http.ResponseWriter, r *http.Request) {
 	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
-		if err := ws.configurationPreflight(ctx, c, "slot.read-details", nil); err != nil {
+		if err := ws.featurePreflight(ctx, c, "slot.read-details", nil); err != nil {
 			return nil, err
 		}
 		return c.SlotDetails(ctx)
@@ -67,7 +67,7 @@ func (ws *webServer) handleSettingsConfigure(w http.ResponseWriter, r *http.Requ
 			Verified bool                    `json:"readback_verified"`
 			Saved    bool                    `json:"save_confirmed"`
 		}{}
-		if err := ws.configurationPreflight(ctx, c, "device.configure", &chameleon.FeatureRequest{SettingsPatch: &input.Patch, Persist: input.Persist}); err != nil {
+		if err := ws.featurePreflight(ctx, c, "device.configure", &chameleon.FeatureRequest{SettingsPatch: &input.Patch, Persist: input.Persist}); err != nil {
 			return out, err
 		}
 		markConfigurationWrite(ctx, ws, true)
@@ -111,7 +111,7 @@ func (ws *webServer) handleSlotEdit(w http.ResponseWriter, r *http.Request) {
 	ws.device(w, r, func(ctx context.Context, c *chameleon.Client) (any, error) {
 		markConfigurationWrite(ctx, ws, false)
 		out := slotEditResult{Slot: input.Slot, Sense: input.Sense, Action: input.Action}
-		if err := ws.configurationPreflight(ctx, c, "slot.configure", &chameleon.FeatureRequest{SlotEdit: &input}); err != nil {
+		if err := ws.featurePreflight(ctx, c, "slot.configure", &chameleon.FeatureRequest{SlotEdit: &input}); err != nil {
 			return out, err
 		}
 		if input.Action == "nickname" || input.Action == "nickname-delete" {

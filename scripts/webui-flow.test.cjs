@@ -62,7 +62,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'reader.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
@@ -85,7 +85,7 @@ const card = { id: 'sample', name: 'Offline sample', uid: '04112233445566', tag:
 
 test('startup stays offline, offers eight tools, and parses dictionary controls correctly', async (t) => {
   const p = await page(t);
-  assert.deepEqual(p.requests.map((r) => r.url), ['/api/capabilities']);
+  assert.deepEqual(p.requests.filter(r=>r.url!=='/api/features/check').map((r) => r.url), ['/api/capabilities']);
   assert.equal(p.$('#load-card-go').disabled, true);
   assert.equal(p.$('#dict-download').textContent.trim(), '获取字典');
   assert.equal(p.$('#dict-out').closest('button'), null);
@@ -140,7 +140,7 @@ test('local JSON validation errors are visible and do not reuse a stale success'
     p.input(field, 'invalid'); await p.click(button);
     assert.match(summary(p.$, output).textContent, /操作未完成/); assert.equal(summary(p.$, output).hidden, false);
   }
-  assert.equal(p.requests.filter((r) => r.url !== '/api/capabilities').length, 1);
+  assert.equal(p.requests.filter((r) => !['/api/capabilities','/api/features/check'].includes(r.url)).length, 1);
 });
 
 test('pending tool requests disable competing actions and recover after HTTP failure', async (t) => {
@@ -332,7 +332,7 @@ test('device busy error offers a working read retry, clears stale data, and reco
   assert.equal(p.$('#menu-connection').classList.contains('connected'),false);
   await p.click('#scan-out .hardware-state button'); assert.equal(p.d.querySelectorAll('#scan-out [role="alert"]').length,0);
   assert.equal(p.$('#menu-connection').classList.contains('connected'),true); assert.equal(attempt,2);
-  assert.equal(p.requests.some((r)=>r.method==='POST'),false);
+  assert.equal(p.requests.some((r)=>r.method==='POST'&&r.url!=='/api/features/check'),false);
 });
 
 test('device metrics, model title and zero battery are consistent across failure and retry',async(t)=>{
@@ -893,7 +893,7 @@ test('library autosaves after the debounce and restores on a new page without ha
   assert(!unloadPrevented(a));
   const b = await page(t, {}, { indexedDB: factory }); assert.equal(b.$('#db-json').value, text);
   assert.match(b.$('#db-save-state').textContent, /已恢复/); assert(!unloadPrevented(b));
-  assert(b.requests.every(r => ['/api/database', '/api/capabilities'].includes(r.url)));
+  assert(b.requests.every(r => ['/api/database', '/api/capabilities', '/api/features/check'].includes(r.url)));
   assert(b.requests.filter(r => r.url === '/api/database').every(r => JSON.parse(r.body).op === 'validate'));
 });
 
