@@ -1,4 +1,8 @@
-# BLE to TCP bridge
+# Python device bridge
+
+The existing BLE backend and optional USB serial backend share the TCP entrypoint.
+For fixed-port USB setup, restrictions and tests, see [USB serial TCP bridge](../../docs/usb-bridge.md).
+The BLE instructions below continue to use the Bleak-only requirements file.
 
 This optional Python process connects to one Chameleon Ultra or Lite over BLE
 and exposes its application protocol on a loopback TCP port. Desk uses its
@@ -228,11 +232,13 @@ separate C recovery workers retain their compiler and library requirements.
 
 ## Offline tests
 
-The tests use the Python standard library, a simulated Bleak client and real
-loopback sockets. They do not import Bleak, access an adapter, pair a device or
-open a serial port.
+The tests use a simulated Bleak client, fake serial ports and real loopback
+sockets. The POSIX virtual-TTY case imports pySerial; install the USB test
+dependency before running the combined suite. No physical USB/BLE device or
+pairing is used. See the [USB test coverage](../../docs/usb-bridge.md#offline-verification).
 
 ```sh
+python3 -m pip install -r tools/ble_bridge/requirements-usb.txt
 python3 -m unittest discover -s tools/ble_bridge -v
 CGO_ENABLED=0 go build -mod=readonly -o reports/chameleon-nocgo ./cmd/chameleon
 CHAMELEON_BRIDGE_TEST_BINARY="$PWD/reports/chameleon-nocgo" \

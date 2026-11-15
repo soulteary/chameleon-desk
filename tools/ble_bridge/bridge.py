@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expose one Chameleon NUS connection as a loopback TCP byte stream."""
+"""Expose one Chameleon BLE or USB serial application link over loopback TCP."""
 
 import argparse
 import asyncio
@@ -45,8 +45,32 @@ BUFFER_LIMIT = 65536
 LOG = logging.getLogger("ble_bridge")
 
 
-class Session:
-    def __init__(self, reader, writer, device, client_factory, timeout, pair, prepared=None):
+class ApplicationFrames:
+    def __init__(self, restricted=RESTRICTED_COMMANDS):
+        self.pending = bytearray()
+        self.restricted = frozenset(restricted)
+
+    def feed(self, data):
+        self.pending.extend(data)
+        while len(self.pending) >= 9:
+            if self.pending[:2] != b"\x11\xef" or sum(self.pending[:9]) % 256:
+                raise RuntimeError("invalid application frame header")
+            length = int.from_bytes(self.pending[6:8], "big")
+            if length > 4096:
+                raise RuntimeError("application frame exceeds payload limit")
+            if len(self.pending) < length + 10:
+                break
+            frame = bytes(self.pending[:length + 10])
+            del self.pending[:length + 10]
+            if sum(frame) % 256:
+                raise RuntimeError("invalid application frame checksum")
+            if int.from_bytes(frame[2:4], "big") in self.restricted:
+                raise RuntimeError("restricted command is unavailable over this bridge")
+            yield frame
+
+
+class StreamSession:
+    def __init__(self, reader, writer, timeout):
         self.reader, self.writer = reader, writer
         self.timeout = timeout
         self.ready = asyncio.Event()
@@ -57,6 +81,38 @@ class Session:
         self.buffered = 0
         self.incoming = asyncio.Queue()
         self.incoming_buffered = 0
+
+    def fail(self, reason):
+        if not self.closed and not self.failed.is_set():
+            self.reason = reason
+            self.failed.set()
+
+    def notification(self, _characteristic, data):
+        # Called on the event loop. Do not let an old session deliver bytes
+        # to a subsequent TCP client.
+        if self.closed or self.failed.is_set() or not data:
+            return
+        if self.buffered + len(data) > BUFFER_LIMIT:
+            self.fail("device output buffer overflow")
+            return
+        self.buffered += len(data)
+        self.queue.put_nowait(bytes(data))
+
+    async def read_tcp(self):
+        while True:
+            data = await self.reader.read(4096)
+            if not data:
+                return
+            if self.incoming_buffered + len(data) > BUFFER_LIMIT:
+                self.fail("TCP input buffer overflow")
+                return
+            self.incoming_buffered += len(data)
+            self.incoming.put_nowait(data)
+
+
+class Session(StreamSession):
+    def __init__(self, reader, writer, device, client_factory, timeout, pair, prepared=None):
+        super().__init__(reader, writer, timeout)
         self.prepared = prepared
         self.clean = False
         self.client = prepared.client if prepared else client_factory(
@@ -67,24 +123,8 @@ class Session:
         self.response = True
         self.chunk_size = 20
 
-    def fail(self, reason):
-        if not self.closed and not self.failed.is_set():
-            self.reason = reason
-            self.failed.set()
-
     def disconnected(self, _client):
         self.fail("BLE disconnected")
-
-    def notification(self, _characteristic, data):
-        # Bleak invokes callbacks on the asyncio loop. Do not drop bytes or
-        # let an old session deliver notifications to a subsequent client.
-        if self.closed or self.failed.is_set() or not data:
-            return
-        if self.buffered + len(data) > BUFFER_LIMIT:
-            self.fail("BLE notification buffer overflow")
-            return
-        self.buffered += len(data)
-        self.queue.put_nowait(bytes(data))
 
     async def ble_to_tcp(self):
         if self.prepared:
@@ -102,37 +142,12 @@ class Session:
                 await self.writer.drain()
             self.buffered -= len(data)
 
-    async def read_tcp(self):
-        while True:
-            data = await self.reader.read(4096)
-            if not data:
-                return
-            if self.incoming_buffered + len(data) > BUFFER_LIMIT:
-                self.fail("TCP input buffer overflow")
-                return
-            self.incoming_buffered += len(data)
-            self.incoming.put_nowait(data)
-
     async def tcp_to_ble(self):
         await self.ready.wait()
-        pending = bytearray()
+        decoder = ApplicationFrames()
         while True:
             data = await self.incoming.get()
-            pending.extend(data)
-            while len(pending) >= 9:
-                if pending[:2] != b"\x11\xef" or sum(pending[:9]) % 256:
-                    raise RuntimeError("invalid application frame header")
-                length = int.from_bytes(pending[6:8], "big")
-                if length > 4096:
-                    raise RuntimeError("application frame exceeds payload limit")
-                if len(pending) < length + 10:
-                    break
-                frame = bytes(pending[:length + 10])
-                del pending[:length + 10]
-                if sum(frame) % 256:
-                    raise RuntimeError("invalid application frame checksum")
-                if int.from_bytes(frame[2:4], "big") in RESTRICTED_COMMANDS:
-                    raise RuntimeError("pairing changes and reset commands are unavailable over BLE")
+            for frame in decoder.feed(data):
                 for start in range(0, len(frame), self.chunk_size):
                     async with asyncio.timeout(self.timeout):
                         await self.client.write_gatt_char(
@@ -272,10 +287,31 @@ def port_number(value):
     raise argparse.ArgumentTypeError("port must be 1..65535")
 
 
+def serial_port(value):
+    if not value.strip() or "://" in value or value.startswith(("tcp:", "ble:")):
+        raise argparse.ArgumentTypeError("select a local USB application serial port, not a URL")
+    return value
+
+
+def validate_modes(args):
+    serial = getattr(args, "serial_port", None)
+    control = getattr(args, "control_port", None)
+    if serial and any((getattr(args, "device", None), getattr(args, "scan", False),
+                       control, getattr(args, "token_file", None), getattr(args, "pair", False))):
+        raise ValueError("--serial-port cannot be combined with BLE discovery, pairing or management")
+    if not any((serial, getattr(args, "device", None), getattr(args, "scan", False), control)):
+        raise ValueError("use --serial-port, --device, --scan, or --control-port")
+    if bool(control) != bool(getattr(args, "token_file", None)) or (getattr(args, "scan", False) and control):
+        raise ValueError("--control-port requires --token-file and cannot be combined with --scan")
+    if control and control == args.port:
+        raise ValueError("management and data ports must differ")
+
+
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     target = p.add_mutually_exclusive_group()
     target.add_argument("--device", help="BLE address, or device UUID on macOS")
+    target.add_argument("--serial-port", type=serial_port, help="explicit USB application serial port (for example /dev/ttyACM0 or COM7)")
     target.add_argument("--scan", action="store_true", help="list advertising NUS devices and exit")
     p.add_argument("--listen", type=loopback, default="127.0.0.1")
     p.add_argument("--port", type=port_number, default=12345)
@@ -288,6 +324,10 @@ def parser():
 
 
 async def serve(args):
+    validate_modes(args)
+    if getattr(args, "serial_port", None):
+        from serial_backend import serve_serial
+        return await serve_serial(args)
     # Keep offline tests and --help independent of optional BLE dependencies.
     try:
         from bleak import BleakClient, BleakScanner
@@ -325,12 +365,10 @@ def main():
         return 1
     p = parser()
     args = p.parse_args()
-    if not (args.device or args.scan or args.control_port):
-        p.error("use --device, --scan, or --control-port")
-    if bool(args.control_port) != bool(args.token_file) or (args.scan and args.control_port):
-        p.error("--control-port requires --token-file and cannot be combined with --scan")
-    if args.control_port == args.port:
-        p.error("management and data ports must differ")
+    try:
+        validate_modes(args)
+    except ValueError as error:
+        p.error(str(error))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
         asyncio.run(serve(args))
