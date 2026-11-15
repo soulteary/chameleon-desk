@@ -59,7 +59,14 @@ class SerialLink:
     async def disconnect(self):
         async with self.close_lock:
             if self.started:
-                await self.worker.disconnect()
+                operation = asyncio.create_task(self.worker.disconnect())
+                try:
+                    await asyncio.shield(operation)
+                except asyncio.CancelledError:
+                    # An abandoned setup response can cancel this internal
+                    # cleanup after setup has already failed. Finish it so the
+                    # controller can publish disconnected or blocked state.
+                    await operation
         if self.monitor and self.monitor is not asyncio.current_task():
             self.monitor.cancel()
             await asyncio.gather(self.monitor, return_exceptions=True)

@@ -223,6 +223,23 @@ class SerialManagementTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.factory.ports[0].closed.is_set())
         self.assertFalse(self.factory.ports[0].writes)
 
+    async def test_abandoned_failed_setup_finishes_cleanup_and_state_publication(self):
+        gate = threading.Event(); self.gates.append(gate)
+        def configure(port):
+            port.open_error = True
+            port.close_gate = gate
+        self.factory.configure = configure
+        await self.select()
+        _, writer = await self.open_request("connect")
+        await eventually(lambda: self.owner.state == "disconnecting")
+        writer.close()
+        await asyncio.sleep(0.02)
+        gate.set()
+        await eventually(lambda: self.owner.state == "disconnected")
+        self.assertIsNone(self.owner.link)
+        self.assertFalse(self.owner.bridge.blocked)
+        self.assertFalse(self.factory.ports[0].thread.is_alive())
+
     async def test_disconnect_cancels_setup_and_waits_for_close(self):
         gate = threading.Event(); self.gates.append(gate)
         self.factory.configure = lambda port: setattr(port, "open_gate", gate)
