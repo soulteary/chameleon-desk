@@ -122,3 +122,5 @@ recovery, cancellation, storage failure, restart ambiguity and text-only renderi
 The Chromium simulator verifies that a task survives page reload without issuing
 its firmware commands twice. Physical adapters/cards and power-loss recovery are
 not established by these tests.
+
+Reader tasks also accept POST bodies at `/api/reader/classic`, `/api/reader/type2` and `/api/reader/lf` with `write:false`. They share session identity, authorization, limits, cancellation and refresh-query behavior. See [Web reader workflows](web-reader.md) for partial data and RF/mode cleanup semantics.

@@ -1103,9 +1103,14 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
-        "controls": []
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/lf",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#reader-lf-go"
+        ]
       },
       "cli": {
         "status": "supported",
@@ -1120,10 +1125,12 @@
         ]
       },
       "notes": [
-        "Select one protocol; the union is not required. Generic read commands absent from pinned registration are not advertised as workflows."
+        "Select one protocol; the union is not required. Generic read commands absent from pinned registration are not advertised as workflows.",
+        "Web selects EM410x, HIDProx, ioProx, Viking, PAC, Jablotron, Pyramid or EM4x05. Selected request requirements are resolved separately; no card writes."
       ],
       "sources": [
-        "lf_workflows.go"
+        "lf_workflows.go",
+        "reader_requests.go"
       ],
       "effect": "parameter-dependent"
     },
@@ -1213,8 +1220,10 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "partial",
+        "entries": [
+          "POST /api/reader/classic"
+        ],
         "controls": []
       },
       "cli": {
@@ -1235,7 +1244,9 @@
           "Client.DumpClassicWithKeys"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web exposes the dedicated read-only request workflow; other low-level or write/password operations are not exposed."
+      ],
       "sources": [
         "cards.go",
         "classic_workflows.go"
@@ -1645,8 +1656,10 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "partial",
+        "entries": [
+          "POST /api/reader/type2"
+        ],
         "controls": []
       },
       "cli": {
@@ -1668,7 +1681,8 @@
         ]
       },
       "notes": [
-        "Page/count/password and card type constrain the operation; no automatic full-dump workflow is implied."
+        "Page/count/password and card type constrain the operation; no automatic full-dump workflow is implied.",
+        "Web exposes the dedicated read-only request workflow; other low-level or write/password operations are not exposed."
       ],
       "sources": [
         "cards.go",
@@ -4190,6 +4204,112 @@
         "build_info.go",
         "cmd/chameleon/bridge_doctor.go",
         "docs/distribution.md"
+      ]
+    },
+    {
+      "id": "reader.classic-keyed",
+      "title": "Classic reading with per-sector supplied keys",
+      "device": true,
+      "write": false,
+      "effect": "transient-rf",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2000,
+        2008
+      ],
+      "conditional": [
+        {
+          "when": "both sector keys supplied; independent authentication may be needed",
+          "commands": [
+            2007
+          ]
+        }
+      ],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#reader-classic-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "mfc dump-keys"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicRead.KeyMap",
+          "ClassicRead.Requirements",
+          "Client.DumpClassicWithKeys"
+        ]
+      },
+      "notes": [
+        "Selected parameters are validated before I/O. Mode restoration and no automatic replay apply.",
+        "Results distinguish completed, partial and interrupted reads; range reads are not automatic complete-card dumps."
+      ],
+      "sources": [
+        "reader_requests.go",
+        "cmd/chameleon/serve_reader.go"
+      ]
+    },
+    {
+      "id": "reader.type2-range",
+      "title": "Type2 specified page range with UID checks",
+      "device": true,
+      "write": false,
+      "effect": "transient-rf",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2000,
+        2010
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/type2",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#reader-type2-go"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Type2Read.Requirements",
+          "Client.ReadType2Range"
+        ]
+      },
+      "notes": [
+        "Selected parameters are validated before I/O. Mode restoration and no automatic replay apply.",
+        "Results distinguish completed, partial and interrupted reads; range reads are not automatic complete-card dumps."
+      ],
+      "sources": [
+        "reader_requests.go",
+        "cmd/chameleon/serve_reader.go"
       ]
     }
   ]

@@ -31,7 +31,7 @@ func TestFeatureAvailabilityKnowledgeAndPolicy(t *testing.T) {
 		{"unknown capabilities", "reader.hf-scan", "web", "unknown", "capabilities_unknown", func(c *FeatureContext) { c.Device.Capabilities = nil }},
 		{"empty capabilities", "reader.hf-scan", "web", "unavailable", "missing_commands", func(c *FeatureContext) { c.Device.Capabilities = []uint16{} }},
 		{"read only", "slot.activate", "web", "unavailable", "writes_disabled", func(c *FeatureContext) { c.WritesAllowed = false }},
-		{"missing Web entry", "classic.read", "web", "unavailable", "no_entry", func(*FeatureContext) {}},
+		{"missing Web entry", "classic.write", "web", "unavailable", "no_entry", func(*FeatureContext) {}},
 		{"offline", "files.acl-decode", "web", "available", "", func(c *FeatureContext) { c.Device = nil; c.WritesAllowed = false }},
 		{"unresolved patch", "device.configure", "sdk", "unknown", "parameters_required", func(*FeatureContext) {}},
 		{"BLE pairing", "device.pairing", "sdk", "unavailable", "transport_restricted", func(c *FeatureContext) { c.Device.Transport = bleTransport("tcp", true) }},

@@ -70,7 +70,7 @@ test('Chromium persists the library through reload, browser restart and Desk res
 test('Chromium verifies capabilities, task reload tracking and configuration readback', { skip: !binary, timeout: 60000 }, async t => {
   const net = require('node:net'), read = require('node:fs');
   const catalog = JSON.parse(read.readFileSync(path.join(__dirname,'../internal/catalog/upstream.json'),'utf8')).commands;
-  let model=0, capabilities=[1033,1035], mode=0, delayModel=0, animation=0;const nicknames=new Map();
+  let model=0, capabilities=[1033,1035], mode=0, delayModel=0, animation=0, readerEnabled=false;const nicknames=new Map();
   let connections=0; const commands=[], sockets=new Set();
   const simulator=net.createServer(socket=>{
     connections++;
@@ -92,7 +92,11 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
         else if(command===1035){payload=Buffer.alloc(capabilities.length*2);capabilities.forEach((c,i)=>payload.writeUInt16BE(c,i*2));}
         else if(command===1002)payload=Buffer.from([mode]);
         else if(command===1001)mode=frame[9];
-        else if(command===2000)status=1;
+        else if(command===2000){status=readerEnabled?0:1;if(readerEnabled)payload=Buffer.from([4,1,2,3,4,4,0,9,0]);}
+        else if(command===2008){status=0;payload=Buffer.alloc(16,frame[10]);if(frame[10]%4===3)Buffer.from([0x7f,0x07,0x88]).copy(payload,6);}
+        else if(command===2007){status=0;}
+        else if(command===2010){status=0;payload=Buffer.from(Array.from({length:16},(_,i)=>frame[15]*4+i));}
+        else if(command===3014){status=0x40;payload=Buffer.from('12345678');}
         else status=103;
         const reply=Buffer.alloc(payload.length+10);reply[0]=0x11;reply[1]=0xef;reply.writeUInt16BE(command,2);reply.writeUInt16BE(status,4);reply.writeUInt16BE(payload.length,6);
         reply[8]=(-reply.subarray(0,8).reduce((sum,v)=>sum+v,0))&255;payload.copy(reply,9);reply[reply.length-1]=(-payload.reduce((sum,v)=>sum+v,0))&255;if(command===1033&&delayModel){setTimeout(()=>{if(!socket.destroyed)socket.write(reply)},delayModel);}else socket.write(reply);
@@ -154,6 +158,28 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
   page.once('dialog',dialog=>dialog.accept());await page.locator('#slot-edit-apply').click();
   await page.waitForFunction(()=>document.querySelector('#slot-edit-result').textContent.includes('"configuration_verified": true'));
   assert.equal(nicknames.get('0002').toString(),'Desk test');
+  readerEnabled=true;
+  await page.waitForFunction(()=>!document.querySelector('#slots').hasAttribute('aria-busy'));
+  await page.locator('.dock [data-open="read"]').click();
+  await page.locator('#reader-classic-json').fill(JSON.stringify({uid:'01020304',sectors:Array.from({length:5},(_,sector)=>({sector,a:'010203040506'}))}));
+  await page.waitForFunction(()=>!document.querySelector('#reader-classic-go').disabled);await page.locator('#reader-classic-go').click();
+  await page.waitForFunction(()=>document.querySelector('#reader-classic-result').textContent.includes('20 / 20'));
+  assert.equal(await page.locator('#reader-classic-json').inputValue(),'');
+  await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));assert(await page.locator('#reader-classic-export').isEnabled());
+  assert.match(await page.locator('#reader-classic-result').textContent(),/未知密钥/);
+  await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));
+  await page.locator('#reader-type2-uid').fill('01020304');await page.locator('#reader-type2-start').fill('1');await page.locator('#reader-type2-count').fill('2');
+  await page.waitForFunction(()=>!document.querySelector('#reader-type2-go').disabled);await page.locator('#reader-type2-go').click();
+  await page.waitForFunction(()=>document.querySelector('#reader-type2-result').textContent.includes('2 / 2'));
+  assert.match(await page.locator('#reader-type2-result').textContent(),/1: 04 05 06 07/);
+  await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));
+  await page.locator('#reader-lf-protocol').selectOption('pac');await page.waitForFunction(()=>!document.querySelector('#reader-lf-go').disabled);await page.locator('#reader-lf-go').click();
+  await page.waitForFunction(()=>document.querySelector('#reader-lf-result').textContent.includes('LF 读取完成'));
+  assert.match(await page.locator('#reader-lf-result').textContent(),/12345678/);
+  await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));
+  const tasks=await page.evaluate(()=>api('/api/tasks'));assert(tasks.tasks.filter(t=>t.path.startsWith('/api/reader/')).every(t=>!t.write));
+  model=1;await page.locator('.dock [data-open="device"]').click();await probe();await page.locator('.dock [data-open="read"]').click();
+  assert(await page.locator('#reader-type2-go').isDisabled());assert.match(await page.locator('#reader-type2-go').locator('xpath=following-sibling::span[1]').textContent(),/当前设备型号/);
   assert.deepEqual(errors,[]);
 });
 

@@ -83,6 +83,8 @@ func (ts *webTasks) stop() {
 }
 func taskPath(path string) (string, bool) {
 	switch path {
+	case "/api/reader/classic", "/api/reader/type2", "/api/reader/lf":
+		return "POST", false
 	case "/api/settings/read", "/api/slot/details", "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/features/device":
 		return "GET", false
 	case "/api/settings/configure", "/api/slot/edit", "/api/slot/activate", "/api/slot/load-card":
@@ -271,6 +273,12 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		switch input.Path {
+		case "/api/reader/classic":
+			ws.handleClassicRead(out, request)
+		case "/api/reader/type2":
+			ws.handleType2Read(out, request)
+		case "/api/reader/lf":
+			ws.handleLFRead(out, request)
 		case "/api/settings/read":
 			ws.handleSettingsRead(out, request)
 		case "/api/settings/configure":

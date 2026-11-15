@@ -156,6 +156,9 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/info", ws.handleInfo)
 	mux.HandleFunc("/api/scan/hf", ws.handleScanHF)
 	mux.HandleFunc("/api/scan/lf", ws.handleScanLF)
+	mux.HandleFunc("/api/reader/classic", ws.handleClassicRead)
+	mux.HandleFunc("/api/reader/type2", ws.handleType2Read)
+	mux.HandleFunc("/api/reader/lf", ws.handleLFRead)
 	mux.HandleFunc("/api/firmware/check", ws.handleFirmwareCheck)
 	// Device writes (gated).
 	mux.HandleFunc("/api/slot/activate", ws.handleSlotActivate)
@@ -216,7 +219,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			if r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
+			if strings.HasPrefix(r.URL.Path, "/api/reader/") || r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
 				if ws.token == "" || r.Header.Get("X-Chameleon-Token") != ws.token {
 					http.Error(w, "missing or invalid session token", http.StatusForbidden)
 					return
@@ -326,7 +329,7 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		return e
 	})
 	if e != nil {
-		if (r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/settings/configure") && out != nil {
+		if (strings.HasPrefix(r.URL.Path, "/api/reader/") || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/settings/configure") && out != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			writeJSON(w, map[string]any{"error": e.Error(), "result": out})
