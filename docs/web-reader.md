@@ -81,7 +81,9 @@ slow adapter can stop with a partial result. Process restart does not resume the
 }
 ```
 
-UID is 4, 7 or 10 bytes. The request lists ordered contiguous sectors from zero:
+The template UID/capacity controls only generate input; the JSON UID and sector
+list are authoritative for a read. UID is 4, 7 or 10 bytes. The request lists
+ordered contiguous sectors from zero:
 5 (Mini), 16 (1K), 32 (2K) or 40 (4K). Each sector needs at least one supplied
 six-byte key; there is no default-key guessing or recovery. `ClassicRead.KeyMap`
 derives the existing key-map completeness flag and shares validation with

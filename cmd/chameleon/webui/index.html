@@ -63,9 +63,9 @@
 <div class="reader-workflows">
  <h2>读取卡片存储与协议</h2><p class="muted">先读取设备能力，再输入目标 UID 或选择 LF 协议。这里只读取，不写物理卡或自动保存到卡库；中断结果会标明不完整。密钥和密码不自动保存，读取后会清空输入。导出结果可能含卡片密钥。</p>
  <section class="tool" id="reader-classic-form"><h3>Classic 分扇区密钥读取</h3>
-  <div class="row"><label>目标 UID <input id="reader-classic-uid" autocomplete="off" placeholder="先扫描 HF，再输入 UID"></label><label>卡片容量 <select id="reader-classic-size"><option value="5">Mini · 5 扇区</option><option value="16" selected>1K · 16 扇区</option><option value="32">2K · 32 扇区</option><option value="40">4K · 40 扇区</option></select></label><button id="reader-classic-template">生成空密钥模板</button></div>
+  <div class="row"><label>模板 UID <input id="reader-classic-uid" autocomplete="off" placeholder="先扫描 HF，再输入 UID"></label><label>模板容量 <select id="reader-classic-size"><option value="5">Mini · 5 扇区</option><option value="16" selected>1K · 16 扇区</option><option value="32">2K · 32 扇区</option><option value="40">4K · 40 扇区</option></select></label><button id="reader-classic-template">生成空密钥模板</button></div>
   <label>分扇区密钥 JSON<textarea id="reader-classic-json" rows="7" autocomplete="off" spellcheck="false" placeholder='{"uid":"01020304","sectors":[{"sector":0,"a":"FFFFFFFFFFFF","b":""},…]}'></textarea></label>
-  <p class="muted">从扇区 0 开始按所选容量列出全部扇区；每扇区至少提供一个六字节密钥。不会猜测或恢复未知密钥。</p>
+  <p class="muted">实际读取以 JSON 中的 UID 和扇区列表为准；模板字段仅用于生成输入。扇区从 0 开始连续排列，每扇区至少提供一个六字节密钥。不会猜测或恢复未知密钥。</p>
   <div class="row"><button id="reader-classic-go" disabled>读取 Classic</button><button id="reader-classic-export" disabled>导出读取结果</button></div><div id="reader-classic-result" aria-live="polite"></div>
  </section>
  <section class="tool" id="reader-type2-form"><h3>Type2 指定页读取</h3>
