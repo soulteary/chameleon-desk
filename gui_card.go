@@ -135,12 +135,16 @@ func (c GUICard) Validate() error {
 			return fmt.Errorf("GUI card memory exceeds limit")
 		}
 	}
-	return nil
+	_, e = c.ReadDraft()
+	return e
 }
 
 // EmulatorImage converts supported HF memory without dropping GUI metadata in
 // the original card. ATS, UID, signatures, counters and settings are separate.
 func (c GUICard) EmulatorImage() (EmulatorImage, error) {
+	if e := c.RequireCardImage(); e != nil {
+		return EmulatorImage{}, e
+	}
 	i := EmulatorImage{Schema: 1, TagType: c.Tag, UnitBytes: 16}
 	if c.Tag >= 1100 && c.Tag <= 1108 {
 		i.UnitBytes = 4
@@ -158,6 +162,9 @@ func (c GUICard) EmulatorImage() (EmulatorImage, error) {
 // WithImage replaces memory in an existing GUI template, preserving identity
 // and extras. Types must match, preventing accidental identity fabrication.
 func (c GUICard) WithImage(i EmulatorImage) (GUICard, error) {
+	if e := c.RequireCardImage(); e != nil {
+		return c, e
+	}
 	if e := i.Validate(); e != nil {
 		return c, e
 	}

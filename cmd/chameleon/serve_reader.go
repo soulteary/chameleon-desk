@@ -8,19 +8,7 @@ import (
 	chameleon "github.com/soulteary/chameleon-desk"
 )
 
-type readerResult struct {
-	Schema    int                        `json:"schema"`
-	Kind      string                     `json:"kind"`
-	Complete  bool                       `json:"complete"`
-	Start     int                        `json:"start"`
-	Requested int                        `json:"requested_units"`
-	Read      int                        `json:"units_read"`
-	UID       chameleon.HexBytes         `json:"uid,omitempty"`
-	Data      chameleon.HexBytes         `json:"data,omitempty"`
-	Dump      *chameleon.ClassicCardDump `json:"dump,omitempty"`
-	Record    *chameleon.LFRecord        `json:"record,omitempty"`
-	Present   *bool                      `json:"present,omitempty"`
-}
+type readerResult = chameleon.ReadResult
 
 func (ws *webServer) handleClassicRead(w http.ResponseWriter, r *http.Request) {
 	var input chameleon.ClassicRead

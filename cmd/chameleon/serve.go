@@ -423,6 +423,10 @@ func (ws *webServer) handleNdefRead(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
+	if e := card.RequireCardImage(); e != nil {
+		writeErr(w, http.StatusUnprocessableEntity, e)
+		return
+	}
 	container, e := chameleon.DetectNdef(card.Tag, card.Data)
 	if e != nil {
 		writeErr(w, http.StatusUnprocessableEntity, e)
@@ -648,6 +652,10 @@ func (ws *webServer) handleNdefWrite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, e)
 		return
 	}
+	if e := card.RequireCardImage(); e != nil {
+		writeErr(w, http.StatusUnprocessableEntity, e)
+		return
+	}
 	container, e := chameleon.DetectNdef(card.Tag, card.Data)
 	if e != nil {
 		writeErr(w, http.StatusUnprocessableEntity, e)
@@ -685,12 +693,16 @@ func (ws *webServer) handleDictDownload(w http.ResponseWriter, r *http.Request) 
 
 func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Database json.RawMessage `json:"database"`
-		Op       string          `json:"op"`
-		Query    string          `json:"query"`
-		Sense    string          `json:"sense"`
-		ID       string          `json:"id"`
-		Card     json.RawMessage `json:"card"`
+		Database   json.RawMessage       `json:"database"`
+		Op         string                `json:"op"`
+		ReadResult *chameleon.ReadResult `json:"read_result"`
+		ReadError  string                `json:"read_error"`
+		Name       string                `json:"name"`
+		Rows       []string              `json:"rows"`
+		Query      string                `json:"query"`
+		Sense      string                `json:"sense"`
+		ID         string                `json:"id"`
+		Card       json.RawMessage       `json:"card"`
 	}
 	if e := decodeBody(r, &body); e != nil {
 		writeErr(w, http.StatusBadRequest, e)
@@ -733,6 +745,39 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, out)
+	case "import-read":
+		if body.ReadResult == nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("read_result required"))
+			return
+		}
+		card, err := chameleon.NewGUICardFromRead(body.Name, *body.ReadResult, body.ReadError)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		next, err := db.AddCard(card)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "edit-data":
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, err)
+			return
+		}
+		card, err = card.EditData(body.Name, body.Rows)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		next, err := db.ReplaceCard(card)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
 	case "delete":
 		out, removed, e := db.DeleteRecord(false, body.ID)
 		if e != nil {
@@ -741,7 +786,7 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"removed": removed, "database": out})
 	default:
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add or delete"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add, delete, import-read or edit-data"))
 	}
 }
 

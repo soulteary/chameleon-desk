@@ -91,6 +91,15 @@ func (d GUIDatabase) Records(dictionaries bool, query, sense string) ([]GUIRecor
 				return nil, e
 			}
 			s.ID, s.Name, s.Tag, s.TagName, s.UID, s.Units, s.Frequency = v.ID, v.Name, v.Tag, TagName(v.Tag), v.UID, len(v.Data), guiFrequency(v.Tag)
+			if draft, _ := v.ReadDraft(); draft != nil {
+				s.TagName = "Desk " + draft.Result.Kind + " read draft"
+				s.Units = len(draft.Rows)
+				s.Frequency = "hf"
+				if draft.Result.Kind == "lf" {
+					s.Frequency = "lf"
+					s.UID = draft.Rows[0]
+				}
+			}
 			if sense == "hf" || sense == "lf" {
 				if s.Frequency != sense {
 					continue
@@ -358,6 +367,9 @@ func NewGUICardFromDump(name string, tag uint16, dump []byte, p GUICardPatch) (G
 // Dump concatenates memory rows; empty (unknown) rows become zero bytes so
 // offsets are preserved, matching the GUI .bin export.
 func (c GUICard) Dump() (HexBytes, error) {
+	if e := c.RequireCardImage(); e != nil {
+		return nil, e
+	}
 	width := 16
 	if _, ok := guiType2Pages[c.Tag]; ok {
 		width = 4
