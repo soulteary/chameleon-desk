@@ -18,7 +18,7 @@ type sessionContextKey struct{}
 
 func hardwareRequest(path string) bool {
 	switch path {
-	case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/slot/activate", "/api/slot/load-card", "/api/features/device", "/api/firmware/check":
+	case "/api/settings/read", "/api/settings/configure", "/api/slot/details", "/api/slot/edit", "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/slot/activate", "/api/slot/load-card", "/api/features/device", "/api/firmware/check":
 		return true
 	}
 	return false

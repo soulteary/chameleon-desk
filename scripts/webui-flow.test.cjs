@@ -62,7 +62,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
@@ -1057,4 +1057,9 @@ test('serial enumeration failure leaves TCP selection and the session token usab
  assert.equal(p.$('#session-connect').disabled,false);
  p.$('#session-tcp').value='tcp:localhost:1234';await p.click('#session-connect');for(let i=0;i<10;i++)await tick();
  assert.match(p.$('#session-state').textContent,/已连接/);
+});
+
+test('configuration controls fail closed with reasons when the catalog cannot be loaded', async t => {
+ const p=await page(t,{'/api/capabilities':()=>response({feature_schema_version:999})});
+ for(const id of ['settings-read','settings-apply','slot-edit-read','slot-edit-apply']){assert.equal(p.$('#'+id).disabled,true);assert(p.$('#'+id).getAttribute('aria-describedby'));}
 });

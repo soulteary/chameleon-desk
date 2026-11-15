@@ -31,26 +31,42 @@ func (ws *webServer) handleFeatureDevice(w http.ResponseWriter, r *http.Request)
 func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
-		ID       string                   `json:"id"`
-		Device   *chameleon.FeatureDevice `json:"device"`
-		Card     json.RawMessage          `json:"card"`
-		Slot     int                      `json:"slot"`
-		Persist  bool                     `json:"persist"`
-		Activate bool                     `json:"activate"`
+		SettingsPatch *chameleon.SettingsPatch `json:"settings_patch"`
+		SlotEdit      *chameleon.SlotEdit      `json:"slot_edit"`
+		ID            string                   `json:"id"`
+		Device        *chameleon.FeatureDevice `json:"device"`
+		Card          json.RawMessage          `json:"card"`
+		Slot          int                      `json:"slot"`
+		Persist       bool                     `json:"persist"`
+		Activate      bool                     `json:"activate"`
 	}
 	if err := decodeBody(r, &body); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	if body.ID != "slot.load-card" {
-		writeErr(w, 400, fmt.Errorf("only slot.load-card parameter previews are exposed"))
+	request := chameleon.FeatureRequest{Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
+	var result chameleon.FeatureAvailability
+	var err error
+	switch body.ID {
+	case "slot.load-card":
+		var card chameleon.GUICard
+		card, err = chameleon.ParseGUICard(body.Card)
+		if err == nil {
+			request.Card = &card
+		}
+	case "device.configure":
+		if body.SettingsPatch == nil {
+			err = fmt.Errorf("settings_patch is required")
+		}
+	case "slot.configure":
+		if body.SlotEdit == nil {
+			err = fmt.Errorf("slot_edit is required")
+		}
+	default:
+		writeErr(w, 400, fmt.Errorf("unsupported parameter preview"))
 		return
 	}
-	request := chameleon.FeatureRequest{Slot: body.Slot, Persist: body.Persist, Activate: body.Activate}
-	var result chameleon.FeatureAvailability
-	card, err := chameleon.ParseGUICard(body.Card)
 	if err == nil {
-		request.Card = &card
 		result, err = chameleon.EvaluateFeature(body.ID, "web", ws.featureContext(body.Device), &request)
 	}
 	if err != nil {

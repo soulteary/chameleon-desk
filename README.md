@@ -52,6 +52,8 @@ Use `--port` to connect a device when the server starts:
 ./chameleon serve --port /dev/ttyACM0
 ```
 
+The [settings and slot editors](docs/web-configuration.md) provide settings readback, nickname/type/enable changes and explicitly confirmed single-channel initialization.
+
 Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task records are held in server memory and do not survive a server restart.
 
 Offline file tools work without a connected device. Valid card-library changes

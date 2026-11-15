@@ -24,7 +24,7 @@
         this.clear("功能信息格式不受支持，请重试读取权限与设备状态"); return false;
       }
       this.epoch++; this.message = ""; this.states = new Map(states.map(s => [s.id, s])); this.device = device;
-      this.render(); this.changed(); this.checkCard(); return true;
+      this.render(); this.changed(); this.checkCard(); document.dispatchEvent(new Event("desk-feature-device")); return true;
     }
     configure(caps) {
       const catalog = caps.feature_catalog;
@@ -47,13 +47,21 @@
     clear(message = "连接状态已变化，请重新读取设备能力") {
       this.epoch++; this.device = null;
       for (const f of this.catalog) if (f.device || f.requirement_mode === "card-plan") this.states.set(f.id, { id: f.id, state: "unknown", reasons: [{ code: "device_unknown", message }], required_commands: [] });
-      this.message = message; this.render(); this.changed();
+      this.message = message; this.render(); this.changed(); document.dispatchEvent(new Event("desk-feature-device"));
     }
     state(id) {
       return this.states.get(id) || { id, state: "unknown", reasons: [{ code: "device_unknown", message: this.message || "请先读取功能清单和设备状态" }] };
     }
     apply() {
-      const fallback = this.catalog.length ? this.catalog : [{ id: "reader.hf-scan", web: { controls: ["#scan-hf"] } }, { id: "reader.lf-scan", web: { controls: ["#scan-lf"] } }, { id: "slot.load-card", write: true, web: { controls: ["#load-card-go"] } }];
+      const defaults = [
+        {id:"reader.hf-scan",web:{controls:["#scan-hf"]}}, {id:"reader.lf-scan",web:{controls:["#scan-lf"]}},
+        {id:"slot.load-card",write:true,web:{controls:["#load-card-go"]}},
+        {id:"device.settings",web:{controls:["#settings-read"]}}, {id:"slot.read-details",web:{controls:["#slot-edit-read"]}},
+        {id:"device.configure",write:true,web:{controls:["#settings-apply"]}}, {id:"slot.configure",write:true,web:{controls:["#slot-edit-apply"]}}
+      ];
+      const fallback = this.catalog.map(f=>({...f,web:{...f.web,controls:[...new Set([...(f.web.controls||[]),...(defaults.find(d=>d.id===f.id)?.web.controls||[])])]}}));
+      fallback.push(...defaults.filter(d=>!this.catalog.some(f=>f.id===d.id)));
+
       for (const f of fallback) {
         let state = this.state(f.id);
         if (f.write && !this.writeAllowed()) state = { ...state, state:"unavailable", reasons:[{ code:"writes_disabled" }, ...state.reasons.filter(r=>r.code!=="writes_disabled")] };

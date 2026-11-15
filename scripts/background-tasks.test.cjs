@@ -39,3 +39,6 @@ test('unknown write receipts remain after terminal query and can be acknowledged
  const first=fixture(t,async()=>({server_id:'old',tasks:[task({state:'interrupted',outcome:'write_outcome_unknown'})]}),store);await first.controller.refresh();assert.equal(first.controller.pending.length,1);
  const next=fixture(t,async()=>({server_id:'new',tasks:[]}),store);await next.controller.refresh();assert.match(next.dom.window.document.body.textContent,/写入结果无法确认/);next.dom.window.document.querySelector('button').click();assert.equal(next.controller.pending.length,0);
 });
+test('configuration receipts distinguish setting writes from slot-detail reads',async t=>{
+ for(const [path,write]of [['/api/settings/configure',true],['/api/slot/edit',true],['/api/slot/details',false]]){const {controller}=fixture(t,async(_path,opts)=>{if(opts)throw Error('lost response');return {server_id:'server',tasks:[]};});await assert.rejects(()=>controller.execute(path,{headers:{'X-Chameleon-Session':'session'}}));assert.equal(controller.pending[0].write,write);}
+});

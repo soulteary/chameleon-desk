@@ -196,9 +196,13 @@
       ],
       "conditional": [],
       "web": {
-        "status": "missing",
-        "entries": [],
-        "controls": []
+        "status": "supported",
+        "entries": [
+          "GET /api/settings/read"
+        ],
+        "controls": [
+          "#settings-read"
+        ]
       },
       "cli": {
         "status": "supported",
@@ -214,10 +218,13 @@
           "Client.Settings"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web returns a redacted SettingsView. Sleep/threshold getters are optional probes and unsupported fields remain unknown."
+      ],
       "sources": [
         "settings_view.go",
-        "settings.go"
+        "settings.go",
+        "cmd/chameleon/serve_configuration.go"
       ],
       "effect": "read"
     },
@@ -272,9 +279,14 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
-        "controls": []
+        "status": "supported",
+        "entries": [
+          "POST /api/settings/configure",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#settings-apply"
+        ]
       },
       "cli": {
         "status": "supported",
@@ -290,10 +302,11 @@
         ]
       },
       "notes": [
-        "Only the selected fields and getters are required. Pairing fields additionally require direct serial."
+        "Selected settings expand exact getter/setter and final-read/save requirements. PIN/pairing changes require direct serial. Web submits background tasks and never retries writes."
       ],
       "sources": [
-        "settings_workflow.go"
+        "settings_workflow.go",
+        "cmd/chameleon/serve_configuration.go"
       ],
       "effect": "parameter-dependent"
     },
@@ -330,8 +343,10 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "partial",
+        "entries": [
+          "POST /api/settings/configure"
+        ],
         "controls": []
       },
       "cli": {
@@ -350,7 +365,9 @@
           "Client.ClearBLEBonds"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web supports PIN and pairing policy through settings; bond clearing has no Web entry."
+      ],
       "sources": [
         "settings.go",
         "transport_info.go"
@@ -529,9 +546,14 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
-        "controls": []
+        "status": "partial",
+        "entries": [
+          "POST /api/slot/edit",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#slot-edit-apply"
+        ]
       },
       "cli": {
         "status": "supported",
@@ -551,9 +573,13 @@
           "Client.DeleteSlot"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web supports one channel nickname/type/enable/initialize edits, not channel deletion. SlotEdit.Requirements resolves exact selected commands. Initialization ACK/configuration readback does not verify default memory."
+      ],
       "sources": [
-        "settings.go"
+        "settings.go",
+        "slot_edit_requirements.go",
+        "cmd/chameleon/serve_configuration.go"
       ],
       "effect": "parameter-dependent"
     },
@@ -599,8 +625,11 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "GET /api/slot/details",
+          "POST /api/slot/edit"
+        ],
         "controls": []
       },
       "cli": {
@@ -624,7 +653,8 @@
         "Nickname writes require explicit CLI authorization; list/read do not."
       ],
       "sources": [
-        "slot_workflows.go"
+        "slot_workflows.go",
+        "cmd/chameleon/serve_configuration.go"
       ],
       "effect": "parameter-dependent"
     },
@@ -3738,12 +3768,61 @@
       "notes": [
         "Task controls have their own lifecycle. Underlying operation checks and session identity remain authoritative.",
         "Progress is a phase and protocol attempt/response count, not a percentage. Cancellation is not rollback; interrupted writes can have an unknown outcome.",
-        "Task records survive browser reload, not server restart. No automatic reconnect or mutation replay."
+        "Task records survive browser reload, not server restart. No automatic reconnect or mutation replay.",
+        "Settings reads/configuration and slot details/edits are also supported task operations."
       ],
       "sources": [
         "cmd/chameleon/serve_tasks.go",
         "cmd/chameleon/webui/background-tasks.js",
         "docs/background-tasks.md"
+      ]
+    },
+    {
+      "id": "slot.read-details",
+      "title": "Read slot configuration and nicknames",
+      "device": true,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "fixed",
+      "commands": [
+        1008,
+        1018,
+        1019,
+        1023
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/slot/details"
+        ],
+        "controls": [
+          "#slot-edit-read"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "slot list"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.SlotDetails"
+        ]
+      },
+      "notes": [
+        "Read-only discovery is separate from parameter-dependent nickname mutations. Missing nicknames are not errors."
+      ],
+      "sources": [
+        "slot_workflows.go",
+        "cmd/chameleon/serve_configuration.go"
       ]
     }
   ]
