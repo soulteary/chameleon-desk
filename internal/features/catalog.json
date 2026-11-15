@@ -3657,6 +3657,54 @@
         "ble.go"
       ],
       "effect": "offline"
+    },
+    {
+      "id": "device.session",
+      "title": "Web USB/TCP connection management",
+      "device": false,
+      "write": false,
+      "effect": "connection",
+      "models": [
+        "any"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/session/ports",
+          "GET /api/session/status",
+          "POST /api/session/connect",
+          "POST /api/session/disconnect"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "partial",
+        "entries": [
+          "devices",
+          "serve"
+        ]
+      },
+      "sdk": {
+        "status": "partial",
+        "entries": [
+          "Ports",
+          "OpenContext"
+        ]
+      },
+      "notes": [
+        "Web sessions are server-wide and use a common operation gate with managed BLE. Connection controls have their own lifecycle checks.",
+        "Connecting replaces and closes the previous direct session; failure leaves it disconnected. No automatic reconnect or command replay.",
+        "CLI and SDK provide transport primitives, not the Web session registry. This phase does not provide background task IDs or cancellation."
+      ],
+      "sources": [
+        "cmd/chameleon/serve_session.go",
+        "cmd/chameleon/serve.go",
+        "cmd/chameleon/webui/app.js"
+      ]
     }
   ]
 }

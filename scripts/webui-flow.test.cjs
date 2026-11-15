@@ -11,7 +11,7 @@ const fixtureDevice = {model_id:0, capabilities: JSON.parse(fs.readFileSync(path
 const fixtureStates = (writes, ready=true) => featureCatalog.map(f=>({id:f.id,state:f.web.status==='missing'||f.web.status==='removed'?'unavailable':f.write&&!writes?'unavailable':f.device&&!ready?'unknown':'available',reasons:f.write&&!writes?[{code:'writes_disabled',message:'writes disabled'}]:f.device&&!ready?[{code:'device_unknown',message:'unknown device'}]:[],required_commands:f.commands}));
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
-const response = (body, status = 200, type = 'application/json') => ({ ok: status < 400, status, headers: { get: () => type }, json: async () => body, text: async () => String(body) });
+const response = (body, status = 200, type = 'application/json') => ({ ok: status < 400, status, headers: { get: (name) => name.toLowerCase() === "content-type" ? type : null }, json: async () => body, text: async () => String(body) });
 
 async function page(t, routes = {}, { width = 1368, height = 900, writes = false, clock = false, indexedDB = new IDBFactory(), featureMode = "ready" } = {}) {
   const errors = [], requests = [], downloads = [], imports = [], persistence = [];
@@ -67,7 +67,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
     }
-    w.eval(source(file));
+    w.eval(source(file)+(file === "app.js" ? ";window.sessionTest = {loadInfo, showDeviceSession};" : ""));
   }
   t.after(async () => {
     for (const controller of persistence) controller.cancelTimer();
@@ -1016,4 +1016,45 @@ test('catalog controls refer to existing static controls or the dynamic slot act
     if(selector==='[data-slot-active]')continue;
     assert(p.d.querySelector(selector),f.id+': '+selector);
   }
+});
+
+test('direct session controls select USB or TCP, include identity, and clear old facts', async t => {
+ let status={session_id:'first',connected:false,target:'',kind:'direct'};
+ const p=await page(t,{
+  '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'test-session-token',device_sessions_enabled:true}),
+  '/api/session/status':()=>response(status),
+  '/api/session/ports':()=>response({ports:['COM7','/dev/ttyACM0']}),
+  '/api/session/connect':opts=>{const input=JSON.parse(opts.body);assert.equal(input.session_id,'first');assert.equal(input.target,'COM7');assert.equal(opts.headers['X-Chameleon-Token'],'test-session-token');status={session_id:'second',connected:true,target:input.target,kind:'direct'};return response(status);},
+  '/api/session/disconnect':opts=>{assert.equal(JSON.parse(opts.body).session_id,'second');status={session_id:'third',connected:false,target:'',kind:'direct'};return response(status);}
+ });
+ for(let i=0;i<10;i++) await tick();
+ assert.equal(p.$('#session-panel').hidden,false);assert.equal(p.$('#session-ports').options.length,3);
+ p.$('#session-ports').value='COM7';p.$('#session-connect').click();await tick();await tick();
+ for(let i=0;i<10;i++) await tick(); assert.match(p.$('#session-state').textContent,/COM7/);
+ p.$('#session-disconnect').click();await tick();await tick();assert.match(p.$('#session-state').textContent,/未连接/);
+ assert.equal(p.$('#slot-list').dataset.ready,'false');assert.equal(p.requests.filter(r=>r.url==='/api/session/connect').length,1);
+});
+test('late device success and failure cannot replace the view after session identity changes', async t => {
+ for(const status of [200,502]) {
+  const slow=deferred();const p=await page(t,{'/api/info':()=>slow.promise});
+  const operation=p.w.sessionTest.loadInfo();
+  p.w.sessionTest.showDeviceSession({session_id:"replacement",connected:true,target:"tcp:localhost:1234",kind:"direct"});
+  slow.resolve(response(status===200?{model:'OLD',slots:[]}:{error:'old failure'},status));await operation;
+  assert.doesNotMatch(p.$('#info-cards').textContent,/OLD|old failure|未能连接设备/);
+  assert.match(p.$('#session-state').textContent,/replacement/);
+ }
+});
+
+test('serial enumeration failure leaves TCP selection and the session token usable', async t => {
+ const p=await page(t,{
+  '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'test-session-token',device_sessions_enabled:true}),
+  '/api/session/status':()=>response({session_id:'current',connected:false,target:'',kind:'direct'}),
+  '/api/session/ports':()=>response({error:'serial unavailable'},502),
+  '/api/session/connect':opts=>{assert.equal(opts.headers['X-Chameleon-Token'],'test-session-token');assert.equal(JSON.parse(opts.body).target,'tcp:localhost:1234');return response({session_id:'next',connected:true,target:'tcp:localhost:1234',kind:'direct'});}
+ });
+ for(let i=0;i<10;i++)await tick();
+ assert.match(p.$('#session-state').textContent,/仍可指定 TCP/);
+ assert.equal(p.$('#session-connect').disabled,false);
+ p.$('#session-tcp').value='tcp:localhost:1234';await p.click('#session-connect');for(let i=0;i<10;i++)await tick();
+ assert.match(p.$('#session-state').textContent,/已连接/);
 });

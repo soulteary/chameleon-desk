@@ -78,6 +78,10 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { <-ws.gate }()
+	if expected, ok := r.Context().Value(sessionContextKey{}).(string); ok && expected != ws.currentSessionID() {
+		writeErr(w, 409, fmt.Errorf("device session changed; refresh connection status"))
+		return
+	}
 	var input struct {
 		DeviceID string `json:"device_id"`
 	}
@@ -106,6 +110,7 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ws.closeBridgeClient()
+		ws.rotateSessionID()
 		var status chameleon.BridgeStatus
 		status, err = ws.bridge.Connect(ctx)
 		if err == nil {
@@ -122,6 +127,7 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 	case "disconnect":
 		// The control request ends the BLE session and therefore the data socket.
 		// Keep the socket until the request so the bridge owns cleanup ordering.
+		ws.rotateSessionID()
 		output, err = ws.bridge.Disconnect(ctx)
 		ws.closeBridgeClient()
 	default:
