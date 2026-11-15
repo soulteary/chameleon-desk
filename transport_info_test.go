@@ -11,7 +11,7 @@ import (
 )
 
 func TestTransportRestrictionsRejectBeforeAnyRequest(t *testing.T) {
-	for _, info := range []TransportInfo{bleTransport("ble", false), bleTransport("tcp", true), {Connection: "tcp", Medium: "unknown"}} {
+	for _, info := range []TransportInfo{bleTransport("ble", false), bleTransport("tcp", true), {Connection: "tcp", Medium: "unknown"}, {Connection: "tcp", Medium: "usb-serial"}} {
 		t.Run(info.Connection+"-"+info.Medium, func(t *testing.T) {
 			a, b := net.Pipe()
 			c := newClient(a, 30*time.Millisecond)
@@ -147,5 +147,56 @@ func TestNewClientDetectsAnExistingTCPStream(t *testing.T) {
 	defer c.Close()
 	if c.TransportInfo().AllowsPairingChanges || c.TransportInfo().AllowsDeviceRestore {
 		t.Fatal("TCP custom stream elevated permissions")
+	}
+}
+
+func TestUSBSerialDeclarationIsDescriptiveAndRestricted(t *testing.T) {
+	a, b := net.Pipe()
+	defer b.Close()
+	go func() {
+		_, _ = io.WriteString(b, `CHAMELEON_BRIDGE/1 {"api_version":1,"transport":{"connection":"tcp","medium":"usb-serial"},"device_id":"COM7"}`+"\n")
+		buf := make([]byte, 10)
+		if _, err := io.ReadFull(b, buf); err == nil {
+			_, _ = b.Write(response(1000, 0x68, []byte{2, 0}))
+		}
+	}()
+	c, err := tcpClient(context.Background(), a, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.TransportInfo() != (TransportInfo{Connection: "tcp", Medium: "usb-serial"}) || c.bridgeDeviceID != "COM7" {
+		t.Fatal(c.TransportInfo())
+	}
+	if _, err := c.Firmware(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before := c.Stats().Requests
+	if err := c.EnterBootloader(context.Background()); err == nil || !strings.Contains(err.Error(), "USB serial TCP bridge") {
+		t.Fatal(err)
+	}
+	if c.Stats().Requests != before {
+		t.Fatal("bootloader request reached bridge")
+	}
+	ctx := featureTestContext()
+	ctx.Device.Transport = c.TransportInfo()
+	aState, err := EvaluateFeature("firmware.enter", "cli", ctx, nil)
+	if err != nil || aState.State != "unavailable" || !hasFeatureReason(aState, "transport_restricted") {
+		t.Fatal(aState, err)
+	}
+}
+
+func TestUSBDeclarationCannotAdvertiseManagementOrPrivileges(t *testing.T) {
+	for _, extra := range []string{`"managed":true`, `"allows_pairing_changes":true`, `"allows_device_restore":true`, `"supports_dfu":true`} {
+		a, b := net.Pipe()
+		go func() {
+			defer b.Close()
+			_, _ = io.WriteString(b, `CHAMELEON_BRIDGE/1 {"api_version":1,"transport":{"connection":"tcp","medium":"usb-serial",`+extra+`}}`+"\n")
+		}()
+		c, err := tcpClient(context.Background(), a, time.Second)
+		if err == nil {
+			c.Close()
+			t.Fatal(extra)
+		}
 	}
 }

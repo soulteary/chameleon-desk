@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 77 workflows; this is not a coverage percentage.
+sources. It currently groups 78 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -116,7 +116,9 @@ transport restrictions and firmware responses. A caller can submit fictitious
 facts to an offline preview, but that does not grant device permissions.
 
 Pairing/reset and full-device restore policies require a declared direct serial
-connection. TCP, including unknown TCP or a self-declared serial permission,
+connection. The optional [USB serial TCP bridge](usb-bridge.md) declares its
+`usb-serial` medium without granting direct-USB permissions and also blocks
+bootloader entry. TCP, including unknown TCP or a self-declared serial permission,
 cannot grant these permissions. An opaque caller-managed stream is not certified
 as wired by the evaluator. Existing custom-stream SDK compatibility is unchanged.
 USB DFU needs a bootloader port and a validated application package; an app

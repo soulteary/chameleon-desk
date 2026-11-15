@@ -3289,10 +3289,12 @@
         ]
       },
       "notes": [
-        "Send-only; disconnect is expected."
+        "Send-only; disconnect is expected.",
+        "The fixed-port USB serial TCP bridge rejects bootloader entry; direct USB and BLE behavior is unchanged."
       ],
       "sources": [
-        "execute.go"
+        "execute.go",
+        "transport_info.go"
       ],
       "effect": "device-write"
     },
@@ -3648,6 +3650,53 @@
       ],
       "sources": [
         "bridge_control.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "transport.usb-bridge",
+      "title": "Fixed-port USB serial TCP bridge",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/session/connect",
+          "GET /api/session/status",
+          "POST /api/session/disconnect"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "info"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "OpenContext",
+          "Client.TransportInfo"
+        ]
+      },
+      "notes": [
+        "Start the Python bridge separately with --serial-port, then use the existing TCP entrypoint. Native USB remains available.",
+        "No USB discovery or management API. The bridge declares usb-serial without pairing, full-device restore or DFU privileges; it also rejects bootloader entry.",
+        "External process configuration and device state require runtime checks; availability is not inferred from a running TCP listener."
+      ],
+      "sources": [
+        "tools/ble_bridge/bridge.py",
+        "tools/ble_bridge/serial_backend.py",
+        "transport_info.go"
       ],
       "effect": "offline"
     },

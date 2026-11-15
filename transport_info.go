@@ -48,6 +48,9 @@ func (c *Client) checkTransportCommand(command uint16) error {
 }
 
 func checkTransportCommand(info TransportInfo, command uint16) error {
+	if info.Connection == "tcp" && info.Medium == "usb-serial" && Command(command) == CmdEnterBootloader {
+		return fmt.Errorf("bootloader entry is unavailable over the USB serial TCP bridge")
+	}
 	if info.AllowsPairingChanges {
 		return nil
 	}
@@ -102,18 +105,26 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 		line, e := r.ReadSlice('\n')
 		if e != nil || !strings.HasPrefix(string(line), "CHAMELEON_BRIDGE/1 ") {
 			conn.Close()
-			return nil, fmt.Errorf("invalid BLE bridge declaration")
+			return nil, fmt.Errorf("invalid bridge declaration")
 		}
 		var declaration struct {
 			Version   int           `json:"api_version"`
 			Transport TransportInfo `json:"transport"`
 			DeviceID  string        `json:"device_id"`
 		}
-		if e = json.Unmarshal(line[len("CHAMELEON_BRIDGE/1 "):], &declaration); e != nil || declaration.Version != 1 || declaration.Transport.Connection != "tcp" || declaration.Transport.Medium != "ble" || declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
+		if e = json.Unmarshal(line[len("CHAMELEON_BRIDGE/1 "):], &declaration); e != nil ||
+			declaration.Version != 1 || declaration.Transport.Connection != "tcp" ||
+			(declaration.Transport.Medium != "ble" && declaration.Transport.Medium != "usb-serial") ||
+			(declaration.Transport.Medium == "usb-serial" && declaration.Transport.Managed) ||
+			declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
 			conn.Close()
-			return nil, fmt.Errorf("unsupported BLE bridge declaration")
+			return nil, fmt.Errorf("unsupported bridge declaration")
 		}
-		info = bleTransport("tcp", declaration.Transport.Managed)
+		if declaration.Transport.Medium == "ble" {
+			info = bleTransport("tcp", declaration.Transport.Managed)
+		} else {
+			info = TransportInfo{Connection: "tcp", Medium: "usb-serial"}
+		}
 		deviceID = declaration.DeviceID
 	}
 	if err := ctx.Err(); err != nil {

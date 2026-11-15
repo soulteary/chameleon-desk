@@ -283,6 +283,16 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 			}
 		}
 	}
+	if f.RequirementMode != "command" && ctx.Device != nil && ctx.Device.Transport.Connection == "tcp" && ctx.Device.Transport.Medium == "usb-serial" {
+		for _, cmd := range a.RequiredCommands {
+			if cmd != CmdEnterBootloader {
+				continue
+			}
+			if err := checkTransportCommand(ctx.Device.Transport, uint16(cmd)); err != nil {
+				reason("unavailable", "transport_restricted", err.Error())
+			}
+		}
+	}
 	if f.Transport == "pairing" || f.Transport == "restore" || f.Transport == "usb-dfu" {
 		if ctx.Device == nil || ctx.Device.Transport.Connection == "" {
 			reason("unknown", "transport_unknown", "The underlying transport is unknown")
