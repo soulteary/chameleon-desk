@@ -1,5 +1,8 @@
 # USB serial TCP bridge
 
+Matched core/bridge artifacts and non-invasive dependency, permission, listener
+and version checks are documented in [distribution and diagnosis](distribution.md).
+
 The Python bridge can expose one explicit Chameleon **application serial port**
 through Desk's existing TCP transport. Routine USB application access uses this backend. Native Go
 USB is reserved for explicit maintenance and DFU; see [USB migration](usb-migration.md). BLE setup and

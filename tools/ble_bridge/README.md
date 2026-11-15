@@ -1,5 +1,10 @@
 # Python device bridge
 
+For matched native bundles, offline dependency installation, three-platform
+startup and non-invasive diagnostics, see [distribution](../../docs/distribution.md).
+`--version` prints build identity. `--doctor --backend usb|ble` checks local setup;
+Desk's `bridge doctor` reads the running authenticated management service only.
+
 The existing BLE backend and USB serial backend share the TCP entrypoint.
 For fixed-port and managed USB setup, restrictions and tests, see [USB serial TCP bridge](../../docs/usb-bridge.md).
 Routine USB requires this bridge; native maintenance/DFU remains separate.

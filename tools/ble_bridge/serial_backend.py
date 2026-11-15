@@ -8,7 +8,8 @@ import queue
 import threading
 import time
 
-from bridge import ApplicationFrames, Bridge, BUFFER_LIMIT, RESTRICTED_COMMANDS, StreamSession
+from bridge import ApplicationFrames, Bridge, BUFFER_LIMIT, RESTRICTED_COMMANDS, StreamSession, build_info
+from doctor import BackendFailure, failure_code
 
 LOG = logging.getLogger("usb_serial_bridge")
 USB_RESTRICTED_COMMANDS = RESTRICTED_COMMANDS | {1010}
@@ -112,7 +113,7 @@ class SerialWorker:
                     self.notify(self.wake.set)
         except Exception as error:
             # Do not expose protocol payloads or exception text from a backend.
-            self.error = type(error).__name__
+            self.error = failure_code(error, "usb")
         finally:
             # Publish I/O termination before close: a driver can block in close,
             # and callers still need to end the TCP session and bound cleanup.
@@ -147,7 +148,7 @@ class SerialWorker:
         async with asyncio.timeout(self.timeout):
             await self.ready.wait()
         if not self.opened or self.ended.is_set():
-            raise RuntimeError("serial setup failed")
+            raise BackendFailure(self.error or "serial_setup_failed")
 
     async def disconnect(self):
         self.stop.set()
@@ -248,7 +249,7 @@ class SerialBridge(Bridge):
         super().__init__(port, factory, timeout)
 
     def metadata(self):
-        return {"api_version": 1, "transport": transport_info(), "device_id": self.device}
+        return {"api_version": 1, "bridge_version": build_info(), "transport": transport_info(), "device_id": self.device}
 
     def make_session(self, reader, writer):
         return SerialSession(reader, writer, self.device, self.client_factory, self.timeout)

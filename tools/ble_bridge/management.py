@@ -7,7 +7,8 @@ import os
 import secrets
 import stat
 
-from bridge import Bridge, Session, connect_nus, transport_info, NUS_SERVICE
+from bridge import Bridge, Session, connect_nus, transport_info, NUS_SERVICE, build_info
+from doctor import FAILURE_CODES, failure_code
 
 
 class APIError(Exception):
@@ -73,7 +74,7 @@ class ManagedBridge(Bridge):
         self.owner = owner
 
     def metadata(self):
-        return {"api_version": 1, "transport": transport_info(True),
+        return {"api_version": 1, "bridge_version": build_info(), "transport": transport_info(True),
                 "device_id": self.owner.selected.address}
 
     def accept(self, reader, writer):
@@ -96,6 +97,7 @@ class ManagedBridge(Bridge):
 
 
 class Controller:
+    backend = "ble"
     def __init__(self, scanner, factory, timeout=20.0, pair=False):
         self.scanner, self.factory = scanner, factory
         self.timeout, self.pair = timeout, pair
@@ -111,7 +113,8 @@ class Controller:
         self.data_address = ""
 
     def status(self):
-        return {"api_version": 1, "state": self.state,
+        return {"api_version": 1, "bridge_version": build_info(), "state": self.state,
+                "error_code": self.error if self.error in FAILURE_CODES else "",
                 "selected_device": self.record(self.selected) if self.selected else None,
                 "session_active": self.bridge.active,
                 "transport": transport_info(True), "data_address": self.data_address,
@@ -136,7 +139,7 @@ class Controller:
                     self.selected = None
                 self.records = [{"id": device.address, "name": adv.local_name or device.name or "",
                                  "rssi": adv.rssi} for device, adv in found.values()]
-                return {"api_version": 1, "devices": self.records}
+                return {"api_version": 1, "bridge_version": build_info(), "devices": self.records}
             finally:
                 self.state = "disconnected"
 
@@ -178,7 +181,7 @@ class Controller:
                 self.link = None
                 if isinstance(error, asyncio.CancelledError):
                     raise
-                self.error = str(error) or type(error).__name__
+                self.error = failure_code(error, self.backend)
                 raise APIError(502, self.error) from error
             finally:
                 self.connect_task = None
