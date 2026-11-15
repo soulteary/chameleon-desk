@@ -5,7 +5,7 @@ import contextlib
 import json
 import threading
 
-from management import APIError, Controller, ManagementServer, load_token
+from management import APIError, Controller, ManagementServer, load_token, build_info
 from serial_backend import SerialBridge, SerialSession, SerialWorker, transport_info
 
 
@@ -78,7 +78,7 @@ class ManagedSerialBridge(SerialBridge):
         self.owner = owner
 
     def metadata(self):
-        return {"api_version": 1, "transport": transport_info(True),
+        return {"api_version": 1, "bridge_version": build_info(), "transport": transport_info(True),
                 "device_id": self.owner.selected["id"]}
 
     def accept(self, reader, writer):
@@ -104,6 +104,7 @@ class ManagedSerialBridge(SerialBridge):
 
 
 class SerialController(Controller):
+    backend = "usb"
     def __init__(self, enumerator, factory, timeout=20.0):
         super().__init__(None, factory, timeout)
         self.enumerator = enumerator
@@ -161,7 +162,7 @@ class SerialController(Controller):
                 self.devices = {p["id"]: p for p in records}
                 if self.selected not in records:
                     self.selected = None
-                return {"api_version": 1, "devices": records}
+                return {"api_version": 1, "bridge_version": build_info(), "devices": records}
             finally:
                 self.state = "disconnected"
 

@@ -9,6 +9,7 @@ import logging
 import math
 import sys
 import json
+from version import build_info
 
 PREAMBLE = b"CHAMELEON_BRIDGE/1 "
 RESTRICTED_COMMANDS = {1014, 1020, 1030, 1032, 1037}
@@ -202,7 +203,7 @@ class Bridge:
         self.session = None
 
     def metadata(self):
-        return {"api_version": 1, "transport": transport_info(),
+        return {"api_version": 1, "bridge_version": build_info(), "transport": transport_info(),
                 "device_id": getattr(self.device, "address", str(self.device))}
 
     def make_session(self, reader, writer):
@@ -312,6 +313,9 @@ def validate_modes(args):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--version", action="store_true", help="print build identity as JSON without loading backends")
+    p.add_argument("--doctor", action="store_true", help="check local setup without opening a device or sending commands")
+    p.add_argument("--backend", choices=("usb", "ble"), help="backend to diagnose with --doctor")
     target = p.add_mutually_exclusive_group()
     target.add_argument("--device", help="BLE address, or device UUID on macOS")
     target.add_argument("--serial-port", type=serial_port, help="explicit USB application serial port (for example /dev/ttyACM0 or COM7)")
@@ -369,6 +373,18 @@ def main():
         return 1
     p = parser()
     args = p.parse_args()
+    if args.version:
+        print(json.dumps(build_info(), sort_keys=True))
+        return 0
+    if args.doctor:
+        from doctor import diagnose
+        if not args.backend:
+            p.error("--doctor requires --backend usb|ble")
+        if args.device or args.scan or args.pair or args.usb or (args.serial_port and args.backend != "usb"):
+            p.error("--doctor does not take connection actions; choose --backend and optional USB --serial-port")
+        result = diagnose(args)
+        print(json.dumps(result, sort_keys=True))
+        return 1 if any(c["status"] == "fail" for c in result["checks"]) else 0
     try:
         validate_modes(args)
     except ValueError as error:

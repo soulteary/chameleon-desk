@@ -4148,6 +4148,49 @@
         "slot_workflows.go",
         "cmd/chameleon/serve_configuration.go"
       ]
+    },
+    {
+      "id": "bridge.diagnostics",
+      "title": "Read-only managed bridge diagnosis",
+      "device": false,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "any"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "missing",
+        "entries": [],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "bridge doctor"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "BLEBridge.Diagnose",
+          "USBBridge.Diagnose",
+          "CoreBuildInfo"
+        ]
+      },
+      "notes": [
+        "Reads authenticated management status once without scanning, changing connections, claiming data or sending firmware commands.",
+        "Unknown source/legacy revision and hardware readiness remain unverified. Version metadata grants no transport privileges. Local Python doctor and distribution installer are separate tools."
+      ],
+      "sources": [
+        "bridge_diagnostics.go",
+        "build_info.go",
+        "cmd/chameleon/bridge_doctor.go",
+        "docs/distribution.md"
+      ]
     }
   ]
 }

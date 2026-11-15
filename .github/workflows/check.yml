@@ -53,6 +53,25 @@ jobs:
         env:
           CHAMELEON_BRIDGE_TEST_BINARY: chameleon-nocgo.exe
         run: python -m unittest discover -s tools/ble_bridge -v
+      - name: Check distribution integrity fixtures
+        run: python -m unittest discover -s scripts -p test_distribution.py -v
+      - name: Prepare native wheel inputs
+        run: |
+          python -m pip download --only-binary=:all: -r tools/ble_bridge/requirements-usb.txt --dest reports/wheels-usb
+          python -m pip download --only-binary=:all: -r tools/ble_bridge/requirements.txt --dest reports/wheels-ble
+      - name: Build matching native distribution twice
+        run: |
+          python scripts/build_distribution.py --usb-wheelhouse reports/wheels-usb --ble-wheelhouse reports/wheels-ble --output reports/distribution
+          python scripts/build_distribution.py --usb-wheelhouse reports/wheels-usb --ble-wheelhouse reports/wheels-ble --output reports/distribution-repeat
+          python -c "from pathlib import Path; a=next(Path('reports/distribution').glob('*.zip')); b=next(Path('reports/distribution-repeat').glob('*.zip')); assert a.read_bytes()==b.read_bytes(), 'distribution bytes differ'"
+      - name: Verify native artifact and offline install
+        run: python scripts/test_distribution_smoke.py reports/distribution
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: distribution-${{ runner.os }}-${{ runner.arch }}-python311
+          path: reports/distribution/*
+          if-no-files-found: error
+          retention-days: 14
   browser-library:
     name: Browser persistence and capabilities (Chromium)
     runs-on: ubuntu-latest

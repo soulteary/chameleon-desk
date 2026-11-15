@@ -27,6 +27,7 @@ type BridgeDevice struct {
 }
 
 type BridgeStatus struct {
+	Build          *BuildInfo    `json:"bridge_version,omitempty"`
 	APIVersion     int           `json:"api_version"`
 	State          string        `json:"state"`
 	SelectedDevice *BridgeDevice `json:"selected_device"`
@@ -34,9 +35,11 @@ type BridgeStatus struct {
 	Transport      TransportInfo `json:"transport"`
 	DataAddress    string        `json:"data_address"`
 	Error          string        `json:"error"`
+	ErrorCode      string        `json:"error_code,omitempty"`
 }
 
 type BridgeScan struct {
+	Build      *BuildInfo     `json:"bridge_version,omitempty"`
 	APIVersion int            `json:"api_version"`
 	Devices    []BridgeDevice `json:"devices"`
 }
@@ -119,7 +122,7 @@ func (b *BLEBridge) request(ctx context.Context, method, path string, input, out
 	}
 	if response.StatusCode != http.StatusOK {
 		// Do not reflect a configured credential or untrusted error body.
-		return fmt.Errorf("device bridge %s returned HTTP %d", path, response.StatusCode)
+		return &BridgeHTTPError{Status: response.StatusCode}
 	}
 	if err := json.Unmarshal(data, output); err != nil {
 		return fmt.Errorf("invalid device bridge JSON response")
@@ -132,18 +135,25 @@ func (b *BLEBridge) status(ctx context.Context, method, path string, input any) 
 	if err := b.request(ctx, method, path, input, &result); err != nil {
 		return result, err
 	}
+	return result, b.validateStatus(result)
+}
+
+func (b *BLEBridge) validateStatus(result BridgeStatus) error {
+	if err := CheckBridgeVersion(result.Build); err != nil {
+		return err
+	}
 	if result.APIVersion != 1 || result.Transport.Connection != "tcp" || result.Transport.Medium != b.Medium() || !result.Transport.Managed || result.Transport.NativeUSBMaintenance || result.Transport.AllowsPairingChanges || result.Transport.AllowsDeviceRestore || result.Transport.SupportsDFU {
-		return BridgeStatus{}, fmt.Errorf("unsupported device bridge transport declaration")
+		return fmt.Errorf("unsupported device bridge transport declaration")
 	}
 	if err := loopbackAuthority(result.DataAddress); err != nil {
-		return BridgeStatus{}, err
+		return err
 	}
 	switch result.State {
 	case "disconnected", "scanning", "connecting", "connected", "disconnecting", "blocked":
 	default:
-		return BridgeStatus{}, fmt.Errorf("unknown device bridge connection state")
+		return fmt.Errorf("unknown device bridge connection state")
 	}
-	return result, nil
+	return nil
 }
 
 func (b *BLEBridge) Status(ctx context.Context) (BridgeStatus, error) {
@@ -157,6 +167,9 @@ func (b *BLEBridge) Scan(ctx context.Context) (BridgeScan, error) {
 	}
 	if result.APIVersion != 1 {
 		return BridgeScan{}, fmt.Errorf("unsupported device bridge scan version")
+	}
+	if err := CheckBridgeVersion(result.Build); err != nil {
+		return BridgeScan{}, err
 	}
 	return result, nil
 }
@@ -176,6 +189,9 @@ func (b *BLEBridge) Disconnect(ctx context.Context) (BridgeStatus, error) {
 // OpenSession claims the selected BLE link. Closing the returned client ends
 // that BLE session; callers must explicitly connect again after a failure.
 func (b *BLEBridge) OpenSession(ctx context.Context, status BridgeStatus, timeout time.Duration) (*Client, error) {
+	if err := b.validateStatus(status); err != nil {
+		return nil, err
+	}
 	if status.State != "connected" || status.SelectedDevice == nil || status.SelectedDevice.ID == "" {
 		return nil, fmt.Errorf("connect a selected bridge device first")
 	}

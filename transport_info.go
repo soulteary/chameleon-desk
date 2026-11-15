@@ -118,6 +118,7 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 			return nil, fmt.Errorf("invalid bridge declaration")
 		}
 		var declaration struct {
+			Build     *BuildInfo    `json:"bridge_version"`
 			Version   int           `json:"api_version"`
 			Transport TransportInfo `json:"transport"`
 			DeviceID  string        `json:"device_id"`
@@ -128,6 +129,10 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 			declaration.Transport.NativeUSBMaintenance || declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
 			conn.Close()
 			return nil, fmt.Errorf("unsupported bridge declaration")
+		}
+		if err := CheckBridgeVersion(declaration.Build); err != nil {
+			conn.Close()
+			return nil, err
 		}
 		if declaration.Transport.Medium == "ble" {
 			info = bleTransport("tcp", declaration.Transport.Managed)

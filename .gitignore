@@ -6,6 +6,7 @@
 /vendor/
 __pycache__/
 /tools/ble_bridge/.venv/
+/tools/ble_bridge/_build.json
 /coverage.out
 *.test
 *.exe

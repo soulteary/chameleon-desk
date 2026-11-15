@@ -17,6 +17,11 @@ BLE backend or third-party cgo dependency. Node.js and Python are not needed
 to build Go, run TCP/offline tools or use explicit native USB maintenance/DFU.
 Routine USB and BLE access require the separate Python bridge.
 
+For matched core/bridge artifacts, offline dependency installation and platform
+startup/diagnostic steps, see [distribution and bridge diagnosis](docs/distribution.md).
+`chameleon bridge doctor` reads management status only; the Python bridge's
+`--doctor` checks local dependencies/listeners without opening hardware.
+
 ```sh
 git clone https://github.com/soulteary/chameleon-desk.git
 cd chameleon-desk
