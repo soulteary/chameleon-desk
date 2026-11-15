@@ -27,8 +27,9 @@ model/transport checks still govern the preceding read.
 
 The card library also accepts the reader's previously exported
 `{schema:1, read_result, error}` envelopes through **从导出的读取结果恢复到卡库**.
-This provides an explicit way to retain results from task history: export the
-result envelope, then import it here. Task history itself is not durable storage.
+An envelope exported from the reader before refresh can be reopened here.
+Retained task history shows raw operation results; this phase has no dedicated
+task-history import/export handoff. It is not durable library storage.
 Importing the same result again creates another ID; it does not overwrite an
 existing card by UID or merge partial reads.
 
