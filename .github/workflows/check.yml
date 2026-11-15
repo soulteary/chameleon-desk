@@ -73,7 +73,7 @@ jobs:
       - run: |
           mkdir -p reports
           go build -mod=readonly -trimpath -o reports/chameleon-browser ./cmd/chameleon
-      - name: Verify persistence and feature availability
+      - name: Verify persistence, capabilities and tasks
         env:
           CHAMELEON_WEBUI_TEST_BINARY: reports/chameleon-browser
         run: npm run test:browser

@@ -14,8 +14,9 @@ be established. Browser reload does not close the server-owned connection.
 ## Ownership and ordering
 
 There is one active device session per Desk server, shared by its browser pages.
-This phase does not implement multiple simultaneous devices, background task IDs,
-a task event stream or immediate cancellation. USB/TCP and configured managed BLE
+Background device tasks now provide identifiers, polling, progress, cancellation
+and retained results; see [background tasks](background-tasks.md). Multiple
+simultaneous devices and a task event stream remain outside this phase. USB/TCP and configured managed BLE
 are alternative server modes; `--ble-bridge` still cannot be combined with `--port`.
 Managed BLE retains its scan/select/connect/disconnect API and cleanup ordering.
 The generic direct-connect API cannot replace a configured BLE bridge.

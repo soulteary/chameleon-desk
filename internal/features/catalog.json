@@ -3705,6 +3705,46 @@
         "cmd/chameleon/serve.go",
         "cmd/chameleon/webui/app.js"
       ]
+    },
+    {
+      "id": "device.tasks",
+      "title": "Background Web device tasks",
+      "device": false,
+      "write": false,
+      "effect": "parameter-dependent",
+      "models": [
+        "any"
+      ],
+      "transport": "any",
+      "requirement_mode": "external",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/tasks",
+          "POST /api/tasks"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "missing",
+        "entries": []
+      },
+      "notes": [
+        "Task controls have their own lifecycle. Underlying operation checks and session identity remain authoritative.",
+        "Progress is a phase and protocol attempt/response count, not a percentage. Cancellation is not rollback; interrupted writes can have an unknown outcome.",
+        "Task records survive browser reload, not server restart. No automatic reconnect or mutation replay."
+      ],
+      "sources": [
+        "cmd/chameleon/serve_tasks.go",
+        "cmd/chameleon/webui/background-tasks.js",
+        "docs/background-tasks.md"
+      ]
     }
   ]
 }
