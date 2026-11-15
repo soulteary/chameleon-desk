@@ -1,8 +1,8 @@
 # USB serial TCP bridge
 
 The Python bridge can expose one explicit Chameleon **application serial port**
-through Desk's existing TCP transport. This is an optional backend; native Go
-USB serial support remains available and does not require Python. BLE setup and
+through Desk's existing TCP transport. Routine USB application access uses this backend. Native Go
+USB is reserved for explicit maintenance and DFU; see [USB migration](usb-migration.md). BLE setup and
 its management API are unchanged; see the [bridge README](../tools/ble_bridge/README.md).
 
 The bridge supports a fixed-port mode and an authenticated managed mode. Managed
@@ -32,7 +32,7 @@ tools/ble_bridge/.venv/bin/python tools/ble_bridge/bridge.py \
 On macOS, choose the device's `/dev/cu.*` application port. On Windows, use
 `tools\ble_bridge\.venv\Scripts\python.exe` and, for example,
 `--serial-port COM7`. The account running the bridge needs access to the port.
-Close other applications using it. Native Desk's `devices` command can help
+Close other applications using it. Desk's `devices --native-usb` command can help
 identify local ports; fixed-port mode does not enumerate or auto-select them.
 
 In another terminal:
@@ -71,8 +71,7 @@ The token file is created once with private permissions. Keep it on the backend
 and outside version control; Windows users must restrict its ACL to their
 account. Desk validates it as a private regular file and never returns its
 contents to the browser. `--usb-bridge`, `--ble-bridge` and `--port` are mutually
-exclusive server configurations. Native USB and existing BLE commands are
-unchanged. Add `--allow-writes` only when device/card writes are intended;
+exclusive server configurations. Native USB maintenance is explicit; existing BLE commands are unchanged. Add `--allow-writes` only when device/card writes are intended;
 connection management itself is available in read-only mode and still requires
 the Web session token.
 
@@ -119,7 +118,8 @@ block further use until restart, including late serial-open completion.
 SDK callers use `NewUSBBridge(address, token)` followed by `Scan`, `Select`,
 `Connect`, `Status`, `OpenSession` and `Disconnect`. The SDK checks the configured
 medium, selected device ID, restricted flags and loopback data destination.
-There is no new dedicated USB management CLI subcommand; ordinary CLI reads
+CLI `usb scan --usb-bridge URL --bridge-token-file FILE` uses this management
+endpoint for discovery. Ordinary CLI reads
 can claim a connected bridge through `--port tcp:...` while Desk Web is not
 using that session. The data socket itself remains unauthenticated.
 
@@ -146,8 +146,9 @@ permissions; a declaration attempting to enable those flags is rejected.
   CLI `--yes` and Web `--allow-writes` do not override these transport limits.
 
 For pairing changes, full-device restore or DFU, stop the bridge and use the
-existing native USB workflow. No native USB permissions are changed by this
-backend. BLE bootloader behavior is also unchanged.
+explicit native USB maintenance workflow (`--native-usb` or
+`OpenNativeUSBContext`), or the separate physical DFU path. Routine native USB
+application openers have been removed. BLE bootloader behavior is unchanged.
 
 The data listener remains loopback-only and has no authentication or TLS.
 Other local processes can connect and issue allowed application commands.

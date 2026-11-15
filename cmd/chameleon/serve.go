@@ -38,6 +38,7 @@ type webServer struct {
 	sessionID      string
 	sessionClient  *chameleon.Client
 	sessionTarget  string
+	nativePort     string
 	port           string
 	timeout        time.Duration
 	allowWrites    bool
@@ -49,18 +50,18 @@ type webServer struct {
 	bridgeMu       sync.Mutex
 	bridgeClient   *chameleon.Client
 	// Optional transport factory for offline simulations.
-	listPorts  func() ([]string, error)
 	openDevice func(context.Context, string, time.Duration) (*chameleon.Client, error)
 }
 
 func runServe(args []string) error {
 	f := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := f.String("addr", "127.0.0.1:8088", "loopback listen address (localhost, 127.0.0.1 or ::1)")
-	port := f.String("port", "", "USB serial or TCP port; connect this device when the server starts")
+	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
 	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")
 	usbBridgeURL := f.String("usb-bridge", "", "HTTP loopback origin of a managed USB serial bridge")
+	nativePort := f.String("native-usb-maintenance", "", "explicit local application port for pairing/reset maintenance; routine operations remain on the Python bridge")
 	bridgeToken := f.String("bridge-token-file", "", "private token file shared with the configured device bridge")
 	if e := f.Parse(args[1:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
@@ -79,8 +80,11 @@ func runServe(args []string) error {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("--addr must use a loopback host")
 	}
-	ws := &webServer{sessionEnabled: true, port: *port, timeout: *timeout, allowWrites: *allowWrites}
+	ws := &webServer{nativePort: *nativePort, sessionEnabled: true, port: *port, timeout: *timeout, allowWrites: *allowWrites}
 	ws.rotateSessionID()
+	if *nativePort != "" && (*bridgeURL != "" || *usbBridgeURL != "" || *port != "") {
+		return fmt.Errorf("--native-usb-maintenance cannot be combined with --port or managed bridge options")
+	}
 	if *bridgeURL != "" && *usbBridgeURL != "" {
 		return fmt.Errorf("--ble-bridge and --usb-bridge are mutually exclusive")
 	}
@@ -106,8 +110,12 @@ func runServe(args []string) error {
 		}
 		defer ws.closeBridgeClient()
 	}
-	if ws.bridge == nil && ws.port != "" {
-		if err := ws.connectSession(context.Background(), ws.port); err != nil {
+	startupTarget := ws.port
+	if ws.nativePort != "" {
+		startupTarget = ws.nativePort
+	}
+	if ws.bridge == nil && startupTarget != "" {
+		if err := ws.connectSession(context.Background(), startupTarget); err != nil {
 			return err
 		}
 	}
@@ -304,6 +312,10 @@ func (ws *webServer) withDevice(parent context.Context, fn func(context.Context,
 }
 
 func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(context.Context, *chameleon.Client) (any, error)) {
+	if ws.nativePort != "" && r.URL.Path != "/api/features/device" && r.URL.Path != "/api/settings/read" && r.URL.Path != "/api/settings/configure" {
+		writeErr(w, http.StatusBadGateway, chameleon.ErrUSBBridgeRequired)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	var out any
 	e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {
@@ -343,7 +355,7 @@ func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridgeMedium() == "ble", "usb_bridge_enabled": ws.bridgeMedium() == "usb-serial", "device_sessions_enabled": ws.sessionEnabled, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
+	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridgeMedium() == "ble", "usb_bridge_enabled": ws.bridgeMedium() == "usb-serial", "device_sessions_enabled": ws.sessionEnabled, "native_usb_maintenance_enabled": ws.nativePort != "", "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {
@@ -541,6 +553,10 @@ func (ws *webServer) handleFirmwareCheck(w http.ResponseWriter, r *http.Request)
 			writeErr(w, http.StatusBadRequest, e)
 			return
 		}
+	}
+	if ws.nativePort != "" && (model == "" || version == "") {
+		writeErr(w, http.StatusBadGateway, chameleon.ErrUSBBridgeRequired)
+		return
 	}
 	if model == "" || version == "" {
 		e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {

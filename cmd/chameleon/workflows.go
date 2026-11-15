@@ -133,7 +133,7 @@ func runWorkflowWithContext(ctx context.Context, args []string) (retErr error) {
 		return fmt.Errorf("unknown workflow action %s %s", group, action)
 	}
 	f := flag.NewFlagSet(group+" "+action, flag.ContinueOnError)
-	port := f.String("port", "", "USB or tcp:HOST:PORT (Python bridge for BLE); defaults to one USB device")
+	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 60*time.Second, "per-command timeout")
 	limit := f.Duration("limit", 20*time.Minute, "total operation time limit")
 	input := f.String("input", "", "JSON input")

@@ -132,7 +132,7 @@ func (b *BLEBridge) status(ctx context.Context, method, path string, input any) 
 	if err := b.request(ctx, method, path, input, &result); err != nil {
 		return result, err
 	}
-	if result.APIVersion != 1 || result.Transport.Connection != "tcp" || result.Transport.Medium != b.Medium() || !result.Transport.Managed || result.Transport.AllowsPairingChanges || result.Transport.AllowsDeviceRestore || result.Transport.SupportsDFU {
+	if result.APIVersion != 1 || result.Transport.Connection != "tcp" || result.Transport.Medium != b.Medium() || !result.Transport.Managed || result.Transport.NativeUSBMaintenance || result.Transport.AllowsPairingChanges || result.Transport.AllowsDeviceRestore || result.Transport.SupportsDFU {
 		return BridgeStatus{}, fmt.Errorf("unsupported device bridge transport declaration")
 	}
 	if err := loopbackAuthority(result.DataAddress); err != nil {

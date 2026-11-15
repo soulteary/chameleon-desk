@@ -10,6 +10,14 @@ import (
 )
 
 func (ws *webServer) featureContext(device *chameleon.FeatureDevice) chameleon.FeatureContext {
+	if ws.nativePort != "" {
+		copy := chameleon.FeatureDevice{}
+		if device != nil {
+			copy = *device
+		}
+		copy.Transport = chameleon.TransportInfo{Connection: "serial", Medium: "serial", NativeUSBMaintenance: true, AllowsPairingChanges: true, AllowsDeviceRestore: true, SupportsDFU: true}
+		device = &copy
+	}
 	return chameleon.FeatureContext{Device: device, WritesAllowed: ws.allowWrites, BridgeConfigured: ws.bridge != nil, BridgeMedium: ws.bridgeMedium()}
 }
 func (ws *webServer) featureStates(device *chameleon.FeatureDevice) []chameleon.FeatureAvailability {

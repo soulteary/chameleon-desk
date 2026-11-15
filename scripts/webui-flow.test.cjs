@@ -1018,19 +1018,19 @@ test('catalog controls refer to existing static controls or the dynamic slot act
   }
 });
 
-test('direct session controls select USB or TCP, include identity, and clear old facts', async t => {
+test('direct session controls use bridge TCP without native enumeration, include identity, and clear old facts', async t => {
  let status={session_id:'first',connected:false,target:'',kind:'direct'};
  const p=await page(t,{
   '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'test-session-token',device_sessions_enabled:true}),
   '/api/session/status':()=>response(status),
   '/api/session/ports':()=>response({ports:['COM7','/dev/ttyACM0']}),
-  '/api/session/connect':opts=>{const input=JSON.parse(opts.body);assert.equal(input.session_id,'first');assert.equal(input.target,'COM7');assert.equal(opts.headers['X-Chameleon-Token'],'test-session-token');status={session_id:'second',connected:true,target:input.target,kind:'direct'};return response(status);},
+  '/api/session/connect':opts=>{const input=JSON.parse(opts.body);assert.equal(input.session_id,'first');assert.equal(input.target,'tcp:127.0.0.1:12345');assert.equal(opts.headers['X-Chameleon-Token'],'test-session-token');status={session_id:'second',connected:true,target:input.target,kind:'direct'};return response(status);},
   '/api/session/disconnect':opts=>{assert.equal(JSON.parse(opts.body).session_id,'second');status={session_id:'third',connected:false,target:'',kind:'direct'};return response(status);}
  });
  for(let i=0;i<10;i++) await tick();
- assert.equal(p.$('#session-panel').hidden,false);assert.equal(p.$('#session-ports').options.length,3);
- p.$('#session-ports').value='COM7';p.$('#session-connect').click();await tick();await tick();
- for(let i=0;i<10;i++) await tick(); assert.match(p.$('#session-state').textContent,/COM7/);
+ assert.equal(p.$('#session-panel').hidden,false);assert.equal(p.$('#session-ports'),null);assert.equal(p.requests.some(r=>r.url==='/api/session/ports'),false);
+ p.$('#session-tcp').value='tcp:127.0.0.1:12345';p.$('#session-connect').click();await tick();await tick();
+ for(let i=0;i<10;i++) await tick(); assert.match(p.$('#session-state').textContent,/tcp:127/);
  p.$('#session-disconnect').click();await tick();await tick();assert.match(p.$('#session-state').textContent,/未连接/);
  assert.equal(p.$('#slot-list').dataset.ready,'false');assert.equal(p.requests.filter(r=>r.url==='/api/session/connect').length,1);
 });
@@ -1045,7 +1045,7 @@ test('late device success and failure cannot replace the view after session iden
  }
 });
 
-test('serial enumeration failure leaves TCP selection and the session token usable', async t => {
+test('TCP selection never requests the retired native enumeration endpoint', async t => {
  const p=await page(t,{
   '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'test-session-token',device_sessions_enabled:true}),
   '/api/session/status':()=>response({session_id:'current',connected:false,target:'',kind:'direct'}),
@@ -1053,7 +1053,7 @@ test('serial enumeration failure leaves TCP selection and the session token usab
   '/api/session/connect':opts=>{assert.equal(opts.headers['X-Chameleon-Token'],'test-session-token');assert.equal(JSON.parse(opts.body).target,'tcp:localhost:1234');return response({session_id:'next',connected:true,target:'tcp:localhost:1234',kind:'direct'});}
  });
  for(let i=0;i<10;i++)await tick();
- assert.match(p.$('#session-state').textContent,/仍可指定 TCP/);
+ assert.equal(p.requests.some(r=>r.url==='/api/session/ports'),false);
  assert.equal(p.$('#session-connect').disabled,false);
  p.$('#session-tcp').value='tcp:localhost:1234';await p.click('#session-connect');for(let i=0;i<10;i++)await tick();
  assert.match(p.$('#session-state').textContent,/已连接/);
@@ -1136,4 +1136,35 @@ test('only the configured bridge medium controls shared availability buttons', a
     assert.equal(p.requests.filter(r=>r.url==='/api/bridge/scan').length,1);
     assert.equal(p.$('#bridge-scan').disabled,false);
   }
+});
+
+test('native USB maintenance hides application addressing and reconnects only the configured port', async t => {
+ const nativeStates=fixtureStates(true).map(s=>s.id==='device.info'?{...s,state:'unavailable',reasons:[{code:'usb_bridge_required',message:'use the Python bridge'}]}:s);
+ let status={session_id:'native-first',kind:'native-usb-maintenance',connected:false,target:''};
+ const p=await page(t,{
+  '/api/capabilities':()=>response({writes_enabled:true,csrf_token:'maintenance-token',device_sessions_enabled:true,native_usb_maintenance_enabled:true,feature_states:nativeStates}),
+  '/api/session/status':()=>response(status),
+  '/api/session/connect':opts=>{const body=JSON.parse(opts.body);assert.equal(body.target,'');assert.equal(body.session_id,'native-first');status={session_id:'native-open',kind:'native-usb-maintenance',connected:true,target:'COM7'};return response(status);},
+  '/api/session/disconnect':()=>{status={session_id:'native-closed',kind:'native-usb-maintenance',connected:false,target:''};return response(status);}
+ });
+ assert.equal(p.$('#session-tcp-label').hidden,true);
+ assert.match(p.$('#session-note').textContent,/维护模式/);
+ assert.equal(p.$('#session-ports'),null);
+ p.$('#session-tcp').value='tcp:unrelated:12345';await p.click('#session-connect');
+ assert.match(p.$('#session-state').textContent,/COM7/);
+ assert.equal(p.$('#refresh-info').disabled,true);
+ assert.equal(p.requests.some(r=>r.url==='/api/info'),false);
+ await p.click('#session-disconnect');assert.match(p.$('#session-state').textContent,/未连接/);
+ assert.equal(p.requests.some(r=>r.url==='/api/session/ports'),false);
+});
+
+test('maintenance scope disables application controls with a bridge migration reason', async t => {
+ const states=fixtureStates(true).map(s=>['reader.hf-scan','reader.lf-scan','device.info','slot.read-details','slot.configure'].includes(s.id)?{...s,state:'unavailable',reasons:[{code:'usb_bridge_required',message:'use the Python bridge'}]}:s);
+ const p=await page(t,{
+  '/api/capabilities':()=>response({writes_enabled:true,csrf_token:'maintenance-token',native_usb_maintenance_enabled:true,feature_states:states})
+ },{writes:true});
+ assert.equal(p.$('#scan-hf').disabled,true);
+ const hint=p.d.getElementById(p.$('#scan-hf').getAttribute('aria-describedby').split(' ').at(-1));
+ assert.match(hint.textContent,/Python 桥/);
+ assert.equal(p.$('#refresh-features').disabled,false);
 });

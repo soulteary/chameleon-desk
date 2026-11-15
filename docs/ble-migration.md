@@ -6,7 +6,8 @@ have been removed. Linux, macOS and Windows use the same Python/Bleak bridge.
 The bridge is a separate process; Desk does not start Python or install its
 packages automatically.
 
-USB serial connections and offline tools do not require Python. The Go build
+Native USB maintenance/DFU and offline tools do not require Python. Routine USB
+application access now also uses the Python bridge; see [USB migration](usb-migration.md). The Go build
 script now defaults to `CGO_ENABLED=0`. An explicit `CGO_ENABLED=1` still uses
 the same serial/TCP implementation, without a native Bluetooth backend. The
 optional C recovery workers and C regression tests still need their existing

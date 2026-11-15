@@ -27,7 +27,8 @@ func runBackup(args []string) (retErr error) {
 	input := f.String("input", "", "backup JSON")
 	output := f.String("output", "", "new backup/result file")
 	rollback := f.String("rollback-output", "", "mandatory pre-restore snapshot path")
-	port := f.String("port", "", "explicit USB serial or TCP application port (Python bridge for BLE)")
+	port := f.String("port", "", "create: bridge TCP address; restore: explicit physical application port with --native-usb")
+	nativeUSB := f.Bool("native-usb", false, "restore only: use the physical USB maintenance path")
 	yes := f.Bool("yes", false, "allow temporary slot switching or full restore")
 	commit := f.Bool("commit", false, "explicit final save of slot configuration and settings")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
@@ -37,8 +38,17 @@ func runBackup(args []string) (retErr error) {
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
 	}
+	if *nativeUSB && action != "restore" {
+		return fmt.Errorf("--native-usb is reserved for restore and its pre-restore snapshot")
+	}
+	if action == "restore" && !*nativeUSB {
+		return fmt.Errorf("restore requires --native-usb and an explicit physical application port")
+	}
 	if e := checkNewOutput(*output); e != nil {
 		return e
+	}
+	if action == "restore" && (strings.HasPrefix(*port, "tcp:") || strings.HasPrefix(*port, "ble:")) {
+		return fmt.Errorf("restore includes BLE pairing settings; use a direct serial connection with --native-usb")
 	}
 	var b chameleon.DeviceBackup
 	if action == "inspect" || action == "restore" {
@@ -82,7 +92,13 @@ func runBackup(args []string) (retErr error) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	c, e := chameleon.OpenContext(ctx, *port, *timeout)
+	var c *chameleon.Client
+	var e error
+	if *nativeUSB {
+		c, e = openNativeUSB(ctx, *port, *timeout)
+	} else {
+		c, e = chameleon.OpenContext(ctx, *port, *timeout)
+	}
 	if e != nil {
 		return e
 	}
@@ -99,7 +115,7 @@ func runBackup(args []string) (retErr error) {
 		}
 		return saveResultFile(*output, append(data, '\n'))
 	}
-	original, e := c.BackupDevice(ctx)
+	original, e := c.BackupForRestore(ctx)
 	if e != nil {
 		return fmt.Errorf("pre-restore backup failed; restore not started: %w", e)
 	}

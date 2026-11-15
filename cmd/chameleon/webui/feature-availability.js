@@ -7,6 +7,7 @@
       device_unknown: "请先读取设备信息或刷新功能状态", capabilities_unknown: "设备命令列表未知，请重新读取",
       model_unknown: "设备型号未知，请重新读取", unsupported_model: "当前设备型号不支持此功能", writes_disabled: "只读模式：启动服务时需启用 --allow-writes",
       transport_unknown: "底层传输未知，请重新读取设备状态", transport_restricted: "此操作要求直连串口，BLE / TCP 不允许",
+      usb_bridge_required: "常规 USB 操作请使用 Python 桥；当前原生连接仅用于维护",
       bridge_required: "请配置对应的受管设备桥", no_entry: "此端没有已支持的专用入口",
       parameters_required: "需选择具体参数或外部运行环境后判断", invalid_parameters: "请检查输入参数"
     };
@@ -38,6 +39,7 @@
       catch (_) { this.catalog = []; this.states = new Map(); this.clear("功能控件定义无效，请重试读取权限"); return false; }
       this.catalog = catalog;
       this.bridgePolicy = caps.usb_bridge_enabled === true ? "managed-usb" : "managed-ble";
+      this.nativeMaintenance = caps.native_usb_maintenance_enabled === true;
       return this.setStates(caps.feature_schema_version, caps.feature_states, caps.feature_device || null);
     }
     observe(info) {
@@ -47,7 +49,12 @@
     }
     clear(message = "连接状态已变化，请重新读取设备能力") {
       this.epoch++; this.device = null;
-      for (const f of this.catalog) if (f.device || f.requirement_mode === "card-plan") this.states.set(f.id, { id: f.id, state: "unknown", reasons: [{ code: "device_unknown", message }], required_commands: [] });
+      for (const f of this.catalog) if (f.device || f.requirement_mode === "card-plan") {
+        // Connection identity changes invalidate firmware facts, not the
+        // configured native-maintenance boundary supplied by the server.
+        const policy = this.nativeMaintenance ? this.states.get(f.id)?.reasons.filter(r => r.code === "usb_bridge_required") || [] : [];
+        this.states.set(f.id, { id: f.id, state: policy.length ? "unavailable" : "unknown", reasons: policy.length ? policy : [{ code: "device_unknown", message }], required_commands: [] });
+      }
       this.message = message; this.render(); this.changed(); document.dispatchEvent(new Event("desk-feature-device"));
     }
     state(id) {

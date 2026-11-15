@@ -53,7 +53,12 @@ func (ws *webServer) closeSession() {
 func (ws *webServer) connectSession(ctx context.Context, target string) error {
 	ws.closeSession()
 	open := ws.openDevice
-	if open == nil {
+	if ws.nativePort != "" {
+		if target != ws.nativePort {
+			return fmt.Errorf("native maintenance can only connect its configured port")
+		}
+		open = openNativeUSB
+	} else if open == nil {
 		open = chameleon.OpenContext
 	}
 	c, err := open(ctx, target, ws.timeout)
@@ -70,7 +75,7 @@ func (ws *webServer) connectSession(ctx context.Context, target string) error {
 	ws.sessionMu.Unlock()
 	return nil
 }
-func validateSessionTarget(target string, ports []string) error {
+func validateSessionTarget(target string) error {
 	if strings.HasPrefix(target, "tcp:") {
 		host, port, err := net.SplitHostPort(strings.TrimPrefix(target, "tcp:"))
 		n, e := strconv.Atoi(port)
@@ -79,12 +84,7 @@ func validateSessionTarget(target string, ports []string) error {
 		}
 		return nil
 	}
-	for _, p := range ports {
-		if target == p {
-			return nil
-		}
-	}
-	return fmt.Errorf("select a listed serial port or enter tcp:host:port")
+	return chameleon.ErrUSBBridgeRequired
 }
 func (ws *webServer) sessionStatus() any {
 	ws.sessionMu.Lock()
@@ -92,6 +92,9 @@ func (ws *webServer) sessionStatus() any {
 	ws.sessionMu.Unlock()
 	connected := c != nil && !c.IsClosed()
 	kind := "direct"
+	if ws.nativePort != "" {
+		kind = "native-usb-maintenance"
+	}
 	if ws.bridge != nil {
 		kind = "ble-bridge"
 		if ws.bridge.Medium() == "usb-serial" {
@@ -109,15 +112,9 @@ func (ws *webServer) sessionStatus() any {
 func (ws *webServer) handleSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path == "/api/session/ports" {
-		ports, err := ws.serialPorts()
-		if err != nil {
-			writeErr(w, 502, err)
-			return
-		}
-		if ports == nil {
-			ports = []string{}
-		}
-		writeJSON(w, map[string]any{"ports": ports})
+		// Retained for older clients. Application discovery belongs to the
+		// Python bridge; this endpoint never enumerates native serial ports.
+		writeJSON(w, map[string]any{"ports": []string{}, "usb_bridge_required": true})
 		return
 	}
 	// Status and transitions take the same gate as hardware work. A transition
@@ -158,19 +155,17 @@ func (ws *webServer) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/api/session/connect":
-		var ports []string
-		if !strings.HasPrefix(input.Target, "tcp:") {
-			var err error
-			ports, err = ws.serialPorts()
-			if err != nil {
-				writeErr(w, 502, err)
+		if ws.nativePort != "" {
+			if input.Target != "" && input.Target != ws.nativePort {
+				writeErr(w, 400, fmt.Errorf("native maintenance port is fixed by server configuration"))
 				return
 			}
-		}
-		if err := validateSessionTarget(input.Target, ports); err != nil {
+			input.Target = ws.nativePort
+		} else if err := validateSessionTarget(input.Target); err != nil {
 			writeErr(w, 400, err)
 			return
 		}
+
 		if err := ws.connectSession(ctx, input.Target); err != nil {
 			writeErr(w, 502, err)
 			return
@@ -182,11 +177,4 @@ func (ws *webServer) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, ws.sessionStatus())
-}
-
-func (ws *webServer) serialPorts() ([]string, error) {
-	if ws.listPorts != nil {
-		return ws.listPorts()
-	}
-	return chameleon.Ports()
 }

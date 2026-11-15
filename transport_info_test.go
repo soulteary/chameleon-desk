@@ -187,7 +187,7 @@ func TestUSBSerialDeclarationIsDescriptiveAndRestricted(t *testing.T) {
 }
 
 func TestUSBDeclarationCannotAdvertisePrivileges(t *testing.T) {
-	for _, extra := range []string{`"allows_pairing_changes":true`, `"allows_device_restore":true`, `"supports_dfu":true`} {
+	for _, extra := range []string{`"native_usb_maintenance":true`, `"allows_pairing_changes":true`, `"allows_device_restore":true`, `"supports_dfu":true`} {
 		a, b := net.Pipe()
 		go func() {
 			defer b.Close()

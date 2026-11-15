@@ -11,11 +11,11 @@
  <label>修改项<select id="settings-field"><option value="animation">动画模式</option><option value="sleep_seconds">休眠秒数</option><option value="long_press_ms">长按阈值</option><option value="short_a">A 短按动作</option><option value="short_b">B 短按动作</option><option value="long_a">A 长按动作</option><option value="long_b">B 长按动作</option><option value="ble_pairing">BLE 配对开关（仅直连串口）</option><option value="ble_key">BLE PIN（仅直连串口）</option></select></label>
  <label>新值<input id="settings-value" autocomplete="off"></label><label><input id="settings-persist" type="checkbox">回读成功后保存设置到 Flash</label><button id="settings-apply" disabled>修改并回读</button><div id="settings-result" role="status"></div><p>PIN 不会显示在读取结果中。读取不支持的可选字段会标明，不会自动填成默认值。</p></section>
 <section id="tasks-panel" hidden aria-label="后台设备任务"><h3>后台任务</h3><p>刷新页面可继续查询；取消不代表撤销已执行命令。</p><div id="task-list" aria-live="polite"></div></section>
- <section id="session-panel" class="bridge-panel" hidden aria-label="USB 和 TCP 连接管理">
+ <section id="session-panel" class="bridge-panel" hidden aria-label="TCP 桥和原生 USB 维护连接">
  <p id="session-state" role="status">未连接</p>
- <div class="row"><label>USB 串口 <select id="session-ports"><option value="">选择串口</option></select></label><button id="session-refresh">刷新连接与端口</button></div>
- <div class="row"><label>TCP 地址 <input id="session-tcp" placeholder="tcp:127.0.0.1:12345"></label><button id="session-connect">连接</button><button id="session-disconnect">断开</button></div>
- <p class="muted">填写 TCP 地址时优先连接该地址，否则使用所选串口。连接由此 Desk 服务的所有页面共享。</p>
+ <div class="row"><button id="session-refresh">刷新连接状态</button></div>
+ <div class="row"><label id="session-tcp-label">TCP 地址 <input id="session-tcp" placeholder="tcp:127.0.0.1:12345"></label><button id="session-connect">连接</button><button id="session-disconnect">断开</button></div>
+ <p id="session-note" class="muted">USB 应用操作请连接 Python 桥的 TCP 地址。连接由此 Desk 服务的所有页面共享。</p>
  </section>
  <section id="bridge-panel" class="bridge-panel" hidden aria-label="BLE 桥连接管理">
       <h3 id="bridge-title">蓝牙连接</h3><p id="bridge-state" role="status">正在读取连接状态…</p>

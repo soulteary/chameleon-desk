@@ -82,17 +82,26 @@ func ReadFirmwareApplication(path string) (dfu.Image, error) {
 	return dfu.Image{Init: init, Firmware: data}, nil
 }
 
+type dfuSerialPort interface {
+	nativeSerialPort
+	SetRTS(bool) error
+}
+
+var openDFUSerial = func(path string) (dfuSerialPort, error) {
+	return serial.Open(path, &serial.Mode{BaudRate: 115200, DataBits: 8, Parity: serial.NoParity, StopBits: serial.OneStopBit})
+}
+
 // FlashFirmware requires an already enumerated USB DFU port. It never guesses
 // a port, enters bootloader, downloads firmware or changes firmware protection.
 func FlashFirmware(ctx context.Context, dfuPort, zipFile string, options dfu.Options) (dfu.Result, error) {
-	if strings.TrimSpace(dfuPort) == "" || strings.HasPrefix(dfuPort, "ble:") || strings.HasPrefix(dfuPort, "tcp:") {
-		return dfu.Result{}, fmt.Errorf("an explicit USB DFU serial port is required; the Python BLE bridge does not support DFU")
+	if !nativeUSBPath(dfuPort) {
+		return dfu.Result{}, fmt.Errorf("an explicit USB DFU serial port is required; Python device bridges do not support DFU")
 	}
 	image, e := ReadFirmwareApplication(zipFile)
 	if e != nil {
 		return dfu.Result{}, e
 	}
-	p, e := serial.Open(dfuPort, &serial.Mode{BaudRate: 115200, DataBits: 8, Parity: serial.NoParity, StopBits: serial.OneStopBit})
+	p, e := openDFUSerial(dfuPort)
 	if e != nil {
 		return dfu.Result{}, e
 	}

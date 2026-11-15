@@ -199,7 +199,7 @@ func (c *Client) backupLocked(ctx context.Context) (out DeviceBackup, err error)
 	out.Mode = mode[0]
 	out.ActiveSlot = int(active[0]) + 1
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 2*c.timeout)
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*c.timeout)
 		defer cancel()
 		_, e1 := c.exchange(cleanup, 1003, active, 0x68)
 		_, e2 := c.exchange(cleanup, 1001, mode, 0x68)
@@ -322,6 +322,9 @@ func (c *Client) backupLocked(ctx context.Context) (out DeviceBackup, err error)
 // BackupDevice serializes all eight slots, temporarily switching active slot
 // and mode; restores both even on failure. It never initializes or saves slots.
 func (c *Client) BackupDevice(ctx context.Context) (DeviceBackup, error) {
+	if c.transportInfo.NativeUSBMaintenance && ctx.Value(nativeRestoreContextKey{}) != c {
+		return DeviceBackup{}, ErrUSBBridgeRequired
+	}
 	if e := c.acquire(ctx); e != nil {
 		return DeviceBackup{}, e
 	}
@@ -354,6 +357,11 @@ func (c *Client) RestoreDevice(ctx context.Context, b DeviceBackup, o RestoreOpt
 		return out, e
 	}
 	defer c.release()
+	// This private scope is confined to the serialized restore workflow.
+	// It does not expose a general native-USB application client to callers.
+	if c.transportInfo.NativeUSBMaintenance {
+		ctx = context.WithValue(ctx, nativeRestoreContextKey{}, c)
+	}
 	q := func(cmd Command, p ...byte) error { _, e := c.exchange(ctx, uint16(cmd), p, 0x68); return e }
 	model, e := c.exchange(ctx, 1033, nil, 0x68)
 	if e != nil {
@@ -425,7 +433,7 @@ func (c *Client) RestoreDevice(ctx context.Context, b DeviceBackup, o RestoreOpt
 	success := false
 	defer func() {
 		if !success {
-			cleanup, cancel := context.WithTimeout(context.Background(), 2*c.timeout)
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*c.timeout)
 			defer cancel()
 			_, e1 := c.exchange(cleanup, 1003, active, 0x68)
 			_, e2 := c.exchange(cleanup, 1001, mode, 0x68)
@@ -620,4 +628,13 @@ func canonicalBackup(b DeviceBackup) DeviceBackup {
 		b.Slots[i].Fields = fields
 	}
 	return b
+}
+
+// BackupForRestore captures the required pre-restore snapshot on a native USB
+// maintenance connection. General backup creation continues to use a bridge.
+func (c *Client) BackupForRestore(ctx context.Context) (DeviceBackup, error) {
+	if !c.transportInfo.NativeUSBMaintenance {
+		return DeviceBackup{}, fmt.Errorf("pre-restore snapshot requires native USB maintenance")
+	}
+	return c.BackupDevice(context.WithValue(ctx, nativeRestoreContextKey{}, c))
 }
