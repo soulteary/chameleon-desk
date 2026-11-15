@@ -108,3 +108,76 @@ func TestBridgeTokenFileValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestUSBBridgeWebUsesSharedAuthenticationAndSessionIdentity(t *testing.T) {
+	secret := strings.Repeat("d", 64)
+	var requests atomic.Int32
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") != "Bearer "+secret {
+			t.Error("missing bridge token")
+		}
+		if r.URL.Path == "/v1/scan" {
+			_ = json.NewEncoder(w).Encode(chameleon.BridgeScan{APIVersion: 1, Devices: []chameleon.BridgeDevice{}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(chameleon.BridgeStatus{APIVersion: 1, State: "disconnected", DataAddress: "127.0.0.1:12345", Transport: chameleon.TransportInfo{Connection: "tcp", Medium: "usb-serial", Managed: true}})
+	}))
+	defer remote.Close()
+	manager, err := chameleon.NewUSBBridge(remote.URL, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := &webServer{bridge: manager, sessionEnabled: true, timeout: time.Second}
+	ws.rotateSessionID()
+	h := offlineWeb(t, ws)
+	for _, tc := range []struct {
+		path, token, session string
+		want                 int
+	}{
+		{"/api/bridge/scan", "", ws.currentSessionID(), 403},
+		{"/api/bridge/scan", ws.token, "old-session", 409},
+		{"/api/bridge/scan", ws.token, ws.currentSessionID(), 200},
+		{"/api/session/connect", ws.token, ws.currentSessionID(), 409},
+	} {
+		r := httptest.NewRequest("POST", "http://127.0.0.1"+tc.path, strings.NewReader(`{}`))
+		r.Header.Set("X-Chameleon-Token", tc.token)
+		r.Header.Set("X-Chameleon-Session", tc.session)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Fatal(tc, w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), secret) {
+			t.Fatal("credential exposed")
+		}
+	}
+	if requests.Load() != 1 {
+		t.Fatal("stale or untrusted request reached bridge", requests.Load())
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "http://127.0.0.1/api/capabilities", nil))
+	var caps map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &caps); err != nil {
+		t.Fatal(err)
+	}
+	if caps["usb_bridge_enabled"] != true || caps["ble_bridge_enabled"] != false {
+		t.Fatal(caps)
+	}
+	status := ws.sessionStatus().(map[string]any)
+	if status["kind"] != "usb-bridge" || status["connected"] != false {
+		t.Fatal(status)
+	}
+}
+
+func TestServeUSBBridgeFlagsRejectAmbiguousConfiguration(t *testing.T) {
+	for _, args := range [][]string{
+		{"serve", "--usb-bridge", "http://127.0.0.1:12346"},
+		{"serve", "--usb-bridge", "http://127.0.0.1:12346", "--bridge-token-file", "missing", "--port", "COM7"},
+		{"serve", "--usb-bridge", "http://127.0.0.1:12346", "--ble-bridge", "http://127.0.0.1:12347", "--bridge-token-file", "missing"},
+	} {
+		if err := runServe(args); err == nil {
+			t.Fatal("ambiguous configuration accepted", args)
+		}
+	}
+}

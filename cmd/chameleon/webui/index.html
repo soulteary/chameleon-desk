@@ -18,12 +18,12 @@
  <p class="muted">填写 TCP 地址时优先连接该地址，否则使用所选串口。连接由此 Desk 服务的所有页面共享。</p>
  </section>
  <section id="bridge-panel" class="bridge-panel" hidden aria-label="BLE 桥连接管理">
-      <h3>蓝牙连接</h3><p id="bridge-state" role="status">正在读取连接状态…</p>
+      <h3 id="bridge-title">蓝牙连接</h3><p id="bridge-state" role="status">正在读取连接状态…</p>
       <div class="row"><button id="bridge-scan">扫描设备</button><button id="bridge-refresh">刷新连接状态</button></div>
       <div class="row"><label for="bridge-devices">扫描结果</label><select id="bridge-devices"><option value="">先扫描设备</option></select><button id="bridge-select">选择设备</button></div>
       <p id="bridge-selected">尚未选择设备</p>
       <div class="row"><button id="bridge-connect">连接所选设备</button><button id="bridge-disconnect">断开连接</button></div>
-      <p class="muted">底层连接为 BLE。此连接不支持修改配对设置、整机恢复或固件上传。</p>
+      <p id="bridge-note" class="muted">底层连接为 BLE。此连接不支持修改配对设置、整机恢复或固件上传。</p>
       <p id="bridge-error" role="alert" hidden></p>
     </section>
     <details id="feature-panel"><summary>功能、入口与禁用原因</summary><p id="feature-summary" role="status">请读取设备以判断固件能力；离线工具可继续使用</p><div id="feature-list"></div></details><div id="info-cards" class="cards"></div>

@@ -45,7 +45,7 @@ type webServer struct {
 	gate           chan struct{}
 	listenPort     string
 	token          string
-	bridge         *chameleon.BLEBridge
+	bridge         managedBridge
 	bridgeMu       sync.Mutex
 	bridgeClient   *chameleon.Client
 	// Optional transport factory for offline simulations.
@@ -60,7 +60,8 @@ func runServe(args []string) error {
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
 	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")
-	bridgeToken := f.String("bridge-token-file", "", "private token file shared with the managed BLE bridge")
+	usbBridgeURL := f.String("usb-bridge", "", "HTTP loopback origin of a managed USB serial bridge")
+	bridgeToken := f.String("bridge-token-file", "", "private token file shared with the configured device bridge")
 	if e := f.Parse(args[1:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
 			return nil
@@ -80,15 +81,26 @@ func runServe(args []string) error {
 	}
 	ws := &webServer{sessionEnabled: true, port: *port, timeout: *timeout, allowWrites: *allowWrites}
 	ws.rotateSessionID()
-	if (*bridgeURL == "") != (*bridgeToken == "") || (*bridgeURL != "" && *port != "") {
-		return fmt.Errorf("--ble-bridge requires --bridge-token-file and cannot be combined with --port")
+	if *bridgeURL != "" && *usbBridgeURL != "" {
+		return fmt.Errorf("--ble-bridge and --usb-bridge are mutually exclusive")
 	}
-	if *bridgeURL != "" {
+	configuredURL := *bridgeURL
+	if *usbBridgeURL != "" {
+		configuredURL = *usbBridgeURL
+	}
+	if (configuredURL == "") != (*bridgeToken == "") || (configuredURL != "" && *port != "") {
+		return fmt.Errorf("--ble-bridge or --usb-bridge requires --bridge-token-file and cannot be combined with --port")
+	}
+	if configuredURL != "" {
 		token, err := readBridgeToken(*bridgeToken)
 		if err != nil {
 			return err
 		}
-		ws.bridge, err = chameleon.NewBLEBridge(*bridgeURL, token)
+		if *usbBridgeURL != "" {
+			ws.bridge, err = chameleon.NewUSBBridge(configuredURL, token)
+		} else {
+			ws.bridge, err = chameleon.NewBLEBridge(configuredURL, token)
+		}
 		if err != nil {
 			return err
 		}
@@ -255,7 +267,7 @@ func (ws *webServer) withDevice(parent context.Context, fn func(context.Context,
 	if ws.bridge != nil {
 		c := ws.getBridgeClient()
 		if c == nil || c.IsClosed() {
-			return fmt.Errorf("BLE bridge session is disconnected; connect from device management")
+			return fmt.Errorf("device bridge session is disconnected; connect from device management")
 		}
 		return fn(ctx, c)
 	}
@@ -331,7 +343,7 @@ func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil, "device_sessions_enabled": ws.sessionEnabled, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
+	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridgeMedium() == "ble", "usb_bridge_enabled": ws.bridgeMedium() == "usb-serial", "device_sessions_enabled": ws.sessionEnabled, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {

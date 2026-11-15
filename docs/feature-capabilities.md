@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 78 workflows; this is not a coverage percentage.
+sources. It currently groups 83 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -67,7 +67,10 @@ availability, err := chameleon.EvaluateFeature("reader.hf-scan", "sdk",
 Use `EvaluateFeatures` for a complete surface view. `FeatureRequest` resolves a
 selected saved card/slot/options, a raw command, or explicit firmware-check
 parameters. `WritesAllowed` and `BridgeConfigured` are caller-supplied context,
-not permissions granted by the SDK. No evaluator call executes a device command.
+not permissions granted by the SDK. `BridgeMedium` distinguishes `ble` from
+`usb-serial`; an omitted value preserves existing BLE evaluator callers.
+The configured bridge must match the workflow's `managed-ble` or `managed-usb`
+policy. No evaluator call executes a device command.
 `Client.FeatureDevice` queries only model and capabilities and reports the
 client's existing immutable transport information.
 

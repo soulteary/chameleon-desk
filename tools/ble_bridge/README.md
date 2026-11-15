@@ -1,7 +1,7 @@
 # Python device bridge
 
 The existing BLE backend and optional USB serial backend share the TCP entrypoint.
-For fixed-port USB setup, restrictions and tests, see [USB serial TCP bridge](../../docs/usb-bridge.md).
+For fixed-port and managed USB setup, restrictions and tests, see [USB serial TCP bridge](../../docs/usb-bridge.md).
 The BLE instructions below continue to use the Bleak-only requirements file.
 
 This optional Python process connects to one Chameleon Ultra or Lite over BLE

@@ -14,11 +14,16 @@ import (
 	"time"
 )
 
-// BridgeDevice is a NUS advertisement returned by the bridge's last scan.
+// BridgeDevice describes a device returned by the bridge's last scan.
 type BridgeDevice struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	RSSI int    `json:"rssi,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	RSSI         int    `json:"rssi,omitempty"`
+	VID          *int   `json:"vid,omitempty"`
+	PID          *int   `json:"pid,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	Location     string `json:"location,omitempty"`
+	HWID         string `json:"hwid,omitempty"`
 }
 
 type BridgeStatus struct {
@@ -40,6 +45,7 @@ type BridgeScan struct {
 // returned by these methods. Device protocol traffic uses a separate TCP port.
 type BLEBridge struct {
 	base, token string
+	medium      string
 	http        *http.Client
 }
 
@@ -77,6 +83,14 @@ func NewBLEBridge(address, token string) (*BLEBridge, error) {
 	}}, nil
 }
 
+// Medium returns the underlying medium expected from this configured bridge.
+func (b *BLEBridge) Medium() string {
+	if b.medium == "usb-serial" {
+		return b.medium
+	}
+	return "ble"
+}
+
 func (b *BLEBridge) request(ctx context.Context, method, path string, input, output any) error {
 	var payload io.Reader
 	if method == http.MethodPost {
@@ -96,19 +110,19 @@ func (b *BLEBridge) request(ctx context.Context, method, path string, input, out
 	}
 	response, err := b.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("BLE bridge is unavailable: %w", err)
+		return fmt.Errorf("device bridge is unavailable: %w", err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
 	if err != nil || len(data) > 64<<10 {
-		return fmt.Errorf("invalid BLE bridge response size")
+		return fmt.Errorf("invalid device bridge response size")
 	}
 	if response.StatusCode != http.StatusOK {
 		// Do not reflect a configured credential or untrusted error body.
-		return fmt.Errorf("BLE bridge %s returned HTTP %d", path, response.StatusCode)
+		return fmt.Errorf("device bridge %s returned HTTP %d", path, response.StatusCode)
 	}
 	if err := json.Unmarshal(data, output); err != nil {
-		return fmt.Errorf("invalid BLE bridge JSON response")
+		return fmt.Errorf("invalid device bridge JSON response")
 	}
 	return nil
 }
@@ -118,8 +132,8 @@ func (b *BLEBridge) status(ctx context.Context, method, path string, input any) 
 	if err := b.request(ctx, method, path, input, &result); err != nil {
 		return result, err
 	}
-	if result.APIVersion != 1 || result.Transport.Connection != "tcp" || result.Transport.Medium != "ble" || !result.Transport.Managed || result.Transport.AllowsPairingChanges || result.Transport.AllowsDeviceRestore || result.Transport.SupportsDFU {
-		return BridgeStatus{}, fmt.Errorf("unsupported BLE bridge transport declaration")
+	if result.APIVersion != 1 || result.Transport.Connection != "tcp" || result.Transport.Medium != b.Medium() || !result.Transport.Managed || result.Transport.AllowsPairingChanges || result.Transport.AllowsDeviceRestore || result.Transport.SupportsDFU {
+		return BridgeStatus{}, fmt.Errorf("unsupported device bridge transport declaration")
 	}
 	if err := loopbackAuthority(result.DataAddress); err != nil {
 		return BridgeStatus{}, err
@@ -127,7 +141,7 @@ func (b *BLEBridge) status(ctx context.Context, method, path string, input any) 
 	switch result.State {
 	case "disconnected", "scanning", "connecting", "connected", "disconnecting", "blocked":
 	default:
-		return BridgeStatus{}, fmt.Errorf("unknown BLE bridge connection state")
+		return BridgeStatus{}, fmt.Errorf("unknown device bridge connection state")
 	}
 	return result, nil
 }
@@ -142,7 +156,7 @@ func (b *BLEBridge) Scan(ctx context.Context) (BridgeScan, error) {
 		return result, err
 	}
 	if result.APIVersion != 1 {
-		return BridgeScan{}, fmt.Errorf("unsupported BLE bridge scan version")
+		return BridgeScan{}, fmt.Errorf("unsupported device bridge scan version")
 	}
 	return result, nil
 }
@@ -163,7 +177,7 @@ func (b *BLEBridge) Disconnect(ctx context.Context) (BridgeStatus, error) {
 // that BLE session; callers must explicitly connect again after a failure.
 func (b *BLEBridge) OpenSession(ctx context.Context, status BridgeStatus, timeout time.Duration) (*Client, error) {
 	if status.State != "connected" || status.SelectedDevice == nil || status.SelectedDevice.ID == "" {
-		return nil, fmt.Errorf("connect a selected BLE device first")
+		return nil, fmt.Errorf("connect a selected bridge device first")
 	}
 	if err := loopbackAuthority(status.DataAddress); err != nil {
 		return nil, err
@@ -172,9 +186,35 @@ func (b *BLEBridge) OpenSession(ctx context.Context, status BridgeStatus, timeou
 	if err != nil {
 		return nil, err
 	}
-	if c.transportInfo.Medium != "ble" || !c.transportInfo.Managed || c.bridgeDeviceID != status.SelectedDevice.ID {
+	if c.transportInfo.Medium != b.Medium() || !c.transportInfo.Managed || c.bridgeDeviceID != status.SelectedDevice.ID {
 		c.Close()
-		return nil, fmt.Errorf("BLE bridge session does not match the selected device")
+		return nil, fmt.Errorf("bridge session does not match the selected device")
 	}
 	return c, nil
+}
+
+// USBBridge controls an authenticated local USB serial bridge. Device traffic
+// uses the same restricted TCP transport as the fixed-port USB bridge.
+type USBBridge struct{ control *BLEBridge }
+
+func NewUSBBridge(address, token string) (*USBBridge, error) {
+	control, err := NewBLEBridge(address, token)
+	if err != nil {
+		return nil, err
+	}
+	control.medium = "usb-serial"
+	return &USBBridge{control: control}, nil
+}
+func (b *USBBridge) Medium() string                                   { return b.control.Medium() }
+func (b *USBBridge) Status(ctx context.Context) (BridgeStatus, error) { return b.control.Status(ctx) }
+func (b *USBBridge) Scan(ctx context.Context) (BridgeScan, error)     { return b.control.Scan(ctx) }
+func (b *USBBridge) Select(ctx context.Context, id string) (BridgeStatus, error) {
+	return b.control.Select(ctx, id)
+}
+func (b *USBBridge) Connect(ctx context.Context) (BridgeStatus, error) { return b.control.Connect(ctx) }
+func (b *USBBridge) Disconnect(ctx context.Context) (BridgeStatus, error) {
+	return b.control.Disconnect(ctx)
+}
+func (b *USBBridge) OpenSession(ctx context.Context, status BridgeStatus, timeout time.Duration) (*Client, error) {
+	return b.control.OpenSession(ctx, status, timeout)
 }

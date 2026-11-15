@@ -115,7 +115,6 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 		if e = json.Unmarshal(line[len("CHAMELEON_BRIDGE/1 "):], &declaration); e != nil ||
 			declaration.Version != 1 || declaration.Transport.Connection != "tcp" ||
 			(declaration.Transport.Medium != "ble" && declaration.Transport.Medium != "usb-serial") ||
-			(declaration.Transport.Medium == "usb-serial" && declaration.Transport.Managed) ||
 			declaration.Transport.AllowsPairingChanges || declaration.Transport.AllowsDeviceRestore || declaration.Transport.SupportsDFU {
 			conn.Close()
 			return nil, fmt.Errorf("unsupported bridge declaration")
@@ -123,7 +122,7 @@ func tcpClient(ctx context.Context, conn net.Conn, timeout time.Duration) (*Clie
 		if declaration.Transport.Medium == "ble" {
 			info = bleTransport("tcp", declaration.Transport.Managed)
 		} else {
-			info = TransportInfo{Connection: "tcp", Medium: "usb-serial"}
+			info = TransportInfo{Connection: "tcp", Medium: "usb-serial", Managed: declaration.Transport.Managed}
 		}
 		deviceID = declaration.DeviceID
 	}

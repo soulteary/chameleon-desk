@@ -79,6 +79,7 @@ type FeatureContext struct {
 	Device           *FeatureDevice `json:"device"`
 	WritesAllowed    bool           `json:"writes_allowed"`
 	BridgeConfigured bool           `json:"bridge_configured"`
+	BridgeMedium     string         `json:"bridge_medium,omitempty"`
 }
 type FeatureReason struct {
 	Code     string    `json:"code"`
@@ -169,8 +170,18 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 		return a, nil
 	}
 
-	if f.RequirementMode == "bridge" && !ctx.BridgeConfigured {
-		reason("unavailable", "bridge_required", "Configure a managed BLE bridge first")
+	if f.RequirementMode == "bridge" {
+		medium := ctx.BridgeMedium
+		if medium == "" {
+			medium = "ble"
+		} // Preserve existing BLE evaluator callers.
+		expected := "ble"
+		if f.Transport == "managed-usb" {
+			expected = "usb-serial"
+		}
+		if !ctx.BridgeConfigured || medium != expected {
+			reason("unavailable", "bridge_required", "Configure the matching managed device bridge first")
+		}
 	}
 	unresolved := f.RequirementMode == "parameterized" || f.RequirementMode == "card-plan" || f.RequirementMode == "command" || f.RequirementMode == "external"
 	if request != nil {

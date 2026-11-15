@@ -296,11 +296,14 @@ def serial_port(value):
 def validate_modes(args):
     serial = getattr(args, "serial_port", None)
     control = getattr(args, "control_port", None)
+    usb = getattr(args, "usb", False)
+    if usb and (not control or getattr(args, "pair", False)):
+        raise ValueError("--usb requires --control-port and cannot be combined with --pair")
     if serial and any((getattr(args, "device", None), getattr(args, "scan", False),
                        control, getattr(args, "token_file", None), getattr(args, "pair", False))):
         raise ValueError("--serial-port cannot be combined with BLE discovery, pairing or management")
-    if not any((serial, getattr(args, "device", None), getattr(args, "scan", False), control)):
-        raise ValueError("use --serial-port, --device, --scan, or --control-port")
+    if not any((serial, usb, getattr(args, "device", None), getattr(args, "scan", False), control)):
+        raise ValueError("use --usb, --serial-port, --device, --scan, or --control-port")
     if bool(control) != bool(getattr(args, "token_file", None)) or (getattr(args, "scan", False) and control):
         raise ValueError("--control-port requires --token-file and cannot be combined with --scan")
     if control and control == args.port:
@@ -312,6 +315,7 @@ def parser():
     target = p.add_mutually_exclusive_group()
     target.add_argument("--device", help="BLE address, or device UUID on macOS")
     target.add_argument("--serial-port", type=serial_port, help="explicit USB application serial port (for example /dev/ttyACM0 or COM7)")
+    target.add_argument("--usb", action="store_true", help="manage USB serial ports using --control-port and --token-file")
     target.add_argument("--scan", action="store_true", help="list advertising NUS devices and exit")
     p.add_argument("--listen", type=loopback, default="127.0.0.1")
     p.add_argument("--port", type=port_number, default=12345)
@@ -325,7 +329,7 @@ def parser():
 
 async def serve(args):
     validate_modes(args)
-    if getattr(args, "serial_port", None):
+    if getattr(args, "serial_port", None) or getattr(args, "usb", False):
         from serial_backend import serve_serial
         return await serve_serial(args)
     # Keep offline tests and --help independent of optional BLE dependencies.

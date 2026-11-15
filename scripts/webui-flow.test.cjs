@@ -1063,3 +1063,77 @@ test('configuration controls fail closed with reasons when the catalog cannot be
  const p=await page(t,{'/api/capabilities':()=>response({feature_schema_version:999})});
  for(const id of ['settings-read','settings-apply','slot-edit-read','slot-edit-apply']){assert.equal(p.$('#'+id).disabled,true);assert(p.$('#'+id).getAttribute('aria-describedby'));}
 });
+
+test('read-only USB bridge controls use shared session management and render port metadata safely', async (t) => {
+  const status = bridgeState(); status.transport.medium = 'usb-serial';
+  let session = {session_id:'usb-initial',connected:false,target:'',kind:'usb-bridge'};
+  const snapshot = () => response(JSON.parse(JSON.stringify(status)));
+  const p = await page(t, {
+    '/api/capabilities': () => response({writes_enabled:false,csrf_token:'web-session',ble_bridge_enabled:false,usb_bridge_enabled:true,device_sessions_enabled:true}),
+    '/api/session/status': () => response(session),
+    '/api/bridge/status': snapshot,
+    '/api/bridge/scan': () => response({api_version:1,devices:[{id:'COM7',name:'<img src=x onerror=alert(1)>',vid:26728,pid:34438}]}),
+    '/api/bridge/select': opts => {assert.equal(JSON.parse(opts.body).device_id,'COM7');status.selected_device={id:'COM7',name:'Application'};return snapshot();},
+    '/api/bridge/connect': () => {status.state='connected';status.session_active=true;session={...session,session_id:'usb-connected',connected:true};return snapshot();},
+    '/api/bridge/disconnect': () => {status.state='disconnected';status.session_active=false;session={...session,session_id:'usb-ended',connected:false};return snapshot();},
+    '/api/info': () => response({git_version:'usb-test',slots:[],transport:status.transport})
+  });
+  assert.equal(p.$('#session-panel').hidden,true);
+  assert.equal(p.$('#bridge-panel').hidden,false);
+  assert.match(p.$('#bridge-title').textContent,/USB/);
+  assert.match(p.$('#bridge-note').textContent,/bootloader/);
+  await p.click('#bridge-scan');
+  assert.equal(p.$('#bridge-devices img'),null);
+  p.$('#bridge-devices').value='COM7';p.$('#bridge-devices').dispatchEvent(new p.w.Event('change'));
+  await p.click('#bridge-select');await p.click('#bridge-connect');
+  assert.match(p.$('#bridge-state').textContent,/已连接/);
+  assert.equal(p.$('#bridge-scan').disabled,true);
+  assert.equal(p.requests.filter(r=>r.url==='/api/info').length,1);
+  await p.click('#bridge-disconnect');
+  assert.match(p.$('#bridge-state').textContent,/未连接/);
+  assert.equal(p.$('#info-cards').children.length,0);
+  assert.equal(p.requests.some(r=>r.url==='/api/session/ports'),false);
+  for(const request of p.requests.filter(r=>r.url.startsWith('/api/bridge/')&&r.method==='POST')) {
+    assert.equal(request.headers['X-Chameleon-Token'],'web-session');
+    assert.ok(request.headers['X-Chameleon-Session']);
+  }
+});
+
+test('USB bridge rejects BLE or elevated transport status and clears prior device results', async (t) => {
+  for (const mutate of [s=>s.transport.medium='ble',s=>s.transport.allows_pairing_changes=true,s=>s.transport.supports_dfu=true]) {
+    const status=bridgeState();status.transport.medium='usb-serial';
+    const p=await page(t,{
+      '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'web-session',usb_bridge_enabled:true}),
+      '/api/bridge/status':()=>response(JSON.parse(JSON.stringify(status))),
+      '/api/info':()=>response({slots:[]})
+    });
+    await p.click('#refresh-info');mutate(status);await p.click('#bridge-refresh');
+    assert.equal(p.$('#bridge-connect').disabled,true);
+    assert.equal(p.$('#bridge-scan').disabled,true);
+    assert.equal(p.$('#bridge-error').hidden,false);
+    assert.equal(p.$('#info-cards').children.length,0);
+    assert.match(p.$('#bridge-error').textContent,/不支持/);
+  }
+});
+
+
+test('only the configured bridge medium controls shared availability buttons', async t => {
+  for (const usb of [false,true]) {
+    const status=bridgeState();status.transport.medium=usb?'usb-serial':'ble';
+    const states=fixtureStates(false).map(s=>{
+      const f=featureCatalog.find(f=>f.id===s.id);
+      if(f.requirement_mode!=='bridge')return s;
+      const allowed=f.transport===(usb?'managed-usb':'managed-ble');
+      return {...s,state:allowed?'available':'unavailable',reasons:allowed?[]:[{code:'bridge_required',message:'wrong configured medium'}]};
+    });
+    const p=await page(t,{
+      '/api/capabilities':()=>response({writes_enabled:false,csrf_token:'web-session',ble_bridge_enabled:!usb,usb_bridge_enabled:usb,feature_states:states}),
+      '/api/bridge/status':()=>response(status),
+      '/api/bridge/scan':()=>response({devices:[]})
+    });
+    assert.equal(p.$('#bridge-scan').disabled,false,usb?'USB scanner enabled':'BLE scanner enabled');
+    await p.click('#bridge-scan');
+    assert.equal(p.requests.filter(r=>r.url==='/api/bridge/scan').length,1);
+    assert.equal(p.$('#bridge-scan').disabled,false);
+  }
+});
