@@ -85,9 +85,15 @@ class ManagedSerialBridge(SerialBridge):
                              self.timeout, prepared=self.owner.link)
 
     def session_ended(self):
+        clean = self.session is not None and self.session.clean
         self.owner.link = None
-        self.owner.state = "blocked" if self.blocked else "disconnected"
-        self.owner.error = "serial cleanup failed; restart the bridge" if self.blocked else ""
+        # Bridge.close temporarily blocks admission even when cleanup succeeds.
+        # The controller owns an explicit disconnect transition and its result.
+        if self.owner.state != "disconnecting":
+            self.owner.state = "blocked" if self.blocked else "disconnected"
+        self.owner.error = "" if clean else "serial cleanup failed; restart the bridge"
+        if clean and self.session.worker.error:
+            self.owner.error = "serial link ended; connect explicitly after checking device state"
 
 
 class SerialController(Controller):
