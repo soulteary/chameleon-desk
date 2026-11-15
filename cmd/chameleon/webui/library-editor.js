@@ -62,7 +62,7 @@
   async save(){
    if(!this.allowed()||!this.card||!this.dirty) return;
    if(this.base!==this.getText())throw Error('卡库已变化，请保留草稿并重新选择卡片');
-   const original=this.getText(),revision=this.revision,name=this.get('card-edit-name').value,rows=this.get('card-edit-rows').value.split('\n');
+   const original=this.getText(),revision=this.revision,name=this.get('card-edit-name').value,text=this.get('card-edit-rows').value,rows=text===''&&!this.card.desk_read&&this.card.data.length===0?[]:text.split('\n');
    const value=await this.request({op:'edit-data',database:JSON.parse(original),id:this.card.id,name,rows});
    if(this.getText()!==original||revision!==this.revision)throw Error('编辑或卡库已变化；未替换本页内容');
    this.dirty=false;this.commit(value);this.open(value.card);this.display(value.card);this.notice('编辑已加入卡库，请核对本地保存状态');

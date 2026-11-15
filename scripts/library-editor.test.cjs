@@ -49,3 +49,8 @@ test('ordinary memory edits submit rows with the selected ID and keep file metad
  p.editor.open(ordinary);assert.equal(p.$('card-edit-rows').value,'01 02 03 04\n');p.input('card-edit-name','new');p.input('card-edit-rows','AA 02 03 04\n');await p.editor.save();
  assert.equal(p.calls[0].value.id,'original');assert.equal(p.calls[0].value.op,'edit-data');assert.deepEqual([...p.calls[0].value.rows],['AA 02 03 04','']);assert(!p.editor.dirty);assert.equal(p.changes,1);
 });
+
+test('renaming an ordinary card with no memory does not invent an empty memory row',async t=>{
+ const empty={id:'empty',name:'old',tag:1100,data:[]};const p=fixture(t,value=>({database:{cards:[]},card:{...empty,name:value.name}}));
+ p.editor.open(empty);p.input('card-edit-name','new');await p.editor.save();assert.deepEqual([...p.calls[0].value.rows],[]);assert(!p.editor.dirty);
+});
