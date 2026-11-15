@@ -8,6 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
+let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null;
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
@@ -18,7 +19,7 @@ async function refreshFeatures() {
  try {
   const value = await api("/api/features/device");
   featureAvailability.setStates(value.schema_version, value.states, value.device);
- } catch(error) { featureAvailability.clear(error.message); window.desktopToast("无法读取功能状态："+error.message); }
+ } catch(error) { if (error.staleSession) return; featureAvailability.clear(error.message); window.desktopToast("无法读取功能状态："+error.message); }
 }
 
 const dictionaryLabels = {
@@ -32,9 +33,12 @@ const dictionaryLabel = (name) => dictionaryLabels[name] || "密钥字典";
 const groups = { hardware: ["device", "slots", "read"], database: ["cards"], ndef: ["ndef"], acl: ["acl"], vanity: ["vanity"], dictionary: ["dictionary"] };
 
 async function api(path, opts = {}) {
+  const epoch = sessionEpoch;
+  const deviceRequest = path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || path === "/api/features/check" || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/slot/") || path.startsWith("/api/bridge/")) headers["X-Chameleon-Token"] = csrfToken;
+  if (path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/")) headers["X-Chameleon-Token"] = csrfToken;
+  if ((deviceRequest || path.startsWith("/api/bridge/")) && deviceSession) headers["X-Chameleon-Session"] = deviceSession.session_id;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
   // Leave time for the server's error response before the browser aborts.
@@ -42,6 +46,7 @@ async function api(path, opts = {}) {
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
     const r = await fetch(path, { ...opts, headers, signal: controller.signal });
+    if (deviceRequest && (epoch !== sessionEpoch || (deviceSession && r.headers.get("X-Chameleon-Session") !== null && r.headers.get("X-Chameleon-Session") !== deviceSession.session_id))) { const error = new Error("旧设备会话响应已忽略"); error.staleSession = true; throw error; }
     if (r.status === 403 && path.startsWith("/api/slot/")) {
       writesEnabled = false; csrfToken = ""; $("#retry-capabilities").hidden = false;
       $("#write-note").textContent = "写入权限或会话已失效，请重试读取权限后再决定是否重新操作";
@@ -50,10 +55,11 @@ async function api(path, opts = {}) {
     const ct = r.headers.get("content-type") || "";
     let body;
     try { body = ct.includes("json") ? await r.json() : await r.text(); }
-    catch (error) {
+    catch (error) { if (error.staleSession) return;
       if (error.name === "SyntaxError") throw new Error("服务返回了无效 JSON，请重试或重新启动本地服务");
       throw error;
     }
+    if (deviceRequest && (epoch !== sessionEpoch || (deviceSession && r.headers.get("X-Chameleon-Session") !== null && r.headers.get("X-Chameleon-Session") !== deviceSession.session_id))) { const error = new Error("旧设备会话响应已忽略"); error.staleSession = true; throw error; }
     if (!r.ok) {
       const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
       if (path === "/api/slot/load-card" && body?.result) error.result = body.result;
@@ -62,6 +68,7 @@ async function api(path, opts = {}) {
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
     return body;
   } catch (error) {
+    if (deviceRequest && epoch !== sessionEpoch) { error.staleSession = true; throw error; }
     if (controller.signal.aborted) {
       const message = "本地服务响应超时。请确认服务仍在运行，再重试。";
       throw new Error(message + (path.startsWith("/api/slot/") ? "写入操作请先读取状态确认结果。" : ""));
@@ -81,6 +88,7 @@ function updateWriteButtons() {
   $("#load-card-go").disabled = !writesEnabled || busy.has("hardware");
   document.querySelectorAll("[data-slot-active]").forEach((button) => { button.disabled = !writesEnabled || busy.has("hardware") || button.dataset.slotActive === "true"; });
   updateBridgeButtons();
+  updateSessionButtons();
   updateLibraryButtons();
   featureAvailability?.apply();
 }
@@ -162,7 +170,7 @@ function showBridgeStatus(status) {
 async function refreshBridgeStatus() {
   if (!bridgeEnabled) return;
   try { showBridgeStatus(await api("/api/bridge/status")); }
-  catch (error) {
+  catch (error) { if (error.staleSession) return;
     bridgeStatus = null;
     $("#bridge-state").textContent = "无法读取蓝牙桥状态";
     $("#bridge-error").hidden = false; $("#bridge-error").textContent = error.message;
@@ -171,6 +179,8 @@ async function refreshBridgeStatus() {
 }
 function clearBridgeDeviceView() {
   clearFeatureDevice();
+  $("#scan-out").replaceChildren(); $("#scan-out").dataset.ready="false"; delete $("#scan-out").dataset.exportJson;
+  for (const output of ["#load-card-out", "#fw-out"]) { invalidate(output); $(output).replaceChildren(); }
   setStatus(false, "设备会话已断开");
   $("#info-cards").replaceChildren(); $("#info-raw").replaceChildren();
   $("#device").classList.remove("has-device-data"); $("#device .device-hero h1").textContent = "Chameleon Desk";
@@ -179,7 +189,9 @@ function clearBridgeDeviceView() {
 async function bridgeAction(action) {
   try {
     const input = action === "select" ? { device_id: $("#bridge-devices").value } : {};
+    if (action === "connect" || action === "disconnect") { sessionEpoch++; clearBridgeDeviceView(); }
     const result = await postJSON("/api/bridge/" + action, input);
+    if (sessionsEnabled) await refreshDeviceSession();
     if (action === "scan") {
       if (!Array.isArray(result.devices)) throw new Error("扫描结果无效");
       const select = $("#bridge-devices"); select.replaceChildren(el("option", null, result.devices.length ? "选择扫描到的设备" : "未发现设备，请确认设备正在广播")); select.firstChild.value = "";
@@ -190,7 +202,8 @@ async function bridgeAction(action) {
       if (action === "select" || action === "disconnect") clearBridgeDeviceView();
       if (action === "connect") { await loadInfo(); await refreshBridgeStatus(); }
     }
-  } catch (error) {
+  } catch (error) { if (error.staleSession) return;
+    if (sessionsEnabled) { try { await refreshDeviceSession(); } catch (_) { deviceSession=null; } }
     await refreshBridgeStatus();
     $("#bridge-error").hidden = false; $("#bridge-error").textContent = error.message;
     throw error;
@@ -284,7 +297,7 @@ async function loadInfo() {
       cards.append(card);
     });
     $("#info-raw").append(el("p","read-stamp",resultStamp()),rawDetails(info));
-  } catch (error) {
+  } catch (error) { if (error.staleSession) return;
     clearFeatureDevice(); setStatus(false,"设备连接失败"); $("#device").classList.remove("has-device-data");
     hardwareFailure(cards,"未能连接设备",error,loadInfo);
   }
@@ -313,7 +326,7 @@ async function loadSlots() {
         button.addEventListener("click",()=>runTask("hardware",async()=>{
           if (!writesEnabled) return;
           try { await postJSON("/api/slot/activate",{slot:slot.number}); await loadSlots(); }
-          catch (error) { slotMutationFailure(error); }
+          catch (error) { if (error.staleSession) return; slotMutationFailure(error); }
         })); row.append(button);
       }
       grid.append(row);
@@ -321,7 +334,7 @@ async function loadSlots() {
     if (!info.slots.length) hardwareState(grid,"empty","没有返回槽位","可重新读取设备信息确认。",loadSlots);
     list.append(grid,el("p","read-stamp",resultStamp()),rawDetails({slots:info.slots}));
     list.dataset.exportJson=JSON.stringify({slots:info.slots}); list.dataset.ready="true";
-  } catch (error) { clearFeatureDevice(); setStatus(false,"设备连接失败"); hardwareFailure(list,"未能读取槽位",error,loadSlots); }
+  } catch (error) { if (error.staleSession) return; clearFeatureDevice(); setStatus(false,"设备连接失败"); hardwareFailure(list,"未能读取槽位",error,loadSlots); }
 }
 function slotMutationFailure(error) {
   clearFeatureDevice();
@@ -364,7 +377,7 @@ async function scan(kind) {
     setStatus(true,"扫描完成 · 设备可用"); out.replaceChildren();
     if (!result.present) { hardwareState(out,"empty","未检测到 " + kind.toUpperCase() + " 卡片","设备已响应。请调整卡片位置，或确认所选频段后重试。",()=>scan(kind)); return; }
     out.append(resultHeader("已发现 " + cards.length + " 张卡片",resultStamp(),kind.toUpperCase())); cards.forEach((card,index)=>out.append(renderScanCard(card,kind,index)));
-  } catch (error) { clearFeatureDevice(); setStatus(false,"设备操作失败"); hardwareFailure(out,"扫描未完成",error,()=>scan(kind)); }
+  } catch (error) { if (error.staleSession) return; clearFeatureDevice(); setStatus(false,"设备操作失败"); hardwareFailure(out,"扫描未完成",error,()=>scan(kind)); }
 }
 const {renderToolResult,panelButton}=window.createToolPanels({el,$,appSymbol,fieldGrid,hardwareState,hexNumber,resultStamp});
 const outputGroups={"#db-out":"database","#ndef-out":"ndef","#acl-out":"acl","#vanity-out":"vanity","#dict-out":"dictionary","#fw-out":"hardware","#load-card-out":"hardware"};
@@ -402,7 +415,7 @@ async function showPre(sel,action,options={}) {
     const target=sel==="#db-out"&&options.op==="list"&&value.length ? $("#library-results") : sel==="#dict-out"&&Array.isArray(value) ? $("#dictionary-source-options") : summary;
     revealResult(pre,target);
     return value;
-  } catch(error) {
+  } catch(error) { if (error.staleSession) return;
     if(outputRevisions.get(pre)!==revision) return null;
     resultError(sel,error,options.retry?()=>showPre(sel,action,options):null,group);return null;
   }
@@ -438,6 +451,8 @@ function wire() {
   }
 
   for (const action of ["scan", "select", "connect", "disconnect"]) $("#bridge-" + action).addEventListener("click", () => runTask("hardware", () => bridgeAction(action)));
+  $("#session-refresh").addEventListener("click", () => runTask("hardware", refreshDeviceSession));
+  for (const action of ["connect", "disconnect"]) $("#session-"+action).addEventListener("click", () => runTask("hardware", () => sessionAction(action)));
   $("#bridge-refresh").addEventListener("click", () => runTask("hardware", refreshBridgeStatus));
   $("#bridge-devices").addEventListener("change", updateBridgeButtons);
   document.querySelectorAll("pre").forEach((pre) => {
@@ -501,7 +516,7 @@ function wire() {
     if (!window.confirm("加载将替换槽位 " + slot + " 的内容。确认已备份并继续？")) throw new Error("已取消，槽位内容未更改");
     let result;
     try { result = await postJSON("/api/slot/load-card", { slot, card, persist: $("#load-persist").checked, activate: $("#load-activate").checked }); }
-    catch (error) { slotMutationFailure(error); throw error; }
+    catch (error) { if (error.staleSession) return; slotMutationFailure(error); throw error; }
     await loadSlots(); return result;
   });
   bindOutput("#ndef-write-go", "#ndef-out", "ndef", async () => {
@@ -581,7 +596,10 @@ async function loadCapabilities() {
     const caps = await api("/api/capabilities");
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
     if (!featureAvailability.configure(caps)) throw new Error("功能清单版本或内容不受支持，请重试或更新服务后刷新");
+    sessionsEnabled = caps.device_sessions_enabled === true;
     bridgeEnabled = caps.ble_bridge_enabled === true;
+    $("#session-panel").hidden = !sessionsEnabled || bridgeEnabled;
+    if (sessionsEnabled) await refreshDeviceSession();
     $("#bridge-panel").hidden = !bridgeEnabled;
     if (bridgeEnabled) await refreshBridgeStatus();
     $("#write-note").textContent = writesEnabled ? "设备写入已启用" : "只读模式 · 仅查看设备配置";
@@ -596,3 +614,44 @@ async function loadCapabilities() {
 wire();
 startLibraryPersistence();
 loadCapabilities();
+
+function showDeviceSession(value) {
+ if (!value || typeof value.session_id !== "string" || typeof value.connected !== "boolean") throw new Error("设备会话信息无效");
+ if (!deviceSession || value.session_id !== deviceSession.session_id || value.connected !== deviceSession.connected) { sessionEpoch++; clearBridgeDeviceView(); }
+ deviceSession = value;
+ $("#session-state").textContent = (value.connected ? "已连接：" + value.target : "未连接") + " · 会话 " + (value.session_id || "尚未建立");
+ $("#session-disconnect").disabled = !value.connected;
+}
+async function refreshDeviceSession() {
+ showDeviceSession(await api("/api/session/status"));
+ if (!bridgeEnabled) {
+  try {
+   const value = await api("/api/session/ports");
+   if (!Array.isArray(value.ports) || value.ports.some(port=>typeof port!=="string")) throw new Error("串口列表无效");
+   const select = $("#session-ports"), selected = select.value;
+   select.replaceChildren(el("option",null,"选择串口")); select.firstChild.value="";
+   for (const port of value.ports) { const option=el("option",null,port);option.value=port;select.append(option); }
+   select.value=selected;
+  } catch (error) { $("#session-ports").replaceChildren(el("option",null,"无法枚举串口")); $("#session-ports").firstChild.value=""; $("#session-state").textContent += " · " + error.message + "；仍可指定 TCP 地址"; }
+ }
+}
+async function sessionAction(action) {
+ sessionEpoch++; clearBridgeDeviceView();
+ try {
+  const input = { session_id: deviceSession?.session_id || "" };
+  if (action === "connect") input.target = $("#session-tcp").value.trim() || $("#session-ports").value;
+  showDeviceSession(await postJSON("/api/session/"+action,input));
+ } catch (error) {
+  $("#session-state").textContent = error.message;
+  try { await refreshDeviceSession(); } catch (_) { deviceSession=null; }
+ }
+}
+
+function updateSessionButtons() {
+ const blocked=busy.has("hardware") || !deviceSession;
+ $("#session-connect").disabled=blocked;
+ $("#session-disconnect").disabled=blocked || !deviceSession?.connected;
+ $("#session-refresh").disabled=busy.has("hardware");
+ $("#session-ports").disabled=busy.has("hardware");
+ $("#session-tcp").disabled=busy.has("hardware");
+}

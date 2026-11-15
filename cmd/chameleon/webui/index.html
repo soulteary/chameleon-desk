@@ -7,7 +7,13 @@
       <button id="refresh-info" class="primary">连接 / 刷新设备</button><button id="refresh-features">刷新功能状态</button>
       <button id="fw-check">检查固件更新</button>
     </div>
-    <section id="bridge-panel" class="bridge-panel" hidden aria-label="BLE 桥连接管理">
+    <section id="session-panel" class="bridge-panel" hidden aria-label="USB 和 TCP 连接管理">
+ <p id="session-state" role="status">未连接</p>
+ <div class="row"><label>USB 串口 <select id="session-ports"><option value="">选择串口</option></select></label><button id="session-refresh">刷新连接与端口</button></div>
+ <div class="row"><label>TCP 地址 <input id="session-tcp" placeholder="tcp:127.0.0.1:12345"></label><button id="session-connect">连接</button><button id="session-disconnect">断开</button></div>
+ <p class="muted">填写 TCP 地址时优先连接该地址，否则使用所选串口。连接由此 Desk 服务的所有页面共享。</p>
+ </section>
+ <section id="bridge-panel" class="bridge-panel" hidden aria-label="BLE 桥连接管理">
       <h3>蓝牙连接</h3><p id="bridge-state" role="status">正在读取连接状态…</p>
       <div class="row"><button id="bridge-scan">扫描设备</button><button id="bridge-refresh">刷新连接状态</button></div>
       <div class="row"><label for="bridge-devices">扫描结果</label><select id="bridge-devices"><option value="">先扫描设备</option></select><button id="bridge-select">选择设备</button></div>

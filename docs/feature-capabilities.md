@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 74 workflows; this is not a coverage percentage.
+sources. It currently groups 75 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -142,3 +142,5 @@ card requirements. Web tests cover reason rendering, offline availability,
 connection invalidation, schema mismatch and stale previews. The real Chromium
 suite uses a loopback protocol simulator for model/command changes; it does not
 access physical RFID/NFC or Bluetooth hardware.
+
+USB/TCP connection management uses its own lifecycle controller; see [Web device sessions](web-sessions.md). Device facts and card previews are cleared when the observed session changes.

@@ -71,8 +71,9 @@ test('Chromium uses observed model and firmware commands to explain disabled act
   const net = require('node:net'), read = require('node:fs');
   const catalog = JSON.parse(read.readFileSync(path.join(__dirname,'../internal/catalog/upstream.json'),'utf8')).commands;
   let model=0, capabilities=[1033,1035], mode=0;
-  const commands=[], sockets=new Set();
+  let connections=0; const commands=[], sockets=new Set();
   const simulator=net.createServer(socket=>{
+    connections++;
     socket.on('error',()=>{});sockets.add(socket);socket.on('close',()=>sockets.delete(socket));let buffer=Buffer.alloc(0);
     socket.on('data',chunk=>{
       buffer=Buffer.concat([buffer,chunk]);
@@ -108,5 +109,19 @@ test('Chromium uses observed model and firmware commands to explain disabled act
   model=0;await probe();assert(await page.locator('#scan-hf').isEnabled());
   await page.locator('.dock [data-open="read"]').click();await page.locator('#scan-hf').click();
   await page.waitForFunction(()=>document.querySelector('#scan-out').textContent.includes('未检测到'));assert.equal(mode,0);
+  await page.locator('.dock [data-open="device"]').click();
+  const oldID=await page.evaluate(()=>deviceSession.session_id);
+  assert.equal(connections,1);
+  await page.locator('#session-disconnect').click();
+  await page.waitForFunction(()=>deviceSession.connected===false);
+  assert(await page.locator('#scan-hf').isDisabled());
+  await page.locator('#session-tcp').fill('tcp:127.0.0.1:'+simulator.address().port);
+  await page.locator('#session-connect').click();
+  await page.waitForFunction(()=>deviceSession.connected===true);
+  assert.notEqual(await page.evaluate(()=>deviceSession.session_id),oldID);
+  await probe();assert.equal(connections,2);
+  await page.reload();await page.evaluate(()=>window.libraryReady);
+  await page.waitForFunction(()=>typeof deviceSession==='object'&&deviceSession?.connected);
+  assert.equal(connections,2); // page reload reuses the server session
   assert.deepEqual(errors,[]);
 });

@@ -44,7 +44,9 @@ Open <http://127.0.0.1:8088>. Use the Dock or sidebar to open a tool.
 The server listens on loopback addresses only. Device and card writes are
 disabled by default. To enable them, restart with `--allow-writes`.
 
-Use `--port` to select a device explicitly:
+Use the device window to list/select a USB serial port or enter `tcp:host:port`, then connect or disconnect. The server owns one persistent session shared by all pages; no device is auto-selected when started without `--port`. See [Web device sessions](docs/web-sessions.md).
+
+Use `--port` to connect a device when the server starts:
 
 ```sh
 ./chameleon serve --port /dev/ttyACM0
