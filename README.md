@@ -52,6 +52,8 @@ Use `--port` to connect a device when the server starts:
 ./chameleon serve --port /dev/ttyACM0
 ```
 
+Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task records are held in server memory and do not survive a server restart.
+
 Offline file tools work without a connected device. Valid card-library changes
 are saved automatically in IndexedDB and restored after refresh or restart,
 using the same browser profile and origin (scheme, host and port). Save failures

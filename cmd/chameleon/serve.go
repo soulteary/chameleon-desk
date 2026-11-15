@@ -32,6 +32,7 @@ func isServe(args []string) bool { return len(args) >= 1 && args[0] == "serve" }
 // single-page UI. Reads are always allowed; card/device writes need the
 // explicit --allow-writes flag and a per-server token. It binds only to loopback.
 type webServer struct {
+	tasks          webTasks
 	sessionEnabled bool
 	sessionMu      sync.Mutex
 	sessionID      string
@@ -99,6 +100,7 @@ func runServe(args []string) error {
 		}
 	}
 	defer ws.closeSession()
+	defer ws.tasks.stop()
 	mux := http.NewServeMux()
 	if e = ws.routes(mux); e != nil {
 		return e
@@ -124,6 +126,8 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	for _, action := range []string{"ports", "status", "connect", "disconnect"} {
 		mux.HandleFunc("/api/session/"+action, ws.handleSession)
 	}
+	mux.HandleFunc("/api/tasks", ws.handleTasks)
+	mux.HandleFunc("/api/tasks/", ws.handleTasks)
 	// Device reads.
 	mux.HandleFunc("/api/info", ws.handleInfo)
 	mux.HandleFunc("/api/scan/hf", ws.handleScanHF)
@@ -180,12 +184,15 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status", "/api/features/device", "/api/session/status", "/api/session/ports":
 				method = http.MethodGet
 			}
+			if (r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/")) && r.Method == http.MethodGet {
+				method = http.MethodGet
+			}
 			if r.Method != method {
 				w.Header().Set("Allow", method)
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			if r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
+			if r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
 				if ws.token == "" || r.Header.Get("X-Chameleon-Token") != ws.token {
 					http.Error(w, "missing or invalid session token", http.StatusForbidden)
 					return
@@ -284,6 +291,8 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 	w.Header().Set("Cache-Control", "no-store")
 	var out any
 	e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {
+		stopProgress := ws.taskProgress(ctx, c)
+		defer stopProgress()
 		v, e := fn(ctx, c)
 		out = v
 		return e
@@ -318,7 +327,7 @@ func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil, "device_sessions_enabled": ws.sessionEnabled, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
+	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridge != nil, "device_sessions_enabled": ws.sessionEnabled, "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {
@@ -473,6 +482,8 @@ func decodeBody(r *http.Request, v any) error {
 	switch r.URL.Path {
 	case "/api/slot/load-card", "/api/ndef/write", "/api/features/check":
 		limit = webCardBodyLimit
+	case "/api/tasks":
+		limit = webCardBodyLimit + (64 << 10)
 	case "/api/database":
 		limit = webDatabaseBodyLimit
 	}

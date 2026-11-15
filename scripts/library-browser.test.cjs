@@ -70,7 +70,7 @@ test('Chromium persists the library through reload, browser restart and Desk res
 test('Chromium uses observed model and firmware commands to explain disabled actions', { skip: !binary, timeout: 60000 }, async t => {
   const net = require('node:net'), read = require('node:fs');
   const catalog = JSON.parse(read.readFileSync(path.join(__dirname,'../internal/catalog/upstream.json'),'utf8')).commands;
-  let model=0, capabilities=[1033,1035], mode=0;
+  let model=0, capabilities=[1033,1035], mode=0, delayModel=0;
   let connections=0; const commands=[], sockets=new Set();
   const simulator=net.createServer(socket=>{
     connections++;
@@ -88,7 +88,7 @@ test('Chromium uses observed model and firmware commands to explain disabled act
         else if(command===2000)status=1;
         else status=103;
         const reply=Buffer.alloc(payload.length+10);reply[0]=0x11;reply[1]=0xef;reply.writeUInt16BE(command,2);reply.writeUInt16BE(status,4);reply.writeUInt16BE(payload.length,6);
-        reply[8]=(-reply.subarray(0,8).reduce((sum,v)=>sum+v,0))&255;payload.copy(reply,9);reply[reply.length-1]=(-payload.reduce((sum,v)=>sum+v,0))&255;socket.write(reply);
+        reply[8]=(-reply.subarray(0,8).reduce((sum,v)=>sum+v,0))&255;payload.copy(reply,9);reply[reply.length-1]=(-payload.reduce((sum,v)=>sum+v,0))&255;if(command===1033&&delayModel){setTimeout(()=>{if(!socket.destroyed)socket.write(reply)},delayModel);}else socket.write(reply);
       }
     });
   });
@@ -123,5 +123,16 @@ test('Chromium uses observed model and firmware commands to explain disabled act
   await page.reload();await page.evaluate(()=>window.libraryReady);
   await page.waitForFunction(()=>typeof deviceSession==='object'&&deviceSession?.connected);
   assert.equal(connections,2); // page reload reuses the server session
+  delayModel=1500;
+  const before=commands.length;
+  const running=await page.evaluate(async()=>{
+    const caps=await (await fetch('/api/capabilities')).json();const session=await (await fetch('/api/session/status')).json();
+    return (await fetch('/api/tasks',{method:'POST',headers:{'Content-Type':'application/json','X-Chameleon-Token':caps.csrf_token},body:JSON.stringify({request_id:crypto.randomUUID(),session_id:session.session_id,path:'/api/features/device'})})).json();
+  });
+  await page.reload();await page.evaluate(()=>window.libraryReady);
+  await page.waitForFunction(id=>document.querySelector(`[data-task-id="${id}"]`)?.dataset.state==='succeeded',running.id);
+  assert.deepEqual(commands.slice(before),[1033,1035]); // refresh queries; it does not submit again
+  assert.equal(connections,2);
+  delayModel=0;
   assert.deepEqual(errors,[]);
 });

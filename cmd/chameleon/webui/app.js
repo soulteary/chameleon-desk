@@ -8,6 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
+let backgroundTasks = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null;
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
@@ -37,7 +38,7 @@ async function api(path, opts = {}) {
   const deviceRequest = path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || path === "/api/features/check" || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/")) headers["X-Chameleon-Token"] = csrfToken;
+  if (path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
   if ((deviceRequest || path.startsWith("/api/bridge/")) && deviceSession) headers["X-Chameleon-Session"] = deviceSession.session_id;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
@@ -45,9 +46,15 @@ async function api(path, opts = {}) {
   const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
+    const taskPath = ["/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
+    if (backgroundTasks && taskPath) {
+     const value=await backgroundTasks.execute(path,{...opts,headers});
+     if(epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
+     return value;
+    }
     const r = await fetch(path, { ...opts, headers, signal: controller.signal });
     if (deviceRequest && (epoch !== sessionEpoch || (deviceSession && r.headers.get("X-Chameleon-Session") !== null && r.headers.get("X-Chameleon-Session") !== deviceSession.session_id))) { const error = new Error("旧设备会话响应已忽略"); error.staleSession = true; throw error; }
-    if (r.status === 403 && path.startsWith("/api/slot/")) {
+    if (r.status === 403 && (path.startsWith("/api/slot/") || path.startsWith("/api/tasks"))) {
       writesEnabled = false; csrfToken = ""; $("#retry-capabilities").hidden = false;
       $("#write-note").textContent = "写入权限或会话已失效，请重试读取权限后再决定是否重新操作";
       $("#menu-write-mode").textContent = "权限未就绪"; updateWriteButtons();
@@ -62,6 +69,7 @@ async function api(path, opts = {}) {
     if (deviceRequest && (epoch !== sessionEpoch || (deviceSession && r.headers.get("X-Chameleon-Session") !== null && r.headers.get("X-Chameleon-Session") !== deviceSession.session_id))) { const error = new Error("旧设备会话响应已忽略"); error.staleSession = true; throw error; }
     if (!r.ok) {
       const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
+      error.status=r.status;
       if (path === "/api/slot/load-card" && body?.result) error.result = body.result;
       throw error;
     }
@@ -600,6 +608,12 @@ async function loadCapabilities() {
     bridgeEnabled = caps.ble_bridge_enabled === true;
     $("#session-panel").hidden = !sessionsEnabled || bridgeEnabled;
     if (sessionsEnabled) await refreshDeviceSession();
+    if (caps.background_tasks_enabled === true && !backgroundTasks) {
+      $("#tasks-panel").hidden=false;
+      backgroundTasks=new window.DeskBackgroundTasks({api,container:$("#task-list")});
+      backgroundTasks.start();
+      window.addEventListener("pagehide",()=>backgroundTasks.stop(),{once:true});
+    }
     $("#bridge-panel").hidden = !bridgeEnabled;
     if (bridgeEnabled) await refreshBridgeStatus();
     $("#write-note").textContent = writesEnabled ? "设备写入已启用" : "只读模式 · 仅查看设备配置";
