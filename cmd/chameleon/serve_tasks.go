@@ -21,6 +21,7 @@ type webTask struct {
 	RequestID       string          `json:"request_id"`
 	SessionID       string          `json:"session_id"`
 	Path            string          `json:"path"`
+	WriteAttempted  *bool           `json:"write_attempted,omitempty"`
 	Write           bool            `json:"write"`
 	State           string          `json:"state"`
 	Phase           string          `json:"phase"`
@@ -82,9 +83,9 @@ func (ts *webTasks) stop() {
 }
 func taskPath(path string) (string, bool) {
 	switch path {
-	case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/features/device":
+	case "/api/settings/read", "/api/slot/details", "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/features/device":
 		return "GET", false
-	case "/api/slot/activate", "/api/slot/load-card":
+	case "/api/settings/configure", "/api/slot/edit", "/api/slot/activate", "/api/slot/load-card":
 		return "POST", true
 	}
 	return "", false
@@ -262,11 +263,22 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 				t.Outcome = "read_interrupted"
 				if t.Write {
 					t.Outcome = "write_outcome_unknown"
+					if t.WriteAttempted != nil && !*t.WriteAttempted {
+						t.Outcome = "write_not_started"
+					}
 				}
 			}
 		}()
 
 		switch input.Path {
+		case "/api/settings/read":
+			ws.handleSettingsRead(out, request)
+		case "/api/settings/configure":
+			ws.handleSettingsConfigure(out, request)
+		case "/api/slot/details":
+			ws.handleSlotDetails(out, request)
+		case "/api/slot/edit":
+			ws.handleSlotEdit(out, request)
 		case "/api/info":
 			ws.handleInfo(out, request)
 		case "/api/features/device":

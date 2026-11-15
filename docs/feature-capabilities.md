@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 76 workflows; this is not a coverage percentage.
+sources. It currently groups 77 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -146,3 +146,5 @@ access physical RFID/NFC or Bluetooth hardware.
 USB/TCP connection management uses its own lifecycle controller; see [Web device sessions](web-sessions.md). Device facts and card previews are cleared when the observed session changes.
 
 The [background task layer](background-tasks.md) preserves operation checks and reports cancellation and unknown write outcomes separately from advisory availability.
+
+[Web settings and slot editing](web-configuration.md) resolve selected patches/operations, including readback, save commands and pairing transport restrictions. Slot read-only discovery has its own fixed feature entry.

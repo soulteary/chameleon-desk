@@ -35,6 +35,7 @@
     row.append(node("strong",`${labels[task.state]||task.state} · ${task.path}`));
     row.append(node("p",`任务 ${task.id} · 会话 ${task.session_id} · 请求尝试 ${task.commands_attempted} / 收到响应 ${task.responses_received}`));
     if(task.cancel_requested)row.append(node("p","已请求取消；等待执行结束，取消不代表撤销已执行命令。"));
+    if(task.outcome==="write_not_started")row.append(node("p","写入尚未开始；验证或预检未通过，没有调用修改接口。"));
     if(task.outcome==="write_outcome_unknown")row.append(node("p","写入结果未知：部分命令可能已经生效。请读取设备状态核对，不要直接重复写入。"));
     if(task.outcome==="read_interrupted")row.append(node("p","读取已中断；设备模式或临时状态可能需要核对。"));
     if(!terminal(task)){const cancel=node("button","取消任务");cancel.onclick=async()=>{cancel.disabled=true;try{await this.api(`/api/tasks/${task.id}/cancel`,{method:"POST",body:"{}"});await this.refresh();}catch(e){row.append(node("p",e.message));cancel.disabled=false;}};row.append(cancel);}
@@ -50,7 +51,7 @@
    if(!this.serverID)await this.refresh();
    const sessionID=opts.headers?.["X-Chameleon-Session"];
    if(!sessionID)throw new Error("请先刷新设备会话");
-   const receipt={serverID:this.serverID,requestID:window.crypto.randomUUID(),write:path.startsWith("/api/slot/")};
+   const receipt={serverID:this.serverID,requestID:window.crypto.randomUUID(),write:["/api/slot/activate","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path)};
    this.pending.push(receipt);this.remember();
    const input={request_id:receipt.requestID,session_id:sessionID,path};if(opts.body!=null)input.body=JSON.parse(opts.body);
    // Exactly one submission. Network ambiguity is resolved by querying, never

@@ -1,7 +1,8 @@
 # Background device tasks
 
 The Web UI submits device information, feature probes, HF/LF scans, slot
-activation and saved-card loads as server-owned tasks. Refreshing or closing the
+activation, saved-card loads, settings reads/configuration and slot details/edits
+as server-owned tasks. Refreshing or closing the
 page does not cancel them. The device window lists retained tasks, their session,
 progress, cancellation status and results. Results recovered after refresh stay
 in task history; they are not applied to the current device or slot view.
@@ -25,6 +26,8 @@ and `activated` fields, including partial results on errors.
 
 - `not_started`: the task has not entered its device callback. Cancellation while
   queued does not issue commands. Validation or session rejection can fail here.
+- `write_not_started`: configuration preflight stopped before calling a mutating
+  SDK method; read-only probes may already have run.
 - `in_progress`: the device callback has started; its result is pending.
 - `completed`: the existing operation returned success. This means its own
   acknowledgement/verification contract, not extra guarantees from the task layer.
@@ -58,7 +61,8 @@ X-Chameleon-Token: ...
 
 An accepted submission returns HTTP 202 and a task snapshot with opaque `id`.
 The allowed paths are `/api/info`, `/api/features/device`, `/api/scan/hf`,
-`/api/scan/lf`, `/api/slot/activate` and `/api/slot/load-card`. Read operations
+`/api/scan/lf`, `/api/slot/activate`, `/api/slot/load-card`, `/api/settings/read`,
+`/api/settings/configure`, `/api/slot/details` and `/api/slot/edit`. Read operations
 accept no body; write bodies use their existing schemas and checks. A malformed
 workflow body can produce an accepted task that subsequently fails validation
 without device access. There is no arbitrary route or raw-command execution.

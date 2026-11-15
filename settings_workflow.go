@@ -55,39 +55,7 @@ func (c *Client) ConfigureSettings(ctx context.Context, p SettingsPatch, persist
 		return out, e
 	}
 	defer c.release()
-	type operation struct {
-		set, get       Command
-		request, value []byte
-	}
-	ops := []operation{}
-	addByte := func(v *byte, set, get Command) {
-		if v != nil {
-			ops = append(ops, operation{set, get, nil, []byte{*v}})
-		}
-	}
-	addByte(p.Animation, 1015, 1016)
-	addByte(p.SleepSeconds, 1040, 1039)
-	if p.LongPressMS != nil {
-		b := make([]byte, 2)
-		binary.BigEndian.PutUint16(b, *p.LongPressMS)
-		ops = append(ops, operation{1042, 1041, nil, b})
-	}
-	for i, v := range []*byte{p.ShortA, p.ShortB, p.LongA, p.LongB} {
-		if v == nil {
-			continue
-		}
-		set, get := CmdSetButtonPressConfig, CmdGetButtonPressConfig
-		if i >= 2 {
-			set, get = CmdSetLongButtonPressConfig, CmdGetLongButtonPressConfig
-		}
-		ops = append(ops, operation{set, get, []byte{byte('A' + i%2)}, []byte{*v}})
-	}
-	if p.BLEKey != nil {
-		ops = append(ops, operation{1030, 1031, nil, []byte(*p.BLEKey)})
-	}
-	if p.BLEPairing != nil {
-		ops = append(ops, operation{1037, 1036, nil, []byte{boolean(*p.BLEPairing)}})
-	}
+	ops := p.operations()
 	for _, op := range ops {
 		b, e := c.exchange(ctx, uint16(op.get), op.request, 0x68)
 		if e != nil {
@@ -116,4 +84,62 @@ func (c *Client) ConfigureSettings(ctx context.Context, p SettingsPatch, persist
 		}
 	}
 	return c.settingsView(ctx, false)
+}
+
+type settingOperation struct {
+	set, get       Command
+	request, value []byte
+}
+
+func (p SettingsPatch) operations() []settingOperation {
+	ops := []settingOperation{}
+	addByte := func(v *byte, set, get Command) {
+		if v != nil {
+			ops = append(ops, settingOperation{set, get, nil, []byte{*v}})
+		}
+	}
+	addByte(p.Animation, 1015, 1016)
+	addByte(p.SleepSeconds, 1040, 1039)
+	if p.LongPressMS != nil {
+		b := make([]byte, 2)
+		binary.BigEndian.PutUint16(b, *p.LongPressMS)
+		ops = append(ops, settingOperation{1042, 1041, nil, b})
+	}
+	for i, v := range []*byte{p.ShortA, p.ShortB, p.LongA, p.LongB} {
+		if v == nil {
+			continue
+		}
+		set, get := CmdSetButtonPressConfig, CmdGetButtonPressConfig
+		if i >= 2 {
+			set, get = CmdSetLongButtonPressConfig, CmdGetLongButtonPressConfig
+		}
+		ops = append(ops, settingOperation{set, get, []byte{byte('A' + i%2)}, []byte{*v}})
+	}
+	if p.BLEKey != nil {
+		ops = append(ops, settingOperation{1030, 1031, nil, []byte(*p.BLEKey)})
+	}
+	if p.BLEPairing != nil {
+		ops = append(ops, settingOperation{1037, 1036, nil, []byte{boolean(*p.BLEPairing)}})
+	}
+	return ops
+}
+
+// SettingsRequirements expands only selected fields plus the final redacted
+// settings read and optional save. Optional legacy getter probes remain optional.
+func SettingsRequirements(p SettingsPatch, persist bool) ([]Command, error) {
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	ops := p.operations()
+	if len(ops) == 0 {
+		return nil, fmt.Errorf("select at least one setting")
+	}
+	out := []Command{1034}
+	for _, op := range ops {
+		out = append(out, op.set, op.get)
+	}
+	if persist {
+		out = append(out, CmdSaveSettings)
+	}
+	return uniqueCommands(out), nil
 }

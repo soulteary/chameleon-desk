@@ -1,0 +1,26 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const {JSDOM}=require('jsdom');
+function fixture(t,post){const dom=new JSDOM(fs.readFileSync('cmd/chameleon/webui/index.html','utf8'),{url:'http://127.0.0.1/',runScripts:'outside-only'});dom.window.eval(fs.readFileSync('cmd/chameleon/webui/configuration.js','utf8'));t.after(()=>dom.window.close());const $=id=>dom.window.document.getElementById(id),states=new Map();const features={device:{model_id:0},states,state:id=>states.get(id)||{state:'unknown'},render(){},changed(){for(const [id,button]of [['device.configure','settings-apply'],['slot.configure','slot-edit-apply']])$(button).disabled=states.get(id)?.state!=='available';}};const calls=[];dom.window.confirm=()=>true;const controller=new dom.window.DeskConfiguration({features,api:async()=>({}),post:async(path,value)=>{calls.push({path,value});return post?post(path,value):{schema_version:1,state:{id:value.id,state:'available',reasons:[]}};},run:async(_group,fn)=>fn(),writeAllowed:()=>true,busy:()=>false});return {dom,$,features,controller,calls};}
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('settings preview uses only selected field and save option, and PIN is cleared after submission',async t=>{
+ const p=fixture(t,(path,value)=>path==='/api/features/check'?{schema_version:1,state:{id:value.id,state:'available',reasons:[]}}:{readback_verified:true,save_confirmed:false});p.$('settings-field').value='ble_key';p.$('settings-value').value='123456';await p.controller.preview('settings');assert.equal(p.$('settings-value').type,'password');await p.controller.apply('settings');assert.equal(p.$('settings-value').value,'');assert.equal(p.calls.find(c=>c.path==='/api/settings/configure').value.patch.ble_key,'123456');assert.doesNotMatch(p.$('settings-result').textContent,/123456/);
+});
+test('obsolete previews cannot enable edits after an input change or session invalidation',async t=>{
+ let resolve;const p=fixture(t,()=>new Promise(r=>resolve=r));p.$('settings-value').value='1';const old=p.controller.preview('settings');p.$('settings-value').value='invalid';await p.controller.preview('settings');resolve({schema_version:1,state:{id:'device.configure',state:'available',reasons:[]}});await old;assert.equal(p.$('settings-apply').disabled,true);
+ p.features.device=null;p.dom.window.document.dispatchEvent(new p.dom.window.Event('desk-feature-device'));assert.equal(p.$('slot-edit-apply').disabled,true);
+});
+test('slot preview selects a channel and passes explicit initialization confirmation',async t=>{
+ const p=fixture(t);p.$('slot-edit-slot').value='3';p.$('slot-edit-action').value='initialize';p.$('slot-edit-type').value='1001';p.$('slot-edit-confirm').checked=true;await p.controller.preview('slot');const edit=p.calls.at(-1).value.slot_edit;assert.equal(edit.slot,3);assert.equal(edit.sense,2);assert.equal(edit.tag,1001);assert.equal(edit.confirm_initialize,true);
+ p.$('slot-edit-sense').value='1';await p.controller.preview('slot');assert.equal(p.calls.at(-1).value.slot_edit.tag,100);
+});
+test('clearing a session prevents a late read from replacing the editor result',async t=>{
+ const p=fixture(t);let resolve;p.controller.api=()=>new Promise(r=>resolve=r);const read=p.controller.load('settings');p.controller.clear();resolve({animation:3});await read;assert.equal(p.$('settings-result').textContent,'');
+});
+test('readback mismatch is displayed with partial result and never automatically resubmitted',async t=>{
+ const p=fixture(t,(path,value)=>{if(path==='/api/features/check')return {schema_version:1,state:{id:value.id,state:'available',reasons:[]}};const e=Error('readback mismatch');e.result={completed_operations:1,save_confirmed:false};throw e;});p.$('slot-edit-action').value='type';await p.controller.preview('slot');await p.controller.apply('slot');assert.match(p.$('slot-edit-result').textContent,/readback mismatch/);assert.match(p.$('slot-edit-result').textContent,/completed_operations/);assert.equal(p.calls.filter(c=>c.path==='/api/slot/edit').length,1);
+});
+test('text-field blur does not replace an already completed capability preview',async t=>{
+ const p=fixture(t);p.$('settings-value').value='2';p.$('settings-value').dispatchEvent(new p.dom.window.Event('input',{bubbles:true}));await tick();const before=p.calls.length;assert.equal(p.$('settings-apply').disabled,false);p.$('settings-value').dispatchEvent(new p.dom.window.Event('change',{bubbles:true}));await tick();assert.equal(p.calls.length,before);assert.equal(p.$('settings-apply').disabled,false);
+});
+test('selecting another setting clears PIN input before changing its display type',async t=>{
+ const p=fixture(t);p.$('settings-field').value='ble_key';p.$('settings-value').value='123456';await p.controller.preview('settings');assert.equal(p.$('settings-value').type,'password');p.$('settings-field').value='animation';p.$('settings-field').dispatchEvent(new p.dom.window.Event('input',{bubbles:true}));await tick();assert.equal(p.$('settings-value').value,'');assert.equal(p.$('settings-value').type,'text');assert.equal(p.$('settings-apply').disabled,true);
+});

@@ -95,14 +95,16 @@ type FeatureAvailability struct {
 // FeatureRequest resolves requirements for selected parameters without I/O.
 // Not all CLI workflows have resolvers; unresolved parameterized entries remain unknown.
 type FeatureRequest struct {
-	Card              *GUICard `json:"-"`
-	Slot              int      `json:"slot"`
-	Persist           bool     `json:"persist"`
-	Activate          bool     `json:"activate"`
-	Command           *Command `json:"command"`
-	AllowUnregistered bool     `json:"allow_unregistered"`
-	Model             string   `json:"model"`
-	Version           string   `json:"version"`
+	SettingsPatch     *SettingsPatch `json:"settings_patch,omitempty"`
+	SlotEdit          *SlotEdit      `json:"slot_edit,omitempty"`
+	Card              *GUICard       `json:"-"`
+	Slot              int            `json:"slot"`
+	Persist           bool           `json:"persist"`
+	Activate          bool           `json:"activate"`
+	Command           *Command       `json:"command"`
+	AllowUnregistered bool           `json:"allow_unregistered"`
+	Model             string         `json:"model"`
+	Version           string         `json:"version"`
 }
 
 func uniqueCommands(v []Command) []Command {
@@ -202,6 +204,28 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 						}
 					}
 				}
+			}
+		}
+
+		if f.ID == "device.configure" && request.SettingsPatch != nil {
+			cmds, e := SettingsRequirements(*request.SettingsPatch, request.Persist)
+			if e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			} else {
+				a.RequiredCommands = cmds
+				unresolved = false
+			}
+			if request.SettingsPatch.BLEKey != nil || request.SettingsPatch.BLEPairing != nil {
+				f.Transport = "pairing"
+			}
+		}
+		if f.ID == "slot.configure" && request.SlotEdit != nil {
+			cmds, e := request.SlotEdit.Requirements()
+			if e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			} else {
+				a.RequiredCommands = cmds
+				unresolved = false
 			}
 		}
 		if f.ID == "firmware.check" && request.Model != "" && request.Version != "" {
