@@ -75,6 +75,17 @@ class DistributionTests(unittest.TestCase):
             (wheelhouse/"source.tar.gz").write_bytes(b"source")
             with self.assertRaises(ValueError):builder.copy_wheels(wheelhouse,source,"ble")
 
+    def test_windows_epoch_wheel_filename(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root/"wheels"; source.mkdir()
+            destination = root/"bundle"; destination.mkdir()
+            name = "winrt_windows_devices_bluetooth-4!10.0.28000.2957-py3-none-any.whl"
+            (source/name).write_bytes(b"epoch wheel")
+            builder.copy_wheels(source, destination, "ble")
+            self.assertIn(name, (destination/"requirements-ble.lock").read_text())
+            self.assertEqual((destination/"wheels/ble"/name).read_bytes(), b"epoch wheel")
+
 
 if __name__ == "__main__":
     unittest.main()

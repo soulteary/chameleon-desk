@@ -161,7 +161,7 @@ uses `-mod=readonly -trimpath -buildvcs=false` and stamps the same revision into
 core and bridge. It does not cross-build wheels. Core serial dependencies remain
 for maintenance/DFU. Optional C recovery workers are not bundled.
 
-The resulting archive records toolchain, target and exact wheel files/hashes;
+The resulting archive records Go, Python and zlib versions, target and exact wheel files/hashes;
 ZIP entry order, permissions and timestamps are normalized. CI builds twice
 with the same commit/toolchain/wheel inputs and compares archive bytes, then
 extracts, verifies, installs offline and checks USB/BLE imports and management

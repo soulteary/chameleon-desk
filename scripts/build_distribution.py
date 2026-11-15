@@ -14,6 +14,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+import zlib
 
 
 def target():
@@ -44,7 +45,7 @@ def export_tree(repo, revision, dest):
 
 def copy_wheels(source, dest, backend):
     wheels = sorted(source.iterdir())
-    if not wheels or any(p.is_symlink() or not p.is_file() or not re.fullmatch(r"[A-Za-z0-9_.+\-]+\.whl", p.name) for p in wheels):
+    if not wheels or any(p.is_symlink() or not p.is_file() or not re.fullmatch(r"[A-Za-z0-9_.+!\-]+\.whl", p.name) for p in wheels):
         raise ValueError(f"{backend} wheelhouse must contain only wheel files")
     folder = dest / "wheels" / backend
     folder.mkdir(parents=True)
@@ -98,6 +99,8 @@ def build(args):
             copy_wheels(Path(wheelhouse).resolve(), bundle, backend)
         manifest = dict(schema_version=1, revision=revision, version=version, os=system, arch=machine,
                         python=list(sys.version_info[:2]),
+                        python_version=platform.python_version(),
+                        zlib_version=zlib.ZLIB_VERSION, zlib_runtime=zlib.ZLIB_RUNTIME_VERSION,
                         go=subprocess.check_output([args.go, "version"], text=True).strip())
         (bundle/"distribution.json").write_text(json.dumps(manifest, sort_keys=True, indent=2)+"\n", encoding="utf-8")
         sums = [f"{digest(p)}  {p.relative_to(bundle).as_posix()}" for p in sorted(bundle.rglob("*")) if p.is_file()]
