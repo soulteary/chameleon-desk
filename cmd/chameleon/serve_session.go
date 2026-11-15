@@ -94,6 +94,9 @@ func (ws *webServer) sessionStatus() any {
 	kind := "direct"
 	if ws.bridge != nil {
 		kind = "ble-bridge"
+		if ws.bridge.Medium() == "usb-serial" {
+			kind = "usb-bridge"
+		}
 		c = ws.getBridgeClient()
 		connected = c != nil && !c.IsClosed()
 	}
@@ -138,7 +141,7 @@ func (ws *webServer) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ws.bridge != nil {
-		writeErr(w, 409, fmt.Errorf("use the configured BLE bridge controls"))
+		writeErr(w, 409, fmt.Errorf("use the configured device bridge controls"))
 		return
 	}
 	var input struct {

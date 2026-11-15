@@ -72,3 +72,10 @@ and queued old-session rejection. Web fixtures cover USB selection, identity
 propagation and late success/failure isolation. Existing BLE, persistence and
 Chromium capability tests remain in place. These tests use simulated transports;
 they do not establish physical USB/BLE compatibility or write success rates.
+
+Managed [USB serial bridges](usb-bridge.md#managed-usb-and-desk-web-ui) use
+`serve --usb-bridge` and the shared `/api/bridge/*` controller, operation gate,
+session ID and background tasks. `/api/session/status` reports `kind: "usb-bridge"`;
+connect/disconnect rotate the same session ID used for native USB/TCP and BLE.
+Direct session transitions are rejected when either managed bridge is configured.
+Bridge management and direct port selection are alternative server modes.

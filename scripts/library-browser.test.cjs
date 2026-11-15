@@ -156,3 +156,77 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
   assert.equal(nicknames.get('0002').toString(),'Desk test');
   assert.deepEqual(errors,[]);
 });
+
+test('Chromium manages a USB bridge and reuses its device session after reload', {skip:!binary,timeout:60000}, async t => {
+  const net=require('node:net'),http=require('node:http');
+  const keyDir=await fs.mkdtemp(path.join(os.tmpdir(),'chameleon-usb-browser-'));
+  const keyFile=path.join(keyDir,'usb.key'),token='a'.repeat(64);
+  await fs.writeFile(keyFile,token,{mode:0o600});
+  const transport={connection:'tcp',medium:'usb-serial',managed:true,allows_pairing_changes:false,allows_device_restore:false,supports_dfu:false};
+  let state='disconnected',selected=null,connections=0,server,browser;
+  const sockets=new Set(),commands=[],errors=[];
+  const status=()=>({api_version:1,state,selected_device:selected,session_active:sockets.size>0,transport,data_address:'127.0.0.1:'+data.address().port,error:''});
+  const data=net.createServer(socket=>{
+    if(state!=='connected'||sockets.size){socket.destroy();return;}
+    connections++;sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>{sockets.delete(socket);state='disconnected';});
+    socket.write('CHAMELEON_BRIDGE/1 '+JSON.stringify({api_version:1,transport,device_id:'COM7'})+'\n');
+    let buffer=Buffer.alloc(0);
+    socket.on('data',chunk=>{
+      buffer=Buffer.concat([buffer,chunk]);
+      while(buffer.length>=10){
+        const size=buffer.readUInt16BE(6)+10;if(buffer.length<size)break;
+        const command=buffer.readUInt16BE(2);buffer=buffer.subarray(size);commands.push(command);
+        const payloads={1000:Buffer.from([2,0]),1033:Buffer.from([0]),1017:Buffer.from('usb-browser'),1002:Buffer.from([0]),1025:Buffer.from([14,116,80]),1018:Buffer.from([0]),1019:Buffer.from(Array.from({length:8},()=>[3,233,0,100]).flat()),1023:Buffer.from(Array(16).fill(1))};
+        const caps=[1000,1033,1017,1035,1002,1025,1018,1019,1023];
+        if(command===1035){payloads[1035]=Buffer.alloc(caps.length*2);caps.forEach((c,i)=>payloads[1035].writeUInt16BE(c,i*2));}
+        const payload=payloads[command]||Buffer.alloc(0),reply=Buffer.alloc(payload.length+10);
+        reply[0]=0x11;reply[1]=0xef;reply.writeUInt16BE(command,2);reply.writeUInt16BE(payloads[command]?0x68:103,4);reply.writeUInt16BE(payload.length,6);
+        reply[8]=(-reply.subarray(0,8).reduce((s,v)=>s+v,0))&255;payload.copy(reply,9);reply[reply.length-1]=(-payload.reduce((s,v)=>s+v,0))&255;socket.write(reply);
+      }
+    });
+  });
+  const control=http.createServer(async(req,res)=>{
+    if(req.headers.authorization!=='Bearer '+token){res.writeHead(401);res.end('{}');return;}
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    const input=chunks.length?JSON.parse(Buffer.concat(chunks)):{};
+    res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
+    if(req.url==='/v1/scan'){res.end(JSON.stringify({api_version:1,devices:[{id:'COM7',name:'Application port'}]}));return;}
+    if(req.url==='/v1/select'){assert.equal(input.device_id,'COM7');selected={id:'COM7',name:'Application port'};}
+    if(req.url==='/v1/connect'){assert(selected);state='connected';}
+    if(req.url==='/v1/disconnect'){state='disconnected';for(const socket of sockets)socket.destroy();}
+    res.end(JSON.stringify(status()));
+  });
+  t.after(async()=>{
+    if(browser)await browser.close();if(server)await server.close();
+    for(const socket of sockets)socket.destroy();
+    await Promise.all([new Promise(resolve=>data.close(resolve)),new Promise(resolve=>control.close(resolve))]);
+    await fs.rm(keyDir,{recursive:true,force:true});
+  });
+  await new Promise(resolve=>data.listen(0,'127.0.0.1',resolve));
+  await new Promise(resolve=>control.listen(0,'127.0.0.1',resolve));
+  server=await serve(binary,'127.0.0.1:0',['--usb-bridge','http://127.0.0.1:'+control.address().port,'--bridge-token-file',keyFile]);
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHAMELEON_TEST_CHROMIUM||undefined});
+  const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
+  const idle=()=>page.waitForFunction(()=>!document.querySelector('#device').hasAttribute('aria-busy'));
+  await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="device"]').click();
+  await page.waitForFunction(()=>!document.querySelector('#bridge-scan').disabled);
+  assert.match(await page.locator('#bridge-title').textContent(),/USB/);
+  assert.equal(await page.locator('#session-panel').isVisible(),false);
+  await page.locator('#bridge-scan').click();await idle();
+  await page.locator('#bridge-devices').selectOption('COM7');await page.locator('#bridge-select').click();await idle();
+  await page.locator('#bridge-connect').click();await idle();
+  assert.match(await page.locator('#info-cards').textContent(),/usb-browser/);
+  assert.equal(connections,1);
+  const session=await page.evaluate(()=>deviceSession.session_id);
+  await page.reload();await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="device"]').click();
+  await page.waitForFunction(()=>document.querySelector('#bridge-state').textContent.includes('已连接'));
+  assert.equal(await page.evaluate(()=>deviceSession.session_id),session);
+  await page.locator('#refresh-info').click();await idle();assert.equal(connections,1);
+  const snapshot=await (await page.request.get(server.base+'/api/session/status')).json();assert.deepEqual(snapshot.transport,transport);
+  await page.locator('#bridge-disconnect').click();await idle();
+  assert.match(await page.locator('#bridge-state').textContent(),/未连接/);
+  assert.equal(await page.locator('#info-cards').textContent(),'');
+  assert.notEqual(await page.evaluate(()=>deviceSession.session_id),session);
+  assert(!commands.some(c=>[1010,1014,1020,1030,1032,1037].includes(c)));
+  assert.deepEqual(errors,[]);
+});

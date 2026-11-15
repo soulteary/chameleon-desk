@@ -3654,8 +3654,218 @@
       "effect": "offline"
     },
     {
+      "id": "bridge.usb-scan",
+      "title": "Managed USB serial scan",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-usb",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/scan"
+        ],
+        "controls": [
+          "#bridge-scan"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "USBBridge.Scan"
+        ]
+      },
+      "notes": [
+        "Requires the USB bridge management endpoint and private token. Native USB and BLE controls retain their existing behavior.",
+        "Connection state, selected-port metadata and cleanup are additional runtime checks. This entry does not grant pairing, full-device restore or DFU privileges."
+      ],
+      "sources": [
+        "bridge_control.go",
+        "tools/ble_bridge/serial_management.py"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.usb-select",
+      "title": "Managed USB serial select",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-usb",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/select"
+        ],
+        "controls": [
+          "#bridge-select"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "USBBridge.Select"
+        ]
+      },
+      "notes": [
+        "Requires the USB bridge management endpoint and private token. Native USB and BLE controls retain their existing behavior.",
+        "Connection state, selected-port metadata and cleanup are additional runtime checks. This entry does not grant pairing, full-device restore or DFU privileges."
+      ],
+      "sources": [
+        "bridge_control.go",
+        "tools/ble_bridge/serial_management.py"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.usb-connect",
+      "title": "Managed USB serial connect",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-usb",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/connect"
+        ],
+        "controls": [
+          "#bridge-connect"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "USBBridge.Connect"
+        ]
+      },
+      "notes": [
+        "Requires the USB bridge management endpoint and private token. Native USB and BLE controls retain their existing behavior.",
+        "Connection state, selected-port metadata and cleanup are additional runtime checks. This entry does not grant pairing, full-device restore or DFU privileges."
+      ],
+      "sources": [
+        "bridge_control.go",
+        "tools/ble_bridge/serial_management.py"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.usb-status",
+      "title": "Managed USB serial status",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-usb",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "GET /api/bridge/status"
+        ],
+        "controls": [
+          "#bridge-refresh"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "USBBridge.Status"
+        ]
+      },
+      "notes": [
+        "Requires the USB bridge management endpoint and private token. Native USB and BLE controls retain their existing behavior.",
+        "Connection state, selected-port metadata and cleanup are additional runtime checks. This entry does not grant pairing, full-device restore or DFU privileges."
+      ],
+      "sources": [
+        "bridge_control.go",
+        "tools/ble_bridge/serial_management.py"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "bridge.usb-disconnect",
+      "title": "Managed USB serial disconnect",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "managed-usb",
+      "requirement_mode": "bridge",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/bridge/disconnect"
+        ],
+        "controls": [
+          "#bridge-disconnect"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "USBBridge.Disconnect"
+        ]
+      },
+      "notes": [
+        "Requires the USB bridge management endpoint and private token. Native USB and BLE controls retain their existing behavior.",
+        "Connection state, selected-port metadata and cleanup are additional runtime checks. This entry does not grant pairing, full-device restore or DFU privileges."
+      ],
+      "sources": [
+        "bridge_control.go",
+        "tools/ble_bridge/serial_management.py"
+      ],
+      "effect": "offline"
+    },
+    {
       "id": "transport.usb-bridge",
-      "title": "Fixed-port USB serial TCP bridge",
+      "title": "USB serial TCP bridge",
       "device": false,
       "write": false,
       "models": [
@@ -3685,13 +3895,14 @@
         "status": "supported",
         "entries": [
           "OpenContext",
-          "Client.TransportInfo"
+          "Client.TransportInfo",
+          "NewUSBBridge"
         ]
       },
       "notes": [
-        "Start the Python bridge separately with --serial-port, then use the existing TCP entrypoint. Native USB remains available.",
-        "No USB discovery or management API. The bridge declares usb-serial without pairing, full-device restore or DFU privileges; it also rejects bootloader entry.",
-        "External process configuration and device state require runtime checks; availability is not inferred from a running TCP listener."
+        "Fixed-port mode uses --serial-port. Managed mode uses --usb with an authenticated management port and token; the Web server connects through --usb-bridge.",
+        "Native USB remains available. Both USB bridge modes keep pairing, full-device restore and DFU restrictions and reject bootloader entry.",
+        "Port enumeration reports OS metadata, not verified device compatibility or physical identity."
       ],
       "sources": [
         "tools/ble_bridge/bridge.py",

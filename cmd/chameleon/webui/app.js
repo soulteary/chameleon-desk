@@ -10,7 +10,7 @@ const el = (tag, cls, text) => {
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
 let backgroundTasks = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false;
-let bridgeEnabled = false, bridgeStatus = null;
+let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
 let featureAvailability = null;
@@ -165,10 +165,11 @@ function updateBridgeButtons() {
   $("#bridge-refresh").disabled = busy.has("hardware");
 }
 function showBridgeStatus(status) {
-  if (!status || status.api_version !== 1 || status.transport?.medium !== "ble") throw new Error("蓝牙桥返回了不支持的连接信息");
+  const transport = status?.transport;
+  if (!status || status.api_version !== 1 || transport?.medium !== bridgeMedium || transport.connection !== "tcp" || transport.managed !== true || transport.allows_pairing_changes !== false || transport.allows_device_restore !== false || transport.supports_dfu !== false || !["disconnected","scanning","connecting","connected","disconnecting","blocked"].includes(status.state)) throw new Error("设备桥返回了不支持的连接信息");
   if (bridgeStatus?.state === "connected" && status.state !== "connected") clearBridgeDeviceView();
   bridgeStatus = status;
-  const states = { disconnected:"未连接", scanning:"正在扫描", connecting:"正在连接", connected:"已连接", disconnecting:"正在断开", blocked:"连接清理失败，请重启蓝牙桥" };
+  const states = { disconnected:"未连接", scanning:"正在扫描", connecting:"正在连接", connected:"已连接", disconnecting:"正在断开", blocked:"连接清理失败，请重启设备桥" };
   $("#bridge-state").textContent = (states[status.state] || "未知状态") + (status.session_active ? " · 设备会话使用中" : "");
   $("#bridge-selected").textContent = status.selected_device ? "已选择：" + (status.selected_device.name || status.selected_device.id) + " · " + status.selected_device.id : "尚未选择设备";
   $("#bridge-error").hidden = !status.error;
@@ -180,7 +181,8 @@ async function refreshBridgeStatus() {
   try { showBridgeStatus(await api("/api/bridge/status")); }
   catch (error) { if (error.staleSession) return;
     bridgeStatus = null;
-    $("#bridge-state").textContent = "无法读取蓝牙桥状态";
+    clearBridgeDeviceView();
+    $("#bridge-state").textContent = "无法读取设备桥状态";
     $("#bridge-error").hidden = false; $("#bridge-error").textContent = error.message;
     updateBridgeButtons();
   }
@@ -202,7 +204,7 @@ async function bridgeAction(action) {
     if (sessionsEnabled) await refreshDeviceSession();
     if (action === "scan") {
       if (!Array.isArray(result.devices)) throw new Error("扫描结果无效");
-      const select = $("#bridge-devices"); select.replaceChildren(el("option", null, result.devices.length ? "选择扫描到的设备" : "未发现设备，请确认设备正在广播")); select.firstChild.value = "";
+      const select = $("#bridge-devices"); select.replaceChildren(el("option", null, result.devices.length ? "选择扫描到的设备" : (bridgeMedium === "usb-serial" ? "未发现串口，请检查 USB 连接和权限" : "未发现设备，请确认设备正在广播"))); select.firstChild.value = "";
       for (const device of result.devices) { const option = el("option", null, (device.name || "未命名设备") + " · " + device.id); option.value = device.id; select.append(option); }
       await refreshBridgeStatus();
     } else {
@@ -606,7 +608,12 @@ async function loadCapabilities() {
     writesEnabled = caps.writes_enabled === true && !!caps.csrf_token; csrfToken = caps.csrf_token || "";
     if (!featureAvailability.configure(caps)) throw new Error("功能清单版本或内容不受支持，请重试或更新服务后刷新");
     sessionsEnabled = caps.device_sessions_enabled === true;
-    bridgeEnabled = caps.ble_bridge_enabled === true;
+    if (caps.ble_bridge_enabled === true && caps.usb_bridge_enabled === true) throw new Error("服务同时声明了两种设备桥，请检查配置");
+    bridgeMedium = caps.usb_bridge_enabled === true ? "usb-serial" : "ble";
+    bridgeEnabled = caps.ble_bridge_enabled === true || caps.usb_bridge_enabled === true;
+    $("#bridge-title").textContent = bridgeMedium === "usb-serial" ? "USB 串口桥连接" : "蓝牙连接";
+    $("#bridge-panel").setAttribute("aria-label", bridgeMedium === "usb-serial" ? "USB 串口桥连接管理" : "BLE 桥连接管理");
+    $("#bridge-note").textContent = bridgeMedium === "usb-serial" ? "选择桥所在主机的 Chameleon 应用串口。此连接不支持修改配对设置、整机恢复、进入 bootloader 或固件上传。" : "底层连接为 BLE。此连接不支持修改配对设置、整机恢复或固件上传。";
     $("#session-panel").hidden = !sessionsEnabled || bridgeEnabled;
     if (sessionsEnabled) await refreshDeviceSession();
     if (caps.background_tasks_enabled === true && !backgroundTasks) {

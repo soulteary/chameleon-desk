@@ -7,7 +7,7 @@
       device_unknown: "请先读取设备信息或刷新功能状态", capabilities_unknown: "设备命令列表未知，请重新读取",
       model_unknown: "设备型号未知，请重新读取", unsupported_model: "当前设备型号不支持此功能", writes_disabled: "只读模式：启动服务时需启用 --allow-writes",
       transport_unknown: "底层传输未知，请重新读取设备状态", transport_restricted: "此操作要求直连串口，BLE / TCP 不允许",
-      bridge_required: "请配置受管 BLE 桥", no_entry: "此端没有已支持的专用入口",
+      bridge_required: "请配置对应的受管设备桥", no_entry: "此端没有已支持的专用入口",
       parameters_required: "需选择具体参数或外部运行环境后判断", invalid_parameters: "请检查输入参数"
     };
     if (reason.code === "missing_commands") return "固件未公布所需命令：" + (reason.commands || []).join("、");
@@ -37,6 +37,7 @@
       try { for(const f of catalog) for(const selector of f.web.controls || []) document.querySelectorAll(selector); }
       catch (_) { this.catalog = []; this.states = new Map(); this.clear("功能控件定义无效，请重试读取权限"); return false; }
       this.catalog = catalog;
+      this.bridgePolicy = caps.usb_bridge_enabled === true ? "managed-usb" : "managed-ble";
       return this.setStates(caps.feature_schema_version, caps.feature_states, caps.feature_device || null);
     }
     observe(info) {
@@ -63,6 +64,9 @@
       fallback.push(...defaults.filter(d=>!this.catalog.some(f=>f.id===d.id)));
 
       for (const f of fallback) {
+        // Both bridge workflows use the same lifecycle panel. Only the configured
+        // medium controls its buttons; the other medium stays in the inventory.
+        if (f.requirement_mode === "bridge" && f.transport !== this.bridgePolicy) continue;
         let state = this.state(f.id);
         if (f.write && !this.writeAllowed()) state = { ...state, state:"unavailable", reasons:[{ code:"writes_disabled" }, ...state.reasons.filter(r=>r.code!=="writes_disabled")] };
         const bootstrap = ["device.info", "device.features"].includes(f.id);

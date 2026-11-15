@@ -10,7 +10,7 @@ import (
 )
 
 func (ws *webServer) featureContext(device *chameleon.FeatureDevice) chameleon.FeatureContext {
-	return chameleon.FeatureContext{Device: device, WritesAllowed: ws.allowWrites, BridgeConfigured: ws.bridge != nil}
+	return chameleon.FeatureContext{Device: device, WritesAllowed: ws.allowWrites, BridgeConfigured: ws.bridge != nil, BridgeMedium: ws.bridgeMedium()}
 }
 func (ws *webServer) featureStates(device *chameleon.FeatureDevice) []chameleon.FeatureAvailability {
 	states, _ := chameleon.EvaluateFeatures("web", ws.featureContext(device))

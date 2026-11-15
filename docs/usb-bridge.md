@@ -5,10 +5,17 @@ through Desk's existing TCP transport. This is an optional backend; native Go
 USB serial support remains available and does not require Python. BLE setup and
 its management API are unchanged; see the [bridge README](../tools/ble_bridge/README.md).
 
-This first stage has no USB discovery, selection/status API, hotplug reconnect
-or DFU backend. Select a port before starting the bridge. `--serial-port` cannot
-be combined with BLE `--device`, `--scan`, `--pair`, `--control-port` or
-`--token-file`. Do not use a bootloader port or a pySerial URL handler.
+The bridge supports a fixed-port mode and an authenticated managed mode. Managed
+mode enumerates ports on the bridge host and exposes selection, connection,
+status and disconnect through the existing Web device panel. Neither mode adds
+a hotplug reconnect or DFU backend. Port metadata is not proof of device model,
+firmware compatibility or physical identity.
+
+Fixed `--serial-port` mode cannot be combined with BLE `--device`, `--scan`,
+`--pair`, `--control-port` or `--token-file`. Managed `--usb` mode requires
+`--control-port` and `--token-file` and cannot be combined with `--device`,
+`--scan`, `--serial-port` or `--pair`. Do not select a bootloader port or a pySerial URL
+handler.
 
 ## Install and connect
 
@@ -26,7 +33,7 @@ On macOS, choose the device's `/dev/cu.*` application port. On Windows, use
 `tools\ble_bridge\.venv\Scripts\python.exe` and, for example,
 `--serial-port COM7`. The account running the bridge needs access to the port.
 Close other applications using it. Native Desk's `devices` command can help
-identify local ports; this bridge does not enumerate or auto-select them.
+identify local ports; fixed-port mode does not enumerate or auto-select them.
 
 In another terminal:
 
@@ -39,16 +46,88 @@ Alternatively start `serve` without `--port`, enter `tcp:127.0.0.1:12345` in
 the Web device window and connect. Web disconnect releases the TCP session and
 closes its serial port. The Web server retains its existing session/task and
 write-permission rules. Use ordinary TCP controls, not `serve --ble-bridge`:
-there is no USB management endpoint in this stage. CLI and Web cannot use the
-same bridge concurrently.
+fixed-port mode has no management endpoint. CLI and Web cannot use the
+same data session concurrently.
 
 SDK callers can use `OpenContext(ctx, "tcp:127.0.0.1:12345", timeout)` and inspect
 `Client.TransportInfo()`. Listener startup and the transport declaration do not
 prove that the serial port opened or that firmware accepts a command.
 
+## Managed USB and Desk Web UI
+
+Use the same pySerial installation, then start a separate authenticated control
+listener. Update Desk and the Python bridge together for managed USB support;
+earlier fixed-port-only Desk builds reject managed USB declarations. Fixed-port
+mode remains available.
+
+```sh
+tools/ble_bridge/.venv/bin/python tools/ble_bridge/bridge.py --usb \
+  --port 12345 --control-port 12346 --token-file tools/ble_bridge/usb.key
+./chameleon serve --usb-bridge http://127.0.0.1:12346 \
+  --bridge-token-file tools/ble_bridge/usb.key --timeout 10s
+```
+
+The token file is created once with private permissions. Keep it on the backend
+and outside version control; Windows users must restrict its ACL to their
+account. Desk validates it as a private regular file and never returns its
+contents to the browser. `--usb-bridge`, `--ble-bridge` and `--port` are mutually
+exclusive server configurations. Native USB and existing BLE commands are
+unchanged. Add `--allow-writes` only when device/card writes are intended;
+connection management itself is available in read-only mode and still requires
+the Web session token.
+
+In the Web device panel, scan ports, select the Chameleon **application** port,
+then connect. The panel shows connection state and disconnect controls. These
+are ports on the Python bridge host, not the browser host or the Desk server's
+native enumeration. The shared Web operation gate, session identity, task
+progress/cancellation and stale-response handling also apply to USB bridge
+commands. Refreshing the page retains the server's existing device session and
+allows querying retained background tasks.
+
+The management protocol is the same authenticated loopback HTTP/1.1 protocol
+used by BLE, with `Authorization: Bearer <token>` and JSON POST bodies:
+
+- `POST /v1/scan` with `{}` returns `api_version` and `devices`. Each record has
+  `id` (port path/name), `name`, `vid`, `pid`, `serial_number`, `location` and
+  `hwid`; unavailable OS metadata can be null. Scanning opens no serial port
+  and reports all enumerated ports, including devices that are not Chameleons.
+- `POST /v1/select` with `{"device_id":"COM7"}` accepts only a last-scan ID.
+- `POST /v1/connect` with `{}` re-enumerates and checks the selected metadata
+  before opening the port. Changed/missing metadata clears selection and
+  requires scanning and selection again. Equal metadata cannot distinguish
+  every physical replacement, particularly ports without serial numbers.
+- `GET /v1/status` reports `state`, `selected_device`, `session_active`,
+  `transport`, `data_address` and a non-sensitive `error`.
+- `POST /v1/disconnect` with `{}` cancels setup or closes the active link.
+
+Mutations return the same status shape. States are `disconnected`, `scanning`,
+`connecting`, `connected`, `disconnecting` and `blocked`. Scan/select/connect
+require a disconnected link; none silently replaces an active device. Connect
+opens the port once, then one TCP client can claim it. `connected` describes
+the open serial transport; it is not a firmware/protocol readiness check. `session_active` denotes
+that data claim, separately from an open serial link. Idle links also detect
+I/O failure or output-queue overflow and close. Closing the TCP client ends the
+serial session; reconnect is explicit. An abandoned HTTP connection does not
+interrupt cleanup. A lost connect response can leave an open idle link; query
+status before deciding whether to disconnect or proceed.
+
+Enumeration runs off the event loop with a timeout. A late result from an
+abandoned/timed-out scan cannot change selection, and a second enumeration is
+rejected while the first OS call is still running. Cleanup failures/timeouts
+block further use until restart, including late serial-open completion.
+
+SDK callers use `NewUSBBridge(address, token)` followed by `Scan`, `Select`,
+`Connect`, `Status`, `OpenSession` and `Disconnect`. The SDK checks the configured
+medium, selected device ID, restricted flags and loopback data destination.
+There is no new dedicated USB management CLI subcommand; ordinary CLI reads
+can claim a connected bridge through `--port tcp:...` while Desk Web is not
+using that session. The data socket itself remains unauthenticated.
+
 ## Transport and operation limits
 
-The declaration is `connection: "tcp"`, `medium: "usb-serial"`, `managed: false`.
+The declaration is `connection: "tcp"`, `medium: "usb-serial"`. `managed` is false
+for fixed-port mode and true for managed mode; it describes lifecycle control,
+not direct-USB permission.
 `allows_pairing_changes`, `allows_device_restore` and `supports_dfu` are all
 false. Desk accepts this descriptive medium without granting direct-USB
 permissions; a declaration attempting to enable those flags is rejected.
@@ -72,12 +151,13 @@ backend. BLE bootloader behavior is also unchanged.
 
 The data listener remains loopback-only and has no authentication or TLS.
 Other local processes can connect and issue allowed application commands.
-`--token-file` protects the separate BLE management API, not this data socket.
+`--token-file` protects the BLE or USB management API, not this data socket.
 Protocol payloads and backend exception text are not logged by the USB backend.
 
 ## Session lifetime and failures
 
-Each accepted TCP connection opens a fresh serial session at 115200 baud,
+Each fixed-port TCP connection or managed connect opens a fresh serial session
+at 115200 baud,
 8 data bits, no parity and one stop bit. DTR and RTS are asserted; software and
 hardware flow control are disabled. One owner thread performs all serial
 setup, reads, writes and close. POSIX exclusive mode is requested where
@@ -118,8 +198,11 @@ Tests use fake serial ports for configuration, fragmentation, short writes,
 command filtering, queue bounds, errors, unplug, cancellation and cleanup.
 Linux/macOS also exercise real pySerial over a virtual TTY. CLI and Web tests
 use the cgo-disabled Go binary with a simulated device to verify transport
-metadata, restrictions and persistent TCP-session disconnect. The USB startup
-test explicitly makes Bleak unavailable. CI runs bridge/CLI/Web integration on
+metadata, restrictions and persistent TCP-session disconnect. USB startup tests explicitly make Bleak unavailable. Management tests cover
+scan/selection, port replacement, idle unplug, HTTP cancellation, authentication
+and the Web session/task flow. A Chromium regression checks the shared Web
+panel against a simulated USB management/data endpoint, including page reload
+without reopening the device session. CI runs bridge/CLI/Web integration on
 Linux, macOS and Windows; the virtual-TTY case is skipped on Windows.
 
 These tests do not validate physical USB adapters, OS permissions, driver

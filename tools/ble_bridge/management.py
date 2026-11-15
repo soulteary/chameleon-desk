@@ -1,4 +1,4 @@
-"""Versioned, authenticated loopback management for the BLE bridge."""
+"""Versioned, authenticated loopback management shared by device bridges."""
 
 import asyncio
 import contextlib
@@ -55,6 +55,9 @@ class Link:
             self.session.disconnected(client)
         if self.owner.link is self and self.owner.state == "connected":
             self.owner.state = "disconnected"
+
+    def connected(self):
+        pass
 
     async def connect(self):
         self.parameters = await connect_nus(self.client, self.notification, self.owner.timeout)
@@ -145,6 +148,9 @@ class Controller:
         self.error = ""
         return self.status()
 
+    def make_link(self):
+        return Link(self)
+
     async def connect(self):
         self.available()
         if self.selected is None:
@@ -153,11 +159,12 @@ class Controller:
             self.state, self.error = "connecting", ""
             link = None
             try:
-                link = Link(self)
+                link = self.make_link()
                 self.link = link
                 self.connect_task = asyncio.create_task(link.connect())
                 await self.connect_task
                 self.state = "connected"
+                link.connected()
                 return self.status()
             except BaseException as error:
                 self.state = "disconnecting"
@@ -190,7 +197,7 @@ class Controller:
         if self.state == "scanning":
             raise APIError(409, "scan is still running")
         if self.state == "blocked":
-            raise APIError(409, "BLE cleanup failed; restart the bridge")
+            raise APIError(409, "bridge cleanup failed; restart the bridge")
         if self.state == "disconnecting":
             raise APIError(409, "disconnect is already running")
         if self.connect_task is not None:

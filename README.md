@@ -37,7 +37,10 @@ before pairing changes or full device restore.
 The same Python entrypoint has an optional [USB serial TCP backend](docs/usb-bridge.md)
 using pySerial. Select a fixed application port with `--serial-port`, then use
 Desk's ordinary TCP connection. Native USB remains available. The USB bridge
-does not enable pairing changes, full-device restore or DFU.
+does not enable pairing changes, full-device restore or DFU. For scanning and
+selection from Web UI, start the bridge with `--usb --control-port ...
+--token-file ...`, then configure Desk with `serve --usb-bridge` and
+`--bridge-token-file`. BLE management and native USB remain available.
 
 ## Web UI
 

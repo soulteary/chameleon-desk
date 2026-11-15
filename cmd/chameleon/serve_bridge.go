@@ -13,6 +13,24 @@ import (
 	chameleon "github.com/soulteary/chameleon-desk"
 )
 
+// Both bridges share Web session identity, operation serialization and task handling.
+type managedBridge interface {
+	Medium() string
+	Status(context.Context) (chameleon.BridgeStatus, error)
+	Scan(context.Context) (chameleon.BridgeScan, error)
+	Select(context.Context, string) (chameleon.BridgeStatus, error)
+	Connect(context.Context) (chameleon.BridgeStatus, error)
+	Disconnect(context.Context) (chameleon.BridgeStatus, error)
+	OpenSession(context.Context, chameleon.BridgeStatus, time.Duration) (*chameleon.Client, error)
+}
+
+func (ws *webServer) bridgeMedium() string {
+	if ws.bridge == nil {
+		return ""
+	}
+	return ws.bridge.Medium()
+}
+
 func readBridgeToken(path string) (string, error) {
 	link, err := os.Lstat(path)
 	if err != nil || !link.Mode().IsRegular() {
@@ -53,7 +71,7 @@ func (ws *webServer) closeBridgeClient() {
 func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if ws.bridge == nil {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("managed BLE bridge is not configured"))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("managed device bridge is not configured"))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -106,7 +124,7 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 		output, err = ws.bridge.Select(ctx, input.DeviceID)
 	case "connect":
 		if c := ws.getBridgeClient(); c != nil && !c.IsClosed() {
-			writeErr(w, http.StatusConflict, fmt.Errorf("BLE bridge is already connected"))
+			writeErr(w, http.StatusConflict, fmt.Errorf("device bridge is already connected"))
 			return
 		}
 		ws.closeBridgeClient()
@@ -125,7 +143,7 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "disconnect":
-		// The control request ends the BLE session and therefore the data socket.
+		// The control request ends the device session and therefore the data socket.
 		// Keep the socket until the request so the bridge owns cleanup ordering.
 		ws.rotateSessionID()
 		output, err = ws.bridge.Disconnect(ctx)

@@ -15,9 +15,9 @@ USB_RESTRICTED_COMMANDS = RESTRICTED_COMMANDS | {1010}
 POLL_SECONDS = 0.02
 
 
-def transport_info():
+def transport_info(managed=False):
     # Descriptive metadata, never permission to use wired-only workflows.
-    return {"connection": "tcp", "medium": "usb-serial", "managed": False,
+    return {"connection": "tcp", "medium": "usb-serial", "managed": managed,
             "allows_pairing_changes": False, "allows_device_restore": False,
             "supports_dfu": False}
 
@@ -37,6 +37,7 @@ class SerialWorker:
         self.outgoing = queue.Queue(maxsize=1)
         self.ready = asyncio.Event()
         self.finished = asyncio.Event()
+        self.ended = asyncio.Event()
         self.wake = asyncio.Event()
         self.loop = asyncio.get_running_loop()
         self.opened = False
@@ -113,6 +114,10 @@ class SerialWorker:
             # Do not expose protocol payloads or exception text from a backend.
             self.error = type(error).__name__
         finally:
+            # Publish I/O termination before close: a driver can block in close,
+            # and callers still need to end the TCP session and bound cleanup.
+            self.notify(self.ended.set)
+            self.notify(self.ready.set)
             if current is not None:
                 self.notify(self.acknowledge, current[1], False)
             while True:
@@ -137,8 +142,23 @@ class SerialWorker:
             self.received_bytes -= len(data)
         return data
 
+    async def connect(self):
+        self.thread.start()
+        async with asyncio.timeout(self.timeout):
+            await self.ready.wait()
+        if not self.opened or self.ended.is_set():
+            raise RuntimeError("serial setup failed")
+
+    async def disconnect(self):
+        self.stop.set()
+        async with asyncio.timeout(self.timeout):
+            await self.finished.wait()
+            await asyncio.to_thread(self.thread.join, self.timeout)
+        if not self.clean or self.thread.is_alive():
+            raise RuntimeError("serial cleanup failed; restart the bridge")
+
     async def send(self, frame):
-        if self.stop.is_set() or self.finished.is_set():
+        if self.stop.is_set() or self.ended.is_set():
             raise RuntimeError("serial session ended")
         future = self.loop.create_future()
         self.outgoing.put_nowait((frame, future))
@@ -147,9 +167,10 @@ class SerialWorker:
 
 
 class SerialSession(StreamSession):
-    def __init__(self, reader, writer, device, factory, timeout):
+    def __init__(self, reader, writer, device, factory, timeout, prepared=None):
         super().__init__(reader, writer, timeout)
-        self.worker = SerialWorker(device, factory, timeout)
+        self.prepared = prepared
+        self.worker = prepared.worker if prepared else SerialWorker(device, factory, timeout)
         self.clean = False
 
     async def serial_to_tcp(self):
@@ -189,25 +210,21 @@ class SerialSession(StreamSession):
         await asyncio.gather(*tasks, return_exceptions=True)
         clean = False
         try:
-            async with asyncio.timeout(self.timeout):
-                await self.worker.finished.wait()
-                # Port close precedes finished; join the owner before reuse.
-                await asyncio.to_thread(self.worker.thread.join, self.timeout)
-                clean = self.worker.clean and not self.worker.thread.is_alive()
-            if not clean:
-                LOG.error("serial cleanup failed; restart the bridge")
-        except TimeoutError:
-            LOG.error("serial cleanup timed out; restart the bridge")
+            await self.worker.disconnect()
+            clean = True
+        except (TimeoutError, RuntimeError):
+            LOG.error("serial cleanup failed or timed out; restart the bridge")
         with contextlib.suppress(Exception):
             async with asyncio.timeout(self.timeout):
                 await self.writer.wait_closed()
         return clean
 
     async def run(self):
-        self.worker.thread.start()
+        if not self.prepared:
+            self.worker.thread.start()
         tasks = [asyncio.create_task(self.serial_to_tcp()), asyncio.create_task(self.read_tcp()),
                  asyncio.create_task(self.tcp_to_serial()), asyncio.create_task(self.failed.wait()),
-                 asyncio.create_task(self.worker.finished.wait())]
+                 asyncio.create_task(self.worker.ended.wait())]
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
@@ -242,6 +259,10 @@ async def serve_serial(args):
         import serial
     except ImportError as error:
         raise RuntimeError("install tools/ble_bridge/requirements-usb.txt first") from error
+    if getattr(args, "usb", False):
+        from serial.tools.list_ports import comports
+        from serial_management import serve_managed_serial
+        return await serve_managed_serial(args, comports, serial.Serial)
     bridge = SerialBridge(args.serial_port, serial.Serial, args.timeout)
     server = await asyncio.start_server(bridge.accept, args.listen, args.port, limit=BUFFER_LIMIT)
     LOG.info("USB serial bridge listening on %s:%s; one client at a time", args.listen, args.port)
