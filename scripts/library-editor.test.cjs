@@ -54,3 +54,35 @@ test('renaming an ordinary card with no memory does not invent an empty memory r
  const empty={id:'empty',name:'old',tag:1100,data:[]};const p=fixture(t,value=>({database:{cards:[]},card:{...empty,name:value.name}}));
  p.editor.open(empty);p.input('card-edit-name','new');await p.editor.save();assert.deepEqual([...p.calls[0].value.rows],[]);assert(!p.editor.dirty);
 });
+
+const classicDraft=()=>({...card,desk_read:{...card.desk_read,read_result:{...card.desk_read.read_result,kind:'classic'},rows:['11'.repeat(16)]}});
+const promotionState=(state='available',message='')=>({schema_version:1,state:{id:'library.promote-classic',state,reasons:message?[{code:'invalid_parameters',message}]:[],required_commands:[]}});
+test('Classic conversion is explicitly previewed and appends a standard card without a write flag',async t=>{
+ const source=classicDraft(),standard={id:'converted',name:'read',tag:1000,uid:'01020304',data:Array.from({length:20},()=>Array(16).fill(0))};
+ const p=fixture(t,value=>value.id==='library.promote-classic'?promotionState():{database:{cards:['draft','converted'],custom:42},card:standard});
+ p.editor.open(source);await p.editor.previewReady;assert.equal(p.$('card-promote-classic').disabled,false);await p.editor.promote();
+ assert.equal(p.calls[1].value.op,'promote-classic');assert.equal(p.calls[1].value.id,'draft');assert.equal(p.calls[1].value.allow_writes,undefined);assert.equal(p.changes,1);assert.equal(p.editor.card.id,'converted');assert(p.$('card-promote-classic').disabled);
+});
+test('partial, legacy and unknown-key rejection reasons are visible and no conversion is posted',async t=>{
+ for(const message of ['Classic identity is missing','all sector keys must be known','complete read required']){
+  const p=fixture(t,()=>promotionState('unavailable',message));p.editor.open(classicDraft());await p.editor.previewReady;
+  assert(p.$('card-promote-classic').disabled);assert.match(p.$('card-promote-reason').textContent,new RegExp(message));await p.editor.promote();assert.equal(p.calls.length,1);
+ }
+});
+test('late promotion preview cannot enable a changed or replaced draft',async t=>{
+ let resolve;const p=fixture(t,()=>new Promise(r=>resolve=r));p.editor.open(classicDraft());const pending=p.editor.previewReady;p.input('card-edit-name','new');resolve(promotionState());await pending;
+ assert(p.$('card-promote-classic').disabled);assert.match(p.$('card-promote-reason').textContent,/先保存/);
+ p.editor.open(classicDraft());const next=p.editor.previewReady;p.editor.clear();resolve(promotionState());await next;assert(p.$('card-promote-classic').disabled);
+});
+test('a changed library invalidates an in-flight conversion without replacing local data',async t=>{
+ let resolve;const p=fixture(t,value=>value.id==='library.promote-classic'?promotionState():new Promise(r=>resolve=r));p.editor.open(classicDraft());await p.editor.previewReady;
+ const pending=p.editor.promote();p.text='{"newer":true}';resolve({database:{old:true},card:{id:'converted'}});await assert.rejects(pending,/已变化/);assert.equal(p.text,'{"newer":true}');assert.equal(p.changes,0);
+});
+test('conversion errors keep the saved draft and allow explicit retry',async t=>{
+ const p=fixture(t,value=>{if(value.id==='library.promote-classic')return promotionState();throw Error('invalid block 0')});p.editor.open(classicDraft());await p.editor.previewReady;
+ await assert.rejects(p.editor.promote(),/invalid block/);assert.equal(p.changes,0);assert.equal(p.editor.card.id,'draft');assert.match(p.$('card-edit-state').textContent,/未保存.*invalid block/);assert.equal(p.$('card-promote-classic').disabled,false);
+});
+test('Type2 and LF drafts have a visible conversion restriction without requesting promotion previews',async t=>{
+ const p=fixture(t,()=>{throw Error('unexpected request')});for(const kind of ['type2','lf']){const source=classicDraft();source.desk_read.read_result.kind=kind;p.editor.open(source);await p.editor.previewReady;assert(p.$('card-promote-classic').disabled);assert.match(p.$('card-promote-reason').textContent,/Type2 \/ LF/);}
+ assert.equal(p.calls.length,0);
+});

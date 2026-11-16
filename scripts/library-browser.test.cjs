@@ -70,7 +70,7 @@ test('Chromium persists the library through reload, browser restart and Desk res
 test('Chromium verifies capabilities, task reload tracking and configuration readback', { skip: !binary, timeout: 60000 }, async t => {
   const net = require('node:net'), read = require('node:fs');
   const catalog = JSON.parse(read.readFileSync(path.join(__dirname,'../internal/catalog/upstream.json'),'utf8')).commands;
-  let model=0, capabilities=[1033,1035], mode=0, delayModel=0, animation=0, readerEnabled=false;const nicknames=new Map();
+  let model=0, capabilities=[1033,1035], mode=0, delayModel=0, animation=0, readerEnabled=false,classicKnown=false;const nicknames=new Map();
   let connections=0; const commands=[], sockets=new Set();
   const simulator=net.createServer(socket=>{
     connections++;
@@ -93,7 +93,7 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
         else if(command===1002)payload=Buffer.from([mode]);
         else if(command===1001)mode=frame[9];
         else if(command===2000){status=readerEnabled?0:1;if(readerEnabled)payload=Buffer.from([4,1,2,3,4,4,0,9,0]);}
-        else if(command===2008){status=0;payload=Buffer.alloc(16,frame[10]);if(frame[10]%4===3)Buffer.from([0x7f,0x07,0x88]).copy(payload,6);}
+        else if(command===2008){status=0;payload=Buffer.alloc(16,frame[10]);if(frame[10]%4===3)Buffer.from(classicKnown?[0xff,7,0x80]:[0x7f,0x07,0x88]).copy(payload,6);if(classicKnown&&frame[10]===0)Buffer.from([1,2,3,4,4,9,4,0]).copy(payload);}
         else if(command===2007){status=0;}
         else if(command===2010){status=0;payload=Buffer.from(Array.from({length:16},(_,i)=>frame[15]*4+i));}
         else if(command===3014){status=0x40;payload=Buffer.from('12345678');}
@@ -172,9 +172,22 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
   await page.locator('.dock [data-open="cards"]').click();
   assert.match(await page.locator('#card-edit-limit').textContent(),/classic/);
   assert.match(await page.locator('#card-edit-rows').inputValue(),/\?\? \?\? \?\? \?\? \?\? \?\?/);
+  await page.waitForFunction(()=>document.querySelector('#card-promote-reason').textContent.includes('all sector keys'));assert(await page.locator('#card-promote-classic').isDisabled());
   await page.locator('.dock [data-open="read"]').click();
 
   await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));
+  classicKnown=true;
+  await page.locator('#reader-classic-json').fill(JSON.stringify({uid:'01020304',sectors:Array.from({length:5},(_,sector)=>({sector,a:'010203040506'}))}));
+  await page.waitForFunction(()=>!document.querySelector('#reader-classic-go').disabled);await page.locator('#reader-classic-go').click();
+  await page.waitForFunction(()=>document.querySelector('#reader-classic-result').textContent.includes('20 / 20'));
+  await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));await page.locator('#reader-classic-import').click();
+  await page.locator('.dock [data-open="cards"]').click();await page.waitForFunction(()=>!document.querySelector('#card-promote-classic').disabled);
+  const beforeConversion=commands.length;const sourceID=await page.locator('#db-id').inputValue();
+  await page.locator('#card-promote-classic').click();await page.waitForFunction(()=>JSON.parse(document.querySelector('#db-json').value).cards?.some(raw=>JSON.parse(raw).tag===1000)&&document.querySelector('#db-save-state').textContent.includes('已自动保存'));
+  const convertedDatabase=JSON.parse(await page.locator('#db-json').inputValue()),convertedCards=convertedDatabase.cards.map(JSON.parse),standard=convertedCards.find(c=>c.tag===1000);
+  assert(standard);assert.equal(standard.sak,9);assert.deepEqual(standard.atqa,[0,4]);assert.equal(standard.data.length,20);assert(standard.id!==sourceID);assert(convertedCards.some(c=>c.id===sourceID&&c.desk_read));assert.equal(commands.length,beforeConversion);
+  const standardDownload=page.waitForEvent('download');await page.locator('[data-export-card]').click();const cardDownload=await standardDownload;assert.equal(JSON.parse(await fs.readFile(await cardDownload.path(),'utf8')).tag,1000);
+  classicKnown=false;await page.locator('.dock [data-open="read"]').click();
   await page.locator('#reader-type2-uid').fill('01020304');await page.locator('#reader-type2-start').fill('1');await page.locator('#reader-type2-count').fill('2');
   await page.waitForFunction(()=>!document.querySelector('#reader-type2-go').disabled);await page.locator('#reader-type2-go').click();
   await page.waitForFunction(()=>document.querySelector('#reader-type2-result').textContent.includes('2 / 2'));
@@ -187,6 +200,12 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
   const tasks=await page.evaluate(()=>api('/api/tasks'));assert(tasks.tasks.filter(t=>t.path.startsWith('/api/reader/')).every(t=>!t.write));
   model=1;await page.locator('.dock [data-open="device"]').click();await probe();await page.locator('.dock [data-open="read"]').click();
   assert(await page.locator('#reader-type2-go').isDisabled());assert.match(await page.locator('#reader-type2-go').locator('xpath=following-sibling::span[1]').textContent(),/当前设备型号/);
+  await page.reload();await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="cards"]').click();await page.locator('#db-list').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#library-results [data-card-id]').length===3);
+  assert.equal(await page.locator('#library-results [data-card-id]').count(),3);
+  await page.locator(`#library-results [data-card-id="${standard.id}"]`).click();await page.waitForFunction(()=>document.querySelector('#db-out').dataset.ready==='true'&&JSON.parse(document.querySelector('#db-out').textContent).tag===1000);
+  assert.equal(await page.locator('#card-promote-classic').isDisabled(),true);
+
   assert.deepEqual(errors,[]);
 });
 

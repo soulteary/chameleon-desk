@@ -2702,13 +2702,58 @@
       },
       "notes": [
         "Web supports list/show/add/delete/validate, read-result import and name/data editing. Merge and folder workflows have no dedicated Web entry.",
-        "Read drafts preserve source results, offsets and unknown-byte masks. They cannot be loaded into slots, used as NDEF cards or converted to binary/emulator images; export Desk JSON.",
+        "Read drafts preserve source results, offsets and unknown-byte masks. Unconverted drafts cannot be loaded into slots, used as NDEF cards or converted to binary/emulator images; export Desk JSON.",
         "Editing does not resolve unknown bytes, infer Type2 capacity or establish a complete HF identity."
       ],
       "sources": [
         "gui_database.go",
         "gui_library.go",
         "read_card.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "library.promote-classic",
+      "title": "Convert a complete Classic read draft to a standard saved card",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/database",
+          "POST /api/features/check"
+        ],
+        "controls": [
+          "#card-promote-classic"
+        ]
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUICard.ClassicPromotionError",
+          "GUICard.PromoteClassicDraft"
+        ]
+      },
+      "notes": [
+        "Offline conversion requires a complete Classic read, observed identity, full memory, known keys and consistent block 0 / trailer access bytes.",
+        "Creates a new saved card and retains the original draft. Does not write a device or physical card.",
+        "Legacy drafts without identity, partial/error results, Type2 and LF are rejected. Four- and seven-byte UID layouts only; requested geometry is not chip authentication."
+      ],
+      "sources": [
+        "classic_identity.go",
+        "classic_promotion.go"
       ],
       "effect": "offline"
     },
@@ -4264,16 +4309,19 @@
         "entries": [
           "ClassicRead.KeyMap",
           "ClassicRead.Requirements",
-          "Client.DumpClassicWithKeys"
+          "Client.DumpClassicWithKeys",
+          "Client.ReadClassicWithIdentity"
         ]
       },
       "notes": [
         "Selected parameters are validated before I/O. Mode restoration and no automatic replay apply.",
-        "Results distinguish completed, partial and interrupted reads; range reads are not automatic complete-card dumps."
+        "Results distinguish completed, partial and interrupted reads; range reads are not automatic complete-card dumps.",
+        "Web captures and compares UID/ATQA/SAK/ATS before each sector and after the final block, in the same Reader operation. Legacy DumpClassicWithKeys sequencing is unchanged."
       ],
       "sources": [
         "reader_requests.go",
-        "cmd/chameleon/serve_reader.go"
+        "cmd/chameleon/serve_reader.go",
+        "classic_identity.go"
       ]
     },
     {

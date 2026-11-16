@@ -14,7 +14,7 @@ The new storage cannot recover data from an older page that was already closed.
 
 ## Automatic save and recovery
 
-Changes to the database JSON, imported database files, and successful add/delete, reader-result import and data-edit
+Changes to the database JSON, imported database files, and successful add/delete, reader-result import, data-edit and Classic-conversion
 results schedule a save after 600 ms without another edit. Desk validates the
 complete database through its existing Go parser before storing it. Validation
 includes cards, dictionaries, folder references and the existing 32 MiB limit.

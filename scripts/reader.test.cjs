@@ -65,3 +65,8 @@ test('reader import requires confirmed data and offline library availability and
  p.controller.show('lf',{schema:1,kind:'lf',complete:true,requested_units:1,units_read:0,present:false});assert(p.$('reader-lf-import').disabled);
  p.features.states.set('library.database',{id:'library.database',state:'unknown',reasons:[]});p.controller.show('classic',{schema:1,kind:'classic',complete:false,start:0,requested_units:20,units_read:1,dump:{data:'11'.repeat(16)}});assert(p.$('reader-classic-import').disabled);assert.match(p.$('reader-classic-import-reason').textContent,/能力尚未就绪/);
 });
+
+test('Classic identity fields are displayed in numeric ATQA order without changing result bytes',t=>{
+ const p=fixture(t);const value={schema:1,kind:'classic',complete:true,start:0,requested_units:20,units_read:20,identity:{schema:1,uid:'01020304',atqa:'0004',sak:9,ats:''},dump:{data:'11'.repeat(320)}};
+ p.controller.show('classic',value);assert.match(p.$('reader-classic-result').textContent,/UID 01020304.*ATQA 0004.*SAK 09.*ATS 空/);assert.equal(p.controller.results.get('classic').value.dump.data,value.dump.data);
+});

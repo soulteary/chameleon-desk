@@ -1186,3 +1186,14 @@ test('card edits use library persistence and storage failure retains the new dat
  failSave=false;await p.click('#db-save-now');await waitForLibrary(p,()=>!unloadPrevented(p));assert.match(p.$('#db-save-state').textContent,/已自动保存/);
  const restored=await page(t,{},{indexedDB:factory});assert.match(restored.$('#db-json').value,/saved edit/);
 });
+
+test('offline Classic conversion preview survives a device-session change without enabling a device operation',async t=>{
+ const pending=deferred(),source={...card,id:'draft',tag:0,data:[],desk_read:{schema:1,read_result:{kind:'classic',complete:true,units_read:20,requested_units:20},rows:Array(20).fill('11'.repeat(16))}};
+ const p=await page(t,{'/api/database':()=>response(source),'/api/features/check':opts=>JSON.parse(opts.body).id==='library.promote-classic'?pending.promise:response({schema_version:1,state:{id:'slot.load-card',state:'available',reasons:[]}})});
+ p.input('#db-id','draft');await p.click('#db-show');
+ p.w.sessionTest.showDeviceSession({session_id:'new-session',connected:true,target:'tcp:localhost:1234',kind:'direct'});
+ pending.resolve(response({schema_version:1,state:{id:'library.promote-classic',state:'available',reasons:[],required_commands:[]}}));await tick();
+ assert.equal(p.$('#card-promote-classic').disabled,false);assert.equal(p.$('#scan-hf').disabled,true);
+ assert(!p.requests.some(r=>r.url.startsWith('/api/reader/')||r.url==='/api/slot/load-card'));
+ p.input('#card-edit-name','unsaved');assert(p.$('#card-promote-classic').disabled);assert.match(p.$('#card-promote-reason').textContent,/先保存/);
+});

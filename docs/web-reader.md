@@ -47,8 +47,8 @@ results include the SDK `dump` representation; incomplete prefixes must not be
 loaded as full card images. Type2 exports describe only the requested range,
 not automatically detected capacity. Results can now be explicitly imported as
 [Desk library drafts](web-read-library.md), edited and exported as JSON while
-preserving their original observations and unknown bytes. Automatic conversion,
-password-authenticated Type2 reading, key recovery and physical card writing
+preserving their original observations and unknown bytes. Eligible Classic drafts can be explicitly [converted to standard cards](classic-promotion.md).
+Automatic conversion, password-authenticated Type2 reading, key recovery and physical card writing
 remain outside these workflows.
 
 Classic results/exports can contain supplied or readable card keys. Task results
@@ -89,7 +89,8 @@ ordered contiguous sectors from zero:
 5 (Mini), 16 (1K), 32 (2K) or 40 (4K). Each sector needs at least one supplied
 six-byte key; there is no default-key guessing or recovery. `ClassicRead.KeyMap`
 derives the existing key-map completeness flag and shares validation with
-`DumpClassicWithKeys`. The SDK checks UID per sector, tries only supplied keys,
+`DumpClassicWithKeys`. The Web SDK path captures and compares UID/ATQA/SAK/ATS before each sector and
+after the final block. It tries only supplied keys,
 verifies supplied hidden keys and retains unknown-key metadata. UID matching is
 not physical-card authentication or proof of an atomic snapshot.
 

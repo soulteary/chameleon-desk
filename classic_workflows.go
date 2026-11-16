@@ -376,7 +376,11 @@ func (d ClassicCardDump) Validate() error {
 // trailer data, then reads each sector. Key A
 // and hidden Key B bytes in trailers are filled from supplied keys, not guessed.
 // Schema 2 explicitly records unknown keys; such dumps cannot write trailers.
-func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (out ClassicCardDump, err error) {
+func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (ClassicCardDump, error) {
+	return c.dumpClassicWithKeys(ctx, k, nil)
+}
+
+func (c *Client) dumpClassicWithKeys(ctx context.Context, k ClassicKeyMap, identity *ClassicIdentity) (out ClassicCardDump, err error) {
 	tag, e := classicReadGeometry(k)
 	if e != nil {
 		return out, e
@@ -386,7 +390,13 @@ func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (out 
 	out.TagType = tag
 	err = c.Reader(ctx, func(s *ReaderSession) error {
 		for _, sector := range k.Sectors {
-			if e := ensureUID(ctx, s, k.UID); e != nil {
+			var e error
+			if identity == nil {
+				e = ensureUID(ctx, s, k.UID)
+			} else {
+				e = observeClassicIdentity(ctx, s, k.UID, identity)
+			}
+			if e != nil {
 				return e
 			}
 			verified := [2]bool{}
@@ -450,6 +460,9 @@ func (c *Client) DumpClassicWithKeys(ctx context.Context, k ClassicKeyMap) (out 
 				}
 				out.Data = append(out.Data, data...)
 			}
+		}
+		if identity != nil {
+			return observeClassicIdentity(ctx, s, k.UID, identity)
 		}
 		return nil
 	})
