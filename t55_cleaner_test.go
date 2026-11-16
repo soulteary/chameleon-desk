@@ -2,6 +2,7 @@ package chameleon
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -19,17 +20,14 @@ func TestCleanT55PasswordFound(t *testing.T) {
 	np := []byte{0, 0, 0, 0}
 	original := []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE}
 	good := []byte{0x51, 0x24, 0x36, 0x48}
-	bad := []byte{0x00, 0x00, 0x00, 0x00}
 	c := readerSimulator(t, []readerStep{
 		{command: 1002, status: 0x68, data: []byte{1}}, em410xScan(original), // initial scan
-		{command: 1002, status: 0x68, data: []byte{1}}, t55Write(probe, np, bad, 0x40), // write with wrong pw "succeeds" on wire
-		{command: 1002, status: 0x68, data: []byte{1}}, em410xScan(original), // but readback still old -> keep going
 		{command: 1002, status: 0x68, data: []byte{1}}, t55Write(probe, np, good, 0x40),
 		{command: 1002, status: 0x68, data: []byte{1}}, em410xScan(probe), // readback matches -> found
 	})
 	attempts := 0
-	out, e := c.CleanT55Password(context.Background(), [][]byte{bad, good}, probe, np, true, func(int, []byte) error { attempts++; return nil })
-	if e != nil || !out.Found || out.Password.String() != "51243648" || out.Attempts != 2 || attempts != 2 {
+	out, e := c.CleanT55Password(context.Background(), [][]byte{good}, probe, np, true, func(int, []byte) error { attempts++; return nil })
+	if e != nil || !out.Found || out.Password.String() != "51243648" || out.Attempts != 1 || attempts != 1 {
 		t.Fatalf("%+v %v (progress %d)", out, e, attempts)
 	}
 	if out.OriginalID.String() != "AABBCCDDEE" {
@@ -66,7 +64,23 @@ func TestCleanT55PasswordNotFound(t *testing.T) {
 		{command: 1002, status: 0x68, data: []byte{1}}, em410xScan(original),
 	})
 	out, e := c.CleanT55Password(context.Background(), [][]byte{cand}, probe, np, true, func(int, []byte) error { return nil })
-	if e != nil || out.Found || out.Attempts != 1 {
+	if e == nil || out.Found || out.Attempts != 1 || out.Outcome != "write_outcome_unknown" {
 		t.Fatalf("%+v %v", out, e)
+	}
+}
+
+func TestCleanT55RejectsMultipleCandidatesBeforeIO(t *testing.T) {
+	c := readerSimulator(t, nil)
+	out, e := c.CleanT55Password(context.Background(), [][]byte{make([]byte, 4), {1, 2, 3, 4}}, []byte{1, 2, 3, 4, 5}, make([]byte, 4), true, func(int, []byte) error { return nil })
+	if e == nil || out.WriteAttempted || out.Outcome != "write_not_started" || c.Stats().Requests != 0 {
+		t.Fatal(out, e)
+	}
+}
+func TestCleanT55FirmwareErrorDoesNotContinue(t *testing.T) {
+	probe, np, candidate := []byte{1, 2, 3, 4, 5}, make([]byte, 4), make([]byte, 4)
+	c := readerSimulator(t, []readerStep{{command: 1002, status: 0x68, data: []byte{1}}, em410xScan([]byte{9, 8, 7, 6, 5}), {command: 1002, status: 0x68, data: []byte{1}}, t55Write(probe, np, candidate, 6)})
+	out, e := c.CleanT55Password(context.Background(), [][]byte{candidate}, probe, np, true, func(int, []byte) error { return nil })
+	if !errors.Is(e, ErrWriteOutcomeUnknown) || out.Outcome != "write_outcome_unknown" || out.Attempts != 1 || c.Stats().Requests != 4 {
+		t.Fatal(out, e)
 	}
 }

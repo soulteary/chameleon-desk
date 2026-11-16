@@ -1,5 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const {JSDOM}=require('jsdom');
-function fixture(t,api,storage){const dom=new JSDOM('<div id="tasks"></div>',{url:'http://127.0.0.1/',runScripts:'outside-only'});dom.window.eval(fs.readFileSync('cmd/chameleon/webui/background-tasks.js','utf8'));t.after(()=>dom.window.close());const controller=new dom.window.DeskBackgroundTasks({api,container:dom.window.document.querySelector('#tasks'),interval:1,storage});return {controller,dom};}
+function fixture(t,api,storage){const dom=new JSDOM('<div id="tasks"></div>',{url:'http://127.0.0.1/',runScripts:'outside-only'});dom.window.eval(fs.readFileSync('cmd/chameleon/webui/background-tasks.js','utf8'));t.after(()=>dom.window.close());const controller=new dom.window.DeskBackgroundTasks({api,container:dom.window.document.querySelector('#tasks'),interval:1,storage,operations:require("../internal/operations/catalog.json").operations.map(o=>({...o,retry_policy:"never"}))});return {controller,dom};}
 const task=(extra={})=>({id:'task-1',request_id:'receipt-1',session_id:'session',path:'/api/slot/activate',write:true,state:'queued',phase:'queued',outcome:'not_started',commands_attempted:0,responses_received:0,...extra});
 test('task client submits once and polls progress and terminal results',async t=>{
  const calls=[];let reads=0;const result={slot:1};const api=async(path,opts)=>{calls.push({path,opts});if(path==='/api/tasks'&&!opts)return {server_id:'server',tasks:reads?[task({state:'succeeded',result})]:[]};if(opts?.method==='POST')return task();reads++;return reads===1?task({state:'running',commands_attempted:1}):task({state:'succeeded',result});};
@@ -63,4 +63,20 @@ test('a removed result fails its in-flight import guard',async t=>{
  const {controller,dom}=fixture(t,async()=>({server_id:'server',tasks}));controller.onReaderResult=async(_value,guard)=>{current=guard;};
  await controller.refresh();[...dom.window.document.querySelectorAll('button')].find(button=>button.textContent.includes('导入')).click();await new Promise(resolve=>setTimeout(resolve,0));assert.equal(current(),true);
  tasks=[];await controller.refresh();assert.equal(current(),false);
+});
+test('durable restart restores metadata without offering result recovery or replay',async t=>{
+ const storage={getItem:()=>JSON.stringify([{serverID:'old',requestID:'receipt-1',write:true}]),setItem(){}};
+ const calls=[];const {controller,dom}=fixture(t,async path=>{calls.push(path);return {server_id:'new',tasks:[task({state:'interrupted',outcome:'write_outcome_unknown',recovered:true,result_retained:false})]}},storage);
+ await controller.refresh();assert.match(dom.window.document.body.textContent,/从持久记录恢复/);assert.match(dom.window.document.body.textContent,/结果正文未保留/);assert.match(dom.window.document.body.textContent,/写入结果未知/);assert.doesNotMatch(dom.window.document.body.textContent,/服务已重启、回执丢失/);assert.equal(dom.window.document.querySelectorAll('button').length,0);assert.deepEqual(calls,['/api/tasks']);assert.equal(controller.pending.length,1);
+});
+test('invalid local JSON and unregistered operations leave no acceptance receipt',async t=>{
+ const calls=[];const {controller}=fixture(t,async path=>{calls.push(path);return {server_id:'server',tasks:[]}});
+ await assert.rejects(()=>controller.execute('/api/slot/activate',{headers:{'X-Chameleon-Session':'session'},body:'{'}));
+ await assert.rejects(()=>controller.execute('/api/arbitrary',{headers:{'X-Chameleon-Session':'session'},body:'{}'}),/未登记/);
+ assert.equal(controller.pending.length,0);assert.equal(calls.length,0);
+});
+test('journal failure is visible and operation metadata sets write receipts',async t=>{
+ const {controller,dom}=fixture(t,async()=>({server_id:'server',journal_error:'disk failed',tasks:[]}));await controller.refresh();assert.match(dom.window.document.body.textContent,/任务记录保存失败/);
+ assert.equal(controller.operation('/api/reader/classic-write').write,true);assert.equal(controller.operation('/api/reader/classic-write-plan').write,false);
+ assert.throws(()=>controller.configureOperations([{id:'raw',path:'/api/raw',method:'POST',write:true,retry_policy:'automatic'}]),/清单无效/);
 });

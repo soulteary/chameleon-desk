@@ -23,7 +23,7 @@ func classicAlternatePrefix() []readerStep {
 	}
 }
 
-func TestClassicCloneUsesKeyBAfterAccessDenied(t *testing.T) {
+func TestClassicCloneUsesKeyBAfterReadOnlyAuthenticationDenied(t *testing.T) {
 	k, a, b := alternateClassicKeys()
 	data := bytes.Repeat([]byte{42}, 320)
 	dump := ClassicCardDump{Schema: 1, UID: HexBytes{9, 8, 7, 6}, TagType: 1000, Data: data, SHA256: imageDigest(data)}
@@ -37,7 +37,8 @@ func TestClassicCloneUsesKeyBAfterAccessDenied(t *testing.T) {
 			value := data[block*16 : (block+1)*16]
 			pa, pb := append([]byte{byte(KeyA), byte(block)}, a...), append([]byte{byte(KeyB), byte(block)}, b...)
 			steps = append(steps,
-				readerStep{command: 2009, request: append(pa, value...), status: 2},
+				readerStep{command: 2007, request: pa, status: 2},
+				readerStep{command: 2007, request: pb},
 				readerStep{command: 2009, request: append(append([]byte(nil), pb...), value...)},
 				readerStep{command: 2008, request: pb, data: value})
 		}
@@ -104,13 +105,10 @@ func TestClassicAlternateKeysStopOnDenialAndUnexpectedErrors(t *testing.T) {
 				dump := ClassicCardDump{Schema: 1, UID: HexBytes{9, 8, 7, 6}, TagType: 1000, Data: data, SHA256: imageDigest(data)}
 				cmd, block := uint16(2008), byte(0)
 				if operation == "clone" {
-					cmd, block = 2009, 1
+					cmd, block = 2007, 1
 				}
 				payload := func(kind KeyType, key HexBytes) []byte {
 					p := append([]byte{byte(kind), block}, key...)
-					if operation == "clone" {
-						p = append(p, data[int(block)*16:(int(block)+1)*16]...)
-					}
 					return p
 				}
 				steps := append(classicAlternatePrefix(), readerStep{command: cmd, request: payload(KeyA, a), status: tc.first})

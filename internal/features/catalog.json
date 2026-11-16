@@ -1302,7 +1302,8 @@
         ]
       },
       "notes": [
-        "Manufacturer/trailer blocks have explicit options; failed writes are not replayed."
+        "Manufacturer/trailer blocks have explicit options; failed writes are not replayed.",
+        "CloneClassic authenticates key candidates before a single write per block. NoWriteRetry is deprecated; false no longer enables write retries."
       ],
       "sources": [
         "classic_clone.go",
@@ -2188,7 +2189,8 @@
         ]
       },
       "notes": [
-        "Requires explicit probe identity and new password; command depends on the supported probe/write workflow."
+        "Requires explicit probe identity and new password; command depends on the supported probe/write workflow.",
+        "Stops after the first write attempt, including firmware errors or unconfirmed readback. Further candidates require explicit inspection and another invocation."
       ],
       "sources": [
         "t55_cleaner.go"
@@ -4142,7 +4144,7 @@
     },
     {
       "id": "device.tasks",
-      "title": "Background Web device tasks",
+      "title": "Server-owned device tasks",
       "device": false,
       "write": false,
       "effect": "parameter-dependent",
@@ -4162,23 +4164,45 @@
         "controls": []
       },
       "cli": {
-        "status": "missing",
-        "entries": []
+        "status": "supported",
+        "entries": [
+          "tasks operations",
+          "tasks session",
+          "tasks submit",
+          "tasks list",
+          "tasks get",
+          "tasks find",
+          "tasks cancel",
+          "tasks wait"
+        ]
       },
       "sdk": {
-        "status": "missing",
-        "entries": []
+        "status": "supported",
+        "entries": [
+          "Operations",
+          "NewTaskClient",
+          "TaskClient.Submit",
+          "TaskClient.List",
+          "TaskClient.Get",
+          "TaskClient.Find",
+          "TaskClient.Cancel",
+          "TaskClient.Wait"
+        ]
       },
       "notes": [
-        "Task controls have their own lifecycle. Underlying operation checks and session identity remain authoritative.",
-        "Progress is a phase and protocol attempt/response count, not a percentage. Cancellation is not rollback; interrupted writes can have an unknown outcome.",
-        "Task records survive browser reload, not server restart. No automatic reconnect or mutation replay.",
-        "Settings reads/configuration and slot details/edits are also supported task operations."
+        "Task clients share the Desk server session and gate. Underlying typed validation and transport restrictions remain authoritative.",
+        "Durable metadata and keyed deduplication receipts survive server restart. Request bodies, keys and result bodies are not journaled; results remain in memory only.",
+        "Restart interrupts pending tasks without execution or replay. Running writes recover as write_outcome_unknown; cancellation is not rollback.",
+        "Registration covers the existing bounded task operations, not arbitrary CLI, raw commands or low-level SDK methods."
       ],
       "sources": [
         "cmd/chameleon/serve_tasks.go",
         "cmd/chameleon/webui/background-tasks.js",
-        "docs/background-tasks.md"
+        "docs/background-tasks.md",
+        "operations.go",
+        "task_client.go",
+        "cmd/chameleon/tasks.go",
+        "cmd/chameleon/task_journal.go"
       ]
     },
     {
@@ -4805,7 +4829,7 @@
         ]
       },
       "notes": [
-        "Requires explicit identity, geometry, candidate keys and a 1–30 second limit. Independent verification follows discovery."
+        "Requires explicit identity, geometry, candidate keys and a 1\u201330 second limit. Independent verification follows discovery."
       ],
       "sources": [
         "classic_repair_dictionary.go",

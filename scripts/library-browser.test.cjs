@@ -9,7 +9,8 @@ const { createInterface } = require('node:readline');
 const { chromium } = require('playwright');
 
 async function serve(binary, addr = '127.0.0.1:0', extra = []) {
-  const child = spawn(path.resolve(binary), ['serve', '--addr', addr, ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const taskDir=await fs.mkdtemp(path.join(os.tmpdir(),'chameleon-task-fixture-'));
+  const child = spawn(path.resolve(binary), ['serve','--task-journal',path.join(taskDir,'tasks.jsonl'), '--addr', addr, ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = ''; child.stderr.on('data', data => { errors += data; });
   const lines = createInterface({ input: child.stdout });
   const base = await new Promise((resolve, reject) => {
@@ -21,7 +22,7 @@ async function serve(binary, addr = '127.0.0.1:0', extra = []) {
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', () => { clearTimeout(timer); reject(new Error('server exited: ' + errors)); });
   });
-  return { base, async close() { lines.close(); if (child.exitCode === null && child.signalCode === null) { const exit = once(child, 'exit'); child.kill(); await exit; } } };
+  return { base, async close(signal="SIGTERM") { lines.close(); if (child.exitCode === null && child.signalCode === null) { const exit = once(child, 'exit'); child.kill(signal); await exit; } await fs.rm(taskDir,{recursive:true,force:true}); } };
 }
 
 const binary = process.env.CHAMELEON_WEBUI_TEST_BINARY;
@@ -302,4 +303,32 @@ test('Chromium imports a partial read, edits known bytes, persists and exports t
  assert.deepEqual(JSON.parse(await page.locator('#db-json').inputValue()),database);assert.equal(await page.locator('#card-edit-save').isEnabled(),true);
  const warned=await page.evaluate(()=>{const event=new Event('beforeunload',{cancelable:true});dispatchEvent(event);return event.defaultPrevented});assert(warned);
  assert.deepEqual(errors,[]);
+});
+
+test('Chromium recovers an interrupted write after a Desk crash without replay', {skip:!binary,timeout:60000},async t=>{
+ const net=require('node:net');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'chameleon-durable-tasks-'));
+ const journal=path.join(dir,'tasks.jsonl'),commands=[],sockets=new Set();let server,browser;
+ const simulator=net.createServer(socket=>{
+  sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>{});let data=Buffer.alloc(0);
+  socket.on('data',chunk=>{data=Buffer.concat([data,chunk]);while(data.length>=10){const size=data.readUInt16BE(6)+10;if(data.length<size)break;commands.push(data.readUInt16BE(2));data=data.subarray(size);}});
+ });
+ await new Promise(resolve=>simulator.listen(0,'127.0.0.1',resolve));
+ t.after(async()=>{if(browser)await browser.close();if(server)await server.close();for(const socket of sockets)socket.destroy();await new Promise(resolve=>simulator.close(resolve));await fs.rm(dir,{recursive:true,force:true})});
+ const extra=['--allow-writes','--task-journal',journal,'--port','tcp:127.0.0.1:'+simulator.address().port];
+ server=await serve(binary,'127.0.0.1:0',extra);
+ browser=await chromium.launch({headless:true,executablePath:process.env.CHAMELEON_TEST_CHROMIUM||undefined});
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.waitForFunction(()=>backgroundTasks?.serverID&&deviceSession?.connected);
+ await page.evaluate(()=>{void backgroundTasks.execute('/api/slot/activate',{headers:{'X-Chameleon-Session':deviceSession.session_id},body:'{"slot":1}'}).catch(()=>{});});
+ await new Promise((resolve,reject)=>{const limit=Date.now()+10000;const check=()=>{if(commands.length)return resolve();if(Date.now()>limit)return reject(Error('write was not sent'));setTimeout(check,10)};check()});
+ const before=await page.evaluate(async()=>api('/api/tasks'));
+ assert.equal(before.tasks.length,1);assert.equal(before.tasks[0].state,'running');assert.deepEqual(commands,[1003]);
+ const address=new URL(server.base).host;await server.close('SIGKILL');server=await serve(binary,address,extra);
+ await page.reload();await page.evaluate(()=>window.libraryReady);
+ const id=before.tasks[0].id;
+ await page.waitForFunction(id=>document.querySelector(`[data-task-id="${id}"]`)?.dataset.state==='interrupted',id);
+ const text=await page.locator(`[data-task-id="${id}"]`).textContent();assert.match(text,/写入结果未知/);assert.match(text,/持久记录恢复/);assert.match(text,/结果正文未保留/);
+ const recovered=await page.evaluate(async()=>api('/api/tasks'));
+ assert.equal(recovered.store_id,before.store_id);assert.notEqual(recovered.server_id,before.server_id);assert.equal(recovered.tasks[0].outcome,'write_outcome_unknown');assert.equal(recovered.tasks[0].result_retained,false);
+ await page.reload();await page.evaluate(()=>window.libraryReady);assert.deepEqual(commands,[1003]);assert.deepEqual(errors,[]);
 });

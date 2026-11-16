@@ -79,7 +79,7 @@ func runDeviceTool(args []string) (retErr error) {
 		newPassword = f.String("new-password", "", "clean: new 4-byte password (0 clears protection)")
 		dictionary = f.String("dictionary", "", "clean: GUI dictionary JSON of 4-byte passwords")
 		passwords = f.String("passwords", "", "clean: comma-separated 4-byte passwords instead of --dictionary")
-		maxAttempts = f.Int("max-attempts", 0, "clean: stop after this many candidates (0 = all)")
+		maxAttempts = f.Int("max-attempts", 0, "clean: select at most one candidate (1); multiple candidate writes are refused")
 	}
 	if e := f.Parse(args[2:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
@@ -300,7 +300,7 @@ func runT55Clean(ctx context.Context, c *chameleon.Client, probeHex, newHex, dic
 	v, e := c.CleanT55Password(ctx, candidates, probe, np, true, progress)
 	fmt.Fprintln(os.Stderr)
 	if e != nil {
-		return e
+		return errors.Join(e, result(v, output, false))
 	}
 	if v.Found {
 		fmt.Fprintf(os.Stderr, "Password found after %d attempts; card now uses the new password\n", v.Attempts)

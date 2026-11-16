@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
@@ -10,7 +11,8 @@ const { chromium } = require('playwright');
 const binary = process.env.CHAMELEON_WEBUI_TEST_BINARY;
 
 async function serve(extra = []) {
-  const child = spawn(path.resolve(binary), ['serve', '--addr', '127.0.0.1:0', ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const taskDir=await fs.mkdtemp(path.join(os.tmpdir(),'chameleon-task-fixture-'));
+  const child = spawn(path.resolve(binary), ['serve','--task-journal',path.join(taskDir,'tasks.jsonl'), '--addr', '127.0.0.1:0', ...extra], { stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = ''; child.stderr.on('data', data => { errors += data; });
   const lines = createInterface({ input: child.stdout });
   const base = await new Promise((resolve, reject) => {
@@ -19,7 +21,7 @@ async function serve(extra = []) {
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', () => { clearTimeout(timer); reject(Error('server exited: ' + errors)); });
   });
-  return { base, async close() { lines.close(); if (child.exitCode === null && child.signalCode === null) { const exit = once(child, 'exit'); child.kill(); await exit; } } };
+  return { base, async close(signal="SIGTERM") { lines.close(); if (child.exitCode === null && child.signalCode === null) { const exit = once(child, 'exit'); child.kill(signal); await exit; } await fs.rm(taskDir,{recursive:true,force:true}); } };
 }
 const launch = () => chromium.launch({ headless: true, executablePath: process.env.CHAMELEON_TEST_CHROMIUM || undefined });
 const library = page => page.locator('#db-json').inputValue().then(JSON.parse);
