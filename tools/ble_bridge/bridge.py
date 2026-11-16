@@ -155,12 +155,32 @@ class Session(StreamSession):
                             self.rx, frame[start:start + self.chunk_size], response=self.response)
             self.incoming_buffered -= len(data)
 
+    async def cleanup(self, tasks):
+        self.closed = True
+        if self.prepared:
+            self.prepared.session = None
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.writer.close()
+        clean = False
+        try:
+            async with asyncio.timeout(self.timeout):
+                await self.client.disconnect()
+            clean = True
+        except Exception as error:
+            LOG.error("BLE cleanup failed; restart the bridge: %s",
+                      str(error) or type(error).__name__)
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(self.timeout):
+                await self.writer.wait_closed()
+        return clean
+
     async def run(self):
         tasks = [asyncio.create_task(self.ble_to_tcp()),
                  asyncio.create_task(self.read_tcp()),
                  asyncio.create_task(self.tcp_to_ble()),
                  asyncio.create_task(self.failed.wait())]
-        clean = False
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
@@ -171,25 +191,15 @@ class Session(StreamSession):
             # No protocol payloads, keys or pairing credentials in logs.
             LOG.warning("session ended: %s", str(error) or type(error).__name__)
         finally:
-            self.closed = True
-            if self.prepared:
-                self.prepared.session = None
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            self.writer.close()
+            # TCP EOF and control disconnect can race. Cancellation must not
+            # interrupt a disconnect already owned by this data session.
+            cleanup = asyncio.create_task(self.cleanup(tasks))
             try:
-                async with asyncio.timeout(self.timeout):
-                    await self.client.disconnect()
-                clean = True
-                self.clean = True
-            except Exception as error:
-                LOG.error("BLE cleanup failed; restart the bridge: %s",
-                          str(error) or type(error).__name__)
-            with contextlib.suppress(Exception):
-                async with asyncio.timeout(self.timeout):
-                    await self.writer.wait_closed()
-        return clean
+                self.clean = await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                self.clean = await cleanup
+                raise
+        return self.clean
 
 
 class Bridge:

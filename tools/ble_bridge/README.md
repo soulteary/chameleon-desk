@@ -125,7 +125,11 @@ an 8 KiB header limit. Redirects are not followed by the Go management client.
 
 Responses declare `api_version: 1`. States are `disconnected`, `scanning`,
 `connecting`, `connected`, `disconnecting` and `blocked`. A failed cleanup
-enters `blocked` and requires a bridge restart. Scan and selection do not
+enters `blocked` and requires a bridge restart. If a TCP EOF overlaps a control
+disconnect, the data session finishes its existing BLE cleanup before the
+controller publishes the final state. Successful cleanup clears its error;
+a cleanup failure or timeout remains blocked. An accepted TCP connection whose
+session has not started still closes its prepared BLE link. Scan and selection do not
 replace an active connection. A data connection is admitted only after an
 explicit management connect; closing it also ends the BLE link. The API
 token controls management operations, not access to the separate data port.

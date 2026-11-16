@@ -158,6 +158,55 @@ class ManagementTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.owner.bridge.blocked)
         self.assertEqual(await asyncio.wait_for(reader.read(), 2), b"")
 
+    async def test_tcp_eof_and_control_disconnect_share_ble_cleanup(self):
+        for failure in (False, True):
+            with self.subTest(cleanup_failure=failure):
+                await self.connect()
+                _, writer = await self.data_client()
+                await eventually(lambda: self.owner.link.session is not None)
+                client = self.factory.clients[-1]
+                gate = asyncio.Event()
+                client.disconnect_gate = gate
+                client.disconnect_error = failure
+                original = client.disconnect
+                client.disconnect = mock.AsyncMock(wraps=original)
+                writer.close()
+                await asyncio.wait_for(client.disconnected.wait(), 2)
+                # EOF cleanup is already waiting inside Bleak.disconnect().
+                operation = asyncio.create_task(self.request("disconnect"))
+                await eventually(lambda: self.owner.state == "disconnecting")
+                await asyncio.sleep(0.01)
+                self.assertFalse(operation.done())
+                gate.set()
+                code, status = await operation
+                self.assertEqual(code, 200)
+                self.assertEqual(client.disconnect.await_count, 1)
+                self.assertFalse(status["session_active"])
+                self.assertEqual(status["state"], "blocked" if failure else "disconnected")
+                self.assertEqual(bool(status["error"]), failure)
+                self.assertEqual(self.owner.bridge.blocked, failure)
+                if failure:
+                    self.assertEqual((await self.request("connect"))[0], 409)
+
+    async def test_disconnect_before_claimed_data_task_starts_cleans_ble_link(self):
+        for failure in (False, True):
+            with self.subTest(cleanup_failure=failure):
+                await self.connect()
+                client = self.factory.clients[-1]
+                client.disconnect_error = failure
+                writer = mock.Mock()
+                writer.wait_closed = mock.AsyncMock()
+                self.owner.bridge.accept(mock.Mock(), writer)
+                # Do not yield between accept and _disconnect: handle has not
+                # created a Session, but the prepared BLE link still needs close.
+                status = await self.owner._disconnect()
+                self.assertTrue(client.disconnected.is_set())
+                self.assertEqual(status["state"], "blocked" if failure else "disconnected")
+                self.assertFalse(status["session_active"])
+                self.assertEqual(bool(status["error"]), failure)
+                if failure:
+                    self.assertEqual((await self.request("connect"))[0], 409)
+
     async def test_client_construction_failure_does_not_leave_connecting_state(self):
         await self.select()
         self.owner.factory = mock.Mock(side_effect=RuntimeError("backend unavailable"))

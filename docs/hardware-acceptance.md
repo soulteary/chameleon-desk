@@ -45,7 +45,10 @@ restoration verified 47 blocks again. Final full readable memory and captured
 identity matched the backup. The original emulator mode was restored. BLE
 disconnect rotated the session, and an old write confirmation was rejected
 before device access. An inconsistent BLE cleanup status was detected during
-this run and is covered by a separate bridge regression test. An initial RF collision was resolved by isolating one tag;
+this run. Shielded session teardown now preserves one completed disconnect;
+regression tests retain blocked state for genuine failure. Real control
+disconnect and overlapping TCP EOF/control disconnect both passed after the fix
+with an empty error and inactive session. An initial RF collision was resolved by isolating one tag;
 no write was attempted before a complete target backup.
 
 These runs cover NTAG213 and EM410x-on-T5577 through USB, and F08 through BLE on
