@@ -71,6 +71,7 @@
    if(kind==='lf'){out.append(node('p',value.present===false?'未发现卡片':value.complete?'LF 读取完成':'LF 读取未完成'));}
    else{
     const unit=kind==='classic'?'块':'页';out.append(node('p',`${value.complete?'读取完成':'部分 / 中断结果'}：${value.units_read} / ${value.requested_units} ${unit}`));
+    if(kind==='classic'&&value.identity){const id=value.identity;out.append(node('p',`读取身份：UID ${id.uid} · ATQA ${id.atqa}（数值顺序）· SAK ${Number.isInteger(id.sak)?id.sak.toString(16).toUpperCase().padStart(2,'0'):'未知'} · ATS ${id.ats||'空'}`));}
     const unknown=value.dump?.unknown_keys?.length||0;if(unknown)out.append(node('p',`仍有 ${unknown} 个未知密钥；这些尾块不能视为完整密钥数据。`));
     const bytes=kind==='classic'?value.dump?.data:value.data;
     if(typeof bytes==='string'&&/^(?:[0-9a-fA-F]{2})*$/.test(bytes)){

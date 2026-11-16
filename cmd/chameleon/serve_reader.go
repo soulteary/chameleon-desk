@@ -16,7 +16,7 @@ func (ws *webServer) handleClassicRead(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
-	keys, err := input.KeyMap()
+	_, err := input.KeyMap()
 	if err != nil {
 		writeErr(w, 400, err)
 		return
@@ -25,9 +25,7 @@ func (ws *webServer) handleClassicRead(w http.ResponseWriter, r *http.Request) {
 		if err := ws.featurePreflight(ctx, c, "reader.classic-keyed", &chameleon.FeatureRequest{ClassicRead: &input}); err != nil {
 			return nil, err
 		}
-		first, count, _ := chameleon.ClassicSectorGeometry(len(keys.Sectors) - 1)
-		dump, err := c.DumpClassicWithKeys(ctx, keys)
-		return readerResult{Schema: 1, Kind: "classic", Complete: err == nil, Requested: first + count, Read: len(dump.Data) / 16, UID: dump.UID, Dump: &dump}, err
+		return c.ReadClassicWithIdentity(ctx, input)
 	})
 }
 

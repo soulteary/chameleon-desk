@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 87 workflows; this is not a coverage percentage.
+sources. It currently groups 88 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 

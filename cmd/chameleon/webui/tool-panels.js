@@ -30,7 +30,7 @@ function cardPanel(card, title = "卡片详情", subtitle = "当前卡片文件"
   if(card.desk_read){
     const draft=card.desk_read,r=draft.read_result,panel=toolPanel('cards',card.name||title,'Desk 读取草稿',r.kind==='lf'?'LF':'HF');
     panel.append(fieldGrid([['读取类型',r.kind],['原始 UID / ID',r.uid||r.record?.id],['原始读取状态',r.complete?'请求范围读取完成':'部分 / 中断'],['确认单元',r.units_read+' / '+r.requested_units],['起始单元',r.start],['文件 ID',card.id]]));
-    panel.append(el('p','inference-note','数据编辑位于下方。未知字节以 ?? 保留；原始读取结果与编辑分开保存。此草稿仅支持 Desk JSON，不可直接加载槽位或转换为二进制 / 镜像。'));
+    panel.append(el('p','inference-note','数据编辑位于下方。未知字节以 ?? 保留；原始读取结果与编辑分开保存。未转换的草稿仅支持 Desk JSON。符合条件的 Classic 可在下方转换；草稿不能直接加载槽位或转换为二进制 / 镜像。'));
     return panel;
   }
   const panel = toolPanel("cards", card.name || title, subtitle, card.tag >= 1000 ? "HF" : "LF");

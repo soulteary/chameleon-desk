@@ -35,7 +35,9 @@ const groups = { hardware: ["device", "slots", "read"], database: ["cards"], nde
 
 async function api(path, opts = {}) {
   const epoch = sessionEpoch;
-  const deviceRequest = path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || path === "/api/features/check" || path === "/api/firmware/check";
+  let offlineFeatureCheck=false;
+  if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=JSON.parse(opts.body).id==="library.promote-classic";}catch(_){}}
+  const deviceRequest = path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
   if (path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;

@@ -10,6 +10,7 @@ import (
 
 // ReadResult describes one reader operation, not a complete emulator image.
 type ReadResult struct {
+	Identity  *ClassicIdentity `json:"identity,omitempty"`
 	Schema    int              `json:"schema"`
 	Kind      string           `json:"kind"`
 	Complete  bool             `json:"complete"`
@@ -41,18 +42,26 @@ func (r ReadResult) draftRows() ([]string, error) {
 	width := 0
 	switch r.Kind {
 	case "classic":
+		if r.Identity != nil {
+			if err := r.Identity.Validate(); err != nil {
+				return nil, err
+			}
+			if !bytes.Equal(r.Identity.UID, r.UID) {
+				return nil, fmt.Errorf("Classic identity UID differs from read UID")
+			}
+		}
 		d := r.Dump
 		if r.Start != 0 || d == nil || d.Schema != 2 || d.TagType < 1000 || d.TagType > 1003 || guiClassicBlocks[d.TagType] != r.Requested || !bytes.Equal(r.UID, d.UID) || d.SHA256 != imageDigest(d.Data) || r.Record != nil || len(r.Data) != 0 || r.Present != nil {
 			return nil, fmt.Errorf("invalid Classic read result")
 		}
 		data, width = d.Data, 16
 	case "type2":
-		if r.Start+r.Requested > 256 || r.Dump != nil || r.Record != nil || r.Present != nil {
+		if r.Identity != nil || r.Start+r.Requested > 256 || r.Dump != nil || r.Record != nil || r.Present != nil {
 			return nil, fmt.Errorf("invalid Type2 range")
 		}
 		data, width = r.Data, 4
 	case "lf":
-		if r.Start != 0 || r.Requested != 1 || !r.Complete || r.Present == nil || !*r.Present || r.Record == nil || r.Dump != nil || len(r.UID) != 0 || len(r.Data) != 0 {
+		if r.Identity != nil || r.Start != 0 || r.Requested != 1 || !r.Complete || r.Present == nil || !*r.Present || r.Record == nil || r.Dump != nil || len(r.UID) != 0 || len(r.Data) != 0 {
 			return nil, fmt.Errorf("LF import requires a successful present-card result")
 		}
 		rec := r.Record

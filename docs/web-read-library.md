@@ -109,15 +109,18 @@ are rejected rather than interpreted as ordinary cards.
 `tag:0`, empty standard memory and empty HF identity fields are deliberate
 sentinels, not inferred card values. Classic's requested type and LF's protocol
 remain in the original result. Library summaries use that result to show the
-correct HF/LF group. The reader does not provide the complete identity metadata
-needed to construct a standard HF saved card; Type2 also has no confirmed model.
+correct HF/LF group. Legacy results do not provide the complete identity metadata
+for standard HF conversion. New Web Classic reads capture identity;
+Type2 still has no confirmed model.
 
-All read drafts, including complete reads without unknown keys, remain Desk
-JSON drafts in this phase. `PlanGUICardLoad`, binary dump export, emulator-image
-export/replacement and Web NDEF operations reject them. Slot availability uses
+Read results are initially imported as Desk JSON drafts. An eligible complete
+Classic draft with captured identity and no unknown keys can now be explicitly
+[converted into a new standard card](classic-promotion.md). `PlanGUICardLoad`,
+binary/image export or replacement and Web NDEF still reject unconverted drafts. Slot availability uses
 the existing card-plan evaluator and reports the rejection before device access.
-The Web inspector disables its NDEF handoff and explains why. There is no
-promotion control or automatic fallback that drops the extension.
+The Web inspector disables NDEF handoff for unconverted drafts and explains why.
+Type2/LF, partial/error and identity-less results remain restricted. There is no
+automatic fallback that drops the extension.
 
 Exporting a draft as JSON preserves its source, edits and masks; it does not make
 it a portable emulator card. Upstream GUI versions and older Desk versions do
@@ -134,7 +137,7 @@ into the selected card editor. Reader-result and saved-card imports are separate
 
 ## Persistence, conflicts and failures
 
-Successful imports and data edits use the same browser-local persistence as
+Successful imports, data edits and Classic conversions use the same browser-local persistence as
 add/delete operations: validation, a 600 ms debounce, atomic current/previous
 snapshots, and conflict detection. Refresh, browser restart and Desk restart
 restore the committed database at the same browser profile and origin. The

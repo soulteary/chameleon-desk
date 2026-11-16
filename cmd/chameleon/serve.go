@@ -778,6 +778,23 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "promote-classic":
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, err)
+			return
+		}
+		card, err = card.PromoteClassicDraft()
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		next, err := db.AddCard(card)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
 	case "delete":
 		out, removed, e := db.DeleteRecord(false, body.ID)
 		if e != nil {
@@ -786,7 +803,7 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"removed": removed, "database": out})
 	default:
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add, delete, import-read or edit-data"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add, delete, import-read, edit-data or promote-classic"))
 	}
 }
 

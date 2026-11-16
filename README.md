@@ -71,8 +71,10 @@ The [settings and slot editors](docs/web-configuration.md) provide settings read
 
 The [reader-to-library workflow](docs/web-read-library.md) imports confirmed read
 results as Desk drafts, edits known bytes, and saves/exports JSON while retaining
-partial-data and unknown-key markers. These drafts cannot be loaded into slots
-or converted to binary/emulator images.
+partial-data and unknown-key markers. Unconverted drafts cannot be loaded into slots
+or converted to binary/emulator images. Eligible complete Classic drafts with
+captured identity and known keys can be explicitly
+[converted to standard saved cards](docs/classic-promotion.md).
 
 The [Web reader workflows](docs/web-reader.md) add Classic per-sector supplied-key
 reading, UID-checked Type2 page ranges and LF protocol selection. They use the

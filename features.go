@@ -189,6 +189,14 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 	}
 	unresolved := f.RequirementMode == "parameterized" || f.RequirementMode == "card-plan" || f.RequirementMode == "command" || f.RequirementMode == "external"
 	if request != nil {
+		if f.ID == "library.promote-classic" && request.Card != nil {
+			unresolved = false
+			if e := request.Card.ClassicPromotionError(); e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			} else {
+				unresolved = false
+			}
+		}
 		var readCommands []Command
 		var readErr error
 		resolvedRead := false

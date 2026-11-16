@@ -46,6 +46,9 @@ func TestWebClassicKeyedReadAndPartialTasks(t *testing.T) {
 					break
 				}
 			}
+			if !partial {
+				steps = append(steps, step{cmd: 2000, data: []byte{4, 1, 2, 3, 4, 4, 0, 9, 0}})
+			}
 			steps = append(steps, step{cmd: 1001, status: 0x68, payload: []byte{0}})
 			ws, h := configFixture(t, steps)
 			ws.allowWrites = false
@@ -69,14 +72,14 @@ func TestWebClassicKeyedReadAndPartialTasks(t *testing.T) {
 					t.Fatal(err)
 				}
 				result = envelope.Result
-				if out.State != "failed" || result.Complete || result.Read != 1 || len(result.Dump.Data) != 16 || result.Dump.SHA256 != "" {
+				if out.State != "failed" || result.Complete || result.Read != 1 || len(result.Dump.Data) != 16 || result.Dump.SHA256 == "" || result.Identity == nil {
 					t.Fatal(out.State, string(out.Result))
 				}
 			} else {
 				if err := json.Unmarshal(out.Result, &result); err != nil {
 					t.Fatal(err)
 				}
-				if out.State != "succeeded" || !result.Complete || result.Read != 20 || len(result.Dump.UnknownKeys) != 5 || result.Dump.Validate() != nil {
+				if out.State != "succeeded" || !result.Complete || result.Read != 20 || len(result.Dump.UnknownKeys) != 5 || result.Dump.Validate() != nil || result.Identity == nil || result.Identity.ATQA.String() != "0004" {
 					t.Fatal(out.State, string(out.Result))
 				}
 			}

@@ -72,7 +72,7 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 		if body.LFRead == nil {
 			err = fmt.Errorf("lf_read is required")
 		}
-	case "slot.load-card":
+	case "slot.load-card", "library.promote-classic":
 		var card chameleon.GUICard
 		card, err = chameleon.ParseGUICard(body.Card)
 		if err == nil {
