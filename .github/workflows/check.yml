@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# Only updates to the same PR replace an earlier run. Each main push has its
+# own group, so distribution runs are neither canceled nor replaced in a queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ble-bridge:
     name: BLE bridge (${{ matrix.os }}, cgo disabled)
@@ -22,9 +28,10 @@ jobs:
       CHAMELEON_TEST_NO_CARD: ''
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: ./.github/actions/setup-go-cache
         with:
           go-version: '1.27.x'
+          cache-scope: bridge-nocgo
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
@@ -79,9 +86,10 @@ jobs:
       CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: ./.github/actions/setup-go-cache
         with:
           go-version: '1.27.x'
+          cache-scope: browser-nocgo
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
@@ -113,10 +121,10 @@ jobs:
             go: '1.27.x'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: ./.github/actions/setup-go-cache
         with:
           go-version: ${{ matrix.go }}
-          cache: false
+          cache-scope: offline-race-coverage
       - run: go mod download
       - name: Install Linux recovery test dependencies
         if: runner.os == 'Linux'
@@ -133,9 +141,55 @@ jobs:
               brew install "$package"
             fi
           done
+      - name: Check offline dependencies
+        run: ./scripts/check.sh deps
+      - name: Run Go race and coverage tests
+        run: ./scripts/check.sh go
+      - name: Run Go vet
+        run: ./scripts/check.sh vet
+      - name: Build and verify CLI
+        run: ./scripts/check.sh build
+      - name: Upload offline check reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: offline-${{ runner.os }}-go-${{ matrix.go }}
+          path: |
+            reports/check-timings.tsv
+            reports/go-mod-verify.txt
+            reports/unit-tests.txt
+            reports/go-vet.txt
+            reports/coverage.out
+            reports/coverage-functions.txt
+          if-no-files-found: warn
+          retention-days: 14
+  webui:
+    name: Web UI unit tests (${{ matrix.os }}, Node 22)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: ./scripts/check.sh
+      - name: Test CI stage runner
+        run: python3 -m unittest discover -s scripts -p test_check.py -v
+      - name: Validate CI workflow policy
+        run: npm run test:ci
+      - name: Run Web UI unit tests
+        run: ./scripts/check.sh webui
+      - name: Upload Web UI check reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: webui-${{ runner.os }}-node22
+          path: |
+            reports/check-timings.tsv
+            reports/webui-tests.txt
+          if-no-files-found: warn
+          retention-days: 14

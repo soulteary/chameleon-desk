@@ -141,6 +141,8 @@ CLI build. It disables hardware-test opt-ins and Go dependency downloads, using
 the verified local module cache. Builds and checks use `-mod=readonly`.
 Results are written to the ignored `reports/` directory. Hardware tests remain
 opt-in and are not part of CI.
+See [CI stages, caching and timing](docs/ci.md) for the job layout, standalone
+check stages, report artifacts and pull-request cancellation policy.
 The Web tests include IndexedDB transaction, recovery and conflict fixtures.
 For the real Chromium reload/browser/server restart check, build the CLI first:
 
