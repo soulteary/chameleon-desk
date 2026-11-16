@@ -102,7 +102,12 @@ function renderToolResult(sel, value, options = {}) {
         $("#ndef-input").dispatchEvent(new Event("input",{bubbles:true})); $("#ndef-input").closest("details").open=false;
         document.querySelector('.dock [data-open="ndef"]').click();
       });
-      if(value.desk_read){ndefButton.disabled=true;panel.append(el("p","feature-disabled-reason","读取草稿缺少完整身份、容量或已知字节，不能用于 NDEF"));}panel.append(ndefButton);
+      const slotButton=panelButton('在槽位加载器中打开',()=>{
+       if($('#slots').getAttribute('aria-busy')==='true'){window.desktopToast('槽位操作正在进行，请等待完成后再打开卡片');return;}
+       $('#load-card-json').value=JSON.stringify(value,null,2);$('#load-card-json').dispatchEvent(new Event('input',{bubbles:true}));
+       document.querySelector('.dock [data-open="slots"]').click();
+      });slotButton.disabled=!!value.desk_read;
+      if(value.desk_read){ndefButton.disabled=true;panel.append(el("p","feature-disabled-reason","读取草稿缺少完整身份、容量或已知字节，不能用于 NDEF"));}panel.append(ndefButton,slotButton);
     }
   } else if(sel==="#dict-out") {
     if(Array.isArray(value)) {

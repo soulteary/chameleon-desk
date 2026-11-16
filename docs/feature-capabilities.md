@@ -4,7 +4,7 @@
 CLI and Web server read the same catalog. The [generated reference](features.md)
 lists Web/CLI/SDK entries, support levels, model scope, transport policy,
 unconditional commands, conditional command vocabulary and implementation
-sources. It currently groups 88 workflows; this is not a coverage percentage.
+sources. It currently groups 99 workflows; this is not a coverage percentage.
 The separate command catalog remains the source for wire IDs and upstream
 registration. A generated Wire method is not a complete typed workflow.
 
@@ -162,3 +162,18 @@ The [background task layer](background-tasks.md) preserves operation checks and 
 
 [USB migration](usb-migration.md) documents the removal of native application
 openers and auto-selection, explicit native maintenance flags, and retained DFU.
+
+## Reader and library request resolution
+
+Request resolution covers Classic full/selected rereads, verification, explicit
+dictionaries and bounded recovery; modeled Type2 reads and ordinary-page writes;
+controlled LF writes; draft conversion; and Classic evidence merges. ioProx file
+editing selects command 3012 for raw decoding or 3013 for structured composition.
+Host LF codecs remain offline. Recovery checks trusted helper availability on
+the Web server; browser input cannot select executable paths.
+
+The advanced Web panel reports parameter-specific states. Actual handlers repeat
+validation against the live serialized session. Physical write plans are private
+HMAC bound to complete input and current session; public plan checksums exclude
+trailer credentials. Saved results remain user-supplied evidence, not authenticated
+hardware provenance.

@@ -42,3 +42,25 @@ test('unknown write receipts remain after terminal query and can be acknowledged
 test('configuration receipts distinguish setting writes from slot-detail reads',async t=>{
  for(const [path,write]of [['/api/settings/configure',true],['/api/slot/edit',true],['/api/slot/details',false]]){const {controller}=fixture(t,async(_path,opts)=>{if(opts)throw Error('lost response');return {server_id:'server',tasks:[]};});await assert.rejects(()=>controller.execute(path,{headers:{'X-Chameleon-Session':'session'}}));assert.equal(controller.pending[0].write,write);}
 });
+test('physical write receipts retain uncertainty while plans remain read tasks',async t=>{
+ for(const [path,write]of [['/api/reader/classic-write',true],['/api/reader/type2-write',true],['/api/physical/lf/write',true],['/api/reader/classic-write-plan',false],['/api/reader/type2-write-plan',false],['/api/physical/lf/plan',false]]){
+  const {controller}=fixture(t,async(_path,opts)=>{if(opts)throw Error('lost response');return {server_id:'server',tasks:[]};});
+  await assert.rejects(()=>controller.execute(path,{headers:{'X-Chameleon-Session':'session'},body:'{}'}));assert.equal(controller.pending[0].write,write,path);
+ }
+});
+test('an older list response cannot restore a previous server identity',async t=>{
+ let resolveOld,calls=0;const {controller}=fixture(t,async()=>{if(++calls===1)return new Promise(resolve=>resolveOld=resolve);return {server_id:'new',tasks:[]};});
+ const old=controller.refresh();await controller.refresh();resolveOld({server_id:'old',tasks:[task()]});await old;assert.equal(controller.serverID,'new');assert.equal(controller.visibleTasks.size,0);
+});
+test('a delayed result from a previous server is discarded',async t=>{
+ let resolveResult,server='old';const snapshot=task({path:'/api/reader/type2-workflow',write:false,state:'succeeded'});
+ const {controller,dom}=fixture(t,async path=>path==='/api/tasks/task-1'?new Promise(resolve=>resolveResult=resolve):{server_id:server,tasks:server==='old'?[snapshot]:[]});
+ await controller.refresh();dom.window.document.querySelector('button').click();server='new';await controller.refresh();resolveResult({...snapshot,result:{schema:1,kind:'type2',units_read:1}});await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(controller.results.size,0);assert.equal(controller.serverID,'new');assert.doesNotMatch(dom.window.document.body.textContent,/导入读取结果/);
+});
+test('a removed result fails its in-flight import guard',async t=>{
+ const value={schema:1,kind:'type2',units_read:1};let tasks=[task({path:'/api/reader/type2-workflow',write:false,state:'succeeded',result:value})],current;
+ const {controller,dom}=fixture(t,async()=>({server_id:'server',tasks}));controller.onReaderResult=async(_value,guard)=>{current=guard;};
+ await controller.refresh();[...dom.window.document.querySelectorAll('button')].find(button=>button.textContent.includes('导入')).click();await new Promise(resolve=>setTimeout(resolve,0));assert.equal(current(),true);
+ tasks=[];await controller.refresh();assert.equal(current(),false);
+});

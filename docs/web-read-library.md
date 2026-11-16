@@ -28,16 +28,18 @@ model/transport checks still govern the preceding read.
 The card library also accepts the reader's previously exported
 `{schema:1, read_result, error}` envelopes through **从导出的读取结果恢复到卡库**.
 An envelope exported from the reader before refresh can be reopened here.
-Retained task history shows raw operation results; this phase has no dedicated
-task-history import/export handoff. It is not durable library storage.
+Retained task history can explicitly import a completed or partial confirmed
+read without repeating the device operation. A server restart discards history;
+it is not durable library storage.
 Importing the same result again creates another ID; it does not overwrite an
 existing card by UID or merge partial reads.
 
 Ordinary saved Classic and Type2 cards can be selected and edited in the same
 editor. Name and memory rows can change; identity, type, folder, color, extras
 and unknown metadata are retained. Existing empty rows remain empty. The editor
-cannot add/remove rows or resolve missing data. Other ordinary card types do
-not have a dedicated data editor in this phase. LF read drafts do: their edited
+cannot add/remove rows or resolve missing data. Supported ordinary LF cards also have raw identity and structured protocol
+editors; ioProx changes require explicit firmware validation. LF read drafts
+retain their restrictions: their edited
 raw bytes must still pass the selected protocol's existing decoder. Derived LF
 fields in the original observation are not recomputed or presented as an edited
 identity; the draft's `rows` are the edited bytes.
@@ -111,7 +113,8 @@ sentinels, not inferred card values. Classic's requested type and LF's protocol
 remain in the original result. Library summaries use that result to show the
 correct HF/LF group. Legacy results do not provide the complete identity metadata
 for standard HF conversion. New Web Classic reads capture identity;
-Type2 still has no confirmed model.
+Legacy Type2 range results still have no confirmed model. Modeled Type2 reads
+carry explicit geometry, identity, counters and unknown-page masks.
 
 Read results are initially imported as Desk JSON drafts. An eligible complete
 Classic draft with captured identity and no unknown keys can now be explicitly
@@ -119,7 +122,9 @@ Classic draft with captured identity and no unknown keys can now be explicitly
 binary/image export or replacement and Web NDEF still reject unconverted drafts. Slot availability uses
 the existing card-plan evaluator and reports the rejection before device access.
 The Web inspector disables NDEF handoff for unconverted drafts and explains why.
-Type2/LF, partial/error and identity-less results remain restricted. There is no
+Modeled Type2 and mapped LF drafts have separate conversion checks; see
+[Type2](type2-workflows.md) and [LF](lf-promotion.md). Unsupported models,
+unresolved masks, partial/error and identity-less results remain restricted. There is no
 automatic fallback that drops the extension.
 
 Exporting a draft as JSON preserves its source, edits and masks; it does not make
@@ -131,13 +136,13 @@ Existing ordinary card formats and their conversion behavior remain unchanged.
 **导出编辑草稿** is different: it exports
 `{schema:1, format:"chameleon-desk-editor-draft", card, name, rows_text}` from the
 current editor, including invalid or unsaved text. It is a recovery aid, not a
-saved-card file or a persistence acknowledgement. This phase has no automatic
-importer for editor-text recovery files; retain them and copy the name/rows back
-into the selected card editor. Reader-result and saved-card imports are separate.
+saved-card file or a persistence acknowledgement. The recovery importer restores pending text only when the current saved source
+exactly matches the exported source. Changed saved cards are refused. Recovered
+text still requires explicit validation and save. Reader-result and saved-card imports are separate.
 
 ## Persistence, conflicts and failures
 
-Successful imports, data edits and Classic conversions use the same browser-local persistence as
+Successful imports, data edits, evidence merges and supported conversions use the same browser-local persistence as
 add/delete operations: validation, a 600 ms debounce, atomic current/previous
 snapshots, and conflict detection. Refresh, browser restart and Desk restart
 restore the committed database at the same browser profile and origin. The

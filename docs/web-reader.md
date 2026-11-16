@@ -1,6 +1,6 @@
 # Web reader workflows
 
-The reader window adds three read-only workflows on the existing server-owned
+The basic reader forms provide three read-only workflows on the existing server-owned
 session and background task layer:
 
 - Classic reading with supplied per-sector keys and an expected UID;
@@ -12,6 +12,11 @@ a synthetic command list advertises reader commands. Routine USB uses the Python
 bridge; BLE and compatible TCP application connections retain their existing
 behavior. Native USB maintenance mode rejects these application operations.
 There is no native fallback, automatic reconnect or write replay.
+
+Advanced controls add modeled full/authenticated Type2 reads, Classic repair,
+verification, explicit dictionary checks, bounded recovery and reviewed physical
+write plans. See [reader workflows and editing](reader-workflows.md). The basic
+forms below remain read-only.
 
 ## Web use
 

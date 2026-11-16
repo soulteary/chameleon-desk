@@ -8,6 +8,10 @@ import (
 // WriteT55 writes an encoded LF identifier to a T55xx using explicit known
 // passwords. No default or guessed password list is supplied by the SDK.
 func (c *Client) WriteT55(ctx context.Context, protocol string, id, newPassword []byte, oldPasswords [][]byte) error {
+	return c.writeT55Observed(ctx, protocol, id, newPassword, oldPasswords, nil)
+}
+
+func (c *Client) writeT55Observed(ctx context.Context, protocol string, id, newPassword []byte, oldPasswords [][]byte, beforeWrite func()) error {
 	cmds := map[string]Command{"em410x": CmdEm410xWriteToT55xx, "electra": CmdEm410xElectraWriteToT55xx, "hidprox": CmdHidproxWriteToT55xx, "ioprox": CmdIoproxWriteToT55xx, "viking": CmdVikingWriteToT55xx, "pac": CmdPacWriteToT55xx, "jablotron": CmdJablotronWriteToT55xx, "idteck": CmdIdteckWriteToT55xx}
 	sizes := map[string]int{"em410x": 5, "electra": 13, "hidprox": 13, "ioprox": 16, "viking": 4, "pac": 8, "jablotron": 5, "idteck": 8}
 	cmd, ok := cmds[protocol]
@@ -28,5 +32,14 @@ func (c *Client) WriteT55(ctx context.Context, protocol string, id, newPassword 
 		}
 		payload = append(payload, key...)
 	}
-	return c.Reader(ctx, func(s *ReaderSession) error { _, e := s.expect(ctx, cmd, payload, 0x40); return e })
+	return c.Reader(ctx, func(s *ReaderSession) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if beforeWrite != nil {
+			beforeWrite()
+		}
+		_, err := s.expect(ctx, cmd, payload, 0x40)
+		return err
+	})
 }

@@ -69,18 +69,19 @@ Use `--port` to connect a device when the server starts:
 
 The [settings and slot editors](docs/web-configuration.md) provide settings readback, nickname/type/enable changes and explicitly confirmed single-channel initialization.
 
-The [reader-to-library workflow](docs/web-read-library.md) imports confirmed read
-results as Desk drafts, edits known bytes, and saves/exports JSON while retaining
-partial-data and unknown-key markers. Unconverted drafts cannot be loaded into slots
-or converted to binary/emulator images. Eligible complete Classic drafts with
-captured identity and known keys can be explicitly
-[converted to standard saved cards](docs/classic-promotion.md).
+The [reader workflows and saved-card editor](docs/reader-workflows.md) support
+Classic repair and conflict-aware merge, modeled Type2 full/authenticated reads,
+and mapped LF conversion. Complete eligible reads can become standard saved
+cards while preserving their sources. Memory address/diff and access-condition
+editing, structured LF fields, explicit editor-draft recovery, task-history
+import and a slot-loader shortcut reuse the card-library persistence layer.
 
-The [Web reader workflows](docs/web-reader.md) add Classic per-sector supplied-key
-reading, UID-checked Type2 page ranges and LF protocol selection. They use the
-same session/task and capability checks, work in read-only mode, and distinguish
-partial results. This phase exports read results; it does not write physical
-cards or automatically import readings into the card library.
+Controlled Classic, Type2 user-page and LF T55xx physical writes require a
+reviewed current-session plan and explicit execution with `--allow-writes`.
+Target checks, protected ranges and verification limits differ by protocol;
+see the workflow documentation before writing. Interrupted writes are not
+replayed automatically. See the [hardware acceptance record](docs/hardware-acceptance.md)
+for tested devices and remaining gaps.
 
 Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task records are held in server memory and do not survive a server restart.
 

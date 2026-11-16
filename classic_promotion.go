@@ -20,13 +20,16 @@ func (c GUICard) classicPromotionCard() (GUICard, error) {
 		return GUICard{}, err
 	}
 	if draft == nil || draft.Result.Kind != "classic" {
-		return GUICard{}, fmt.Errorf("only Classic read drafts can be converted; Type2 and LF remain unsupported")
+		return GUICard{}, fmt.Errorf("only Classic read drafts can use Classic conversion")
 	}
 	if _, exists := c.fields["desk_read_origin"]; exists {
 		return GUICard{}, fmt.Errorf("reserved desk_read_origin metadata already exists; conversion will not overwrite it")
 	}
-	r := draft.Result
-	if !r.Complete || r.Read != r.Requested || draft.Error != "" {
+	r, effectiveError, err := c.ClassicRepairEffectiveRead(*draft)
+	if err != nil {
+		return GUICard{}, err
+	}
+	if !r.Complete || r.Read != r.Requested || effectiveError != "" {
 		return GUICard{}, fmt.Errorf("Classic conversion requires a complete read without an operation or cleanup error")
 	}
 	if r.Identity == nil {
@@ -74,9 +77,6 @@ func (c GUICard) classicPromotionCard() (GUICard, error) {
 				return GUICard{}, fmt.Errorf("sector %d trailer: %w", sector, err)
 			}
 		}
-	}
-	if _, exists := c.fields["desk_read_origin"]; exists {
-		return GUICard{}, fmt.Errorf("reserved desk_read_origin metadata already exists")
 	}
 	out := c.withField("desk_read", nil)
 	out = out.withField("desk_read_origin", map[string]any{"schema": 1, "source_card_id": c.ID, "draft": json.RawMessage(c.fields["desk_read"])})

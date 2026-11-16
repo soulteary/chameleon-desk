@@ -83,11 +83,11 @@ func (ts *webTasks) stop() {
 }
 func taskPath(path string) (string, bool) {
 	switch path {
-	case "/api/reader/classic", "/api/reader/type2", "/api/reader/lf":
+	case "/api/reader/classic-dictionary", "/api/reader/lf-edit", "/api/reader/classic", "/api/reader/type2", "/api/reader/lf", "/api/reader/classic-repair", "/api/reader/classic-verify", "/api/reader/classic-recover", "/api/reader/type2-workflow", "/api/reader/type2-write-plan", "/api/reader/classic-write-plan", "/api/physical/lf/plan":
 		return "POST", false
 	case "/api/settings/read", "/api/slot/details", "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/features/device":
 		return "GET", false
-	case "/api/settings/configure", "/api/slot/edit", "/api/slot/activate", "/api/slot/load-card":
+	case "/api/settings/configure", "/api/slot/edit", "/api/slot/activate", "/api/slot/load-card", "/api/reader/type2-write", "/api/reader/classic-write", "/api/physical/lf/write":
 		return "POST", true
 	}
 	return "", false
@@ -273,6 +273,30 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		switch input.Path {
+		case "/api/reader/classic-dictionary":
+			ws.handleClassicDictionary(out, request)
+		case "/api/reader/lf-edit":
+			ws.handleLFIdentityEdit(out, request)
+		case "/api/reader/classic-repair":
+			ws.handleClassicRepair(out, request)
+		case "/api/reader/classic-verify":
+			ws.handleClassicVerify(out, request)
+		case "/api/reader/classic-recover":
+			ws.handleClassicRecover(out, request)
+		case "/api/reader/classic-write-plan":
+			ws.handleClassicWritePlan(out, request)
+		case "/api/reader/classic-write":
+			ws.handleClassicWrite(out, request)
+		case "/api/reader/type2-workflow":
+			ws.handleType2WorkflowRead(out, request)
+		case "/api/reader/type2-write-plan":
+			ws.handleType2WritePlan(out, request)
+		case "/api/reader/type2-write":
+			ws.handleType2UserPageWrite(out, request)
+		case "/api/physical/lf/plan":
+			ws.handleLFWritePlan(out, request)
+		case "/api/physical/lf/write":
+			ws.handleLFWrite(out, request)
 		case "/api/reader/classic":
 			ws.handleClassicRead(out, request)
 		case "/api/reader/type2":

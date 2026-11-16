@@ -365,6 +365,15 @@ func (c *Client) SlotLFIdentity(ctx context.Context, slot int, protocol string, 
 
 // CloneLF requires explicit old/new T55xx passwords; it never guesses a list.
 func (c *Client) CloneLF(ctx context.Context, v LFIdentityInput, newPassword []byte, oldPasswords [][]byte) (LFRecord, error) {
+	return c.CloneLFObserved(ctx, v, newPassword, oldPasswords, nil)
+}
+
+// CloneLFObserved reports the mutating command boundary after codec, model and
+// reader-mode checks. beforeWrite runs once immediately before attempting the
+// T55xx write command. It must not call back into the same Client. A callback
+// invocation does not prove delivery; subsequent failure leaves the outcome
+// unknown. No write command is replayed.
+func (c *Client) CloneLFObserved(ctx context.Context, v LFIdentityInput, newPassword []byte, oldPasswords [][]byte, beforeWrite func()) (LFRecord, error) {
 	if len(newPassword) != 4 || len(oldPasswords) < 1 || len(oldPasswords) > 64 {
 		return LFRecord{}, fmt.Errorf("explicit new password and 1..64 old passwords required")
 	}
@@ -384,7 +393,7 @@ func (c *Client) CloneLF(ctx context.Context, v LFIdentityInput, newPassword []b
 	if model != 0 {
 		return record, fmt.Errorf("LF writes require Chameleon Ultra")
 	}
-	e = c.WriteT55(ctx, record.Protocol, record.ID, newPassword, oldPasswords)
+	e = c.writeT55Observed(ctx, record.Protocol, record.ID, newPassword, oldPasswords, beforeWrite)
 	return record, e
 }
 

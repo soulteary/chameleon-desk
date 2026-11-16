@@ -62,7 +62,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'reader.js', 'library-editor.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'reader.js', 'reader-workflows.js', 'memory-editor.js', 'library-editor.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
@@ -422,6 +422,27 @@ test('card inspectors can hand a copy to NDEF without touching hardware or chang
  p.input('#db-id',card.id);await p.click('#db-show');await p.click('#cards .tool-panel>button');
  assert.equal(p.$('#ndef').hidden,false);assert.equal(JSON.parse(p.$('#ndef-input').value).custom,'preserve');assert.match(p.$('#ndef-source').textContent,/Offline sample/);
  assert.equal(p.requests.some((r)=>r.url==='/api/info'||r.url.startsWith('/api/slot/')),false);
+});
+
+test('standard card inspectors copy to the slot loader without issuing a device write',async(t)=>{
+ const p=await page(t,{'/api/database':()=>response({...card,custom:'preserve'})});
+ p.input('#db-id',card.id);await p.click('#db-show');
+ const buttons=[...p.d.querySelectorAll('#cards .tool-panel>button')];
+ assert.equal(buttons[0].textContent,'在 NDEF 中打开');
+ const slot=buttons.find(b=>b.textContent==='在槽位加载器中打开');assert(slot);assert.equal(slot.disabled,false);slot.click();await tick();
+ assert.equal(p.$('#slots').hidden,false);assert.equal(JSON.parse(p.$('#load-card-json').value).custom,'preserve');
+ assert.equal(p.requests.some(r=>r.url.startsWith('/api/slot/')||r.url==='/api/info'),false);
+});
+
+test('slot-loader shortcuts preserve an active operation and reject reader drafts',async(t)=>{
+ let selected={...card};const p=await page(t,{'/api/database':()=>response(selected)});
+ p.input('#db-id',card.id);await p.click('#db-show');
+ const slot=()=>[...p.d.querySelectorAll('#cards .tool-panel>button')].find(b=>b.textContent==='在槽位加载器中打开');
+ p.input('#load-card-json','pending operation input');p.$('#slots').setAttribute('aria-busy','true');slot().click();await tick();
+ assert.equal(p.$('#load-card-json').value,'pending operation input');
+ p.$('#slots').removeAttribute('aria-busy');
+ selected={...card,id:'draft',tag:0,data:[],desk_read:{schema:1,read_result:{kind:'classic',complete:true,units_read:20,requested_units:20},rows:Array(20).fill('11'.repeat(16))}};
+ p.input('#db-id','draft');await p.click('#db-show');assert.equal(slot().disabled,true);slot().click();assert.equal(p.$('#load-card-json').value,'pending operation input');
 });
 
 test('dictionary key preview stays bounded while export contains every key',async(t)=>{

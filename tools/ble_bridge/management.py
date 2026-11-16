@@ -88,12 +88,15 @@ class ManagedBridge(Bridge):
                        self.timeout, self.pair, prepared=self.owner.link)
 
     def session_ended(self):
-        if self.session is not None and not self.session.clean:
-            self.blocked = True
+        clean = self.session is not None and self.session.clean
+        # Bridge.close temporarily blocks admission. Publish the actual cleanup
+        # result, not that temporary flag, and leave explicit disconnect state
+        # ownership to the controller until close has completed.
+        self.blocked = not clean
         self.owner.link = None
-        self.owner.state = "blocked" if self.blocked else "disconnected"
-        if self.blocked:
-            self.owner.error = "BLE cleanup failed; restart the bridge"
+        if self.owner.state != "disconnecting":
+            self.owner.state = "blocked" if self.blocked else "disconnected"
+        self.owner.error = "" if clean else "BLE cleanup failed; restart the bridge"
 
 
 class Controller:
@@ -216,9 +219,20 @@ class Controller:
             return self.status()
         self.state = "disconnecting"
         if self.bridge.active:
+            link = self.link
             session = self.bridge.session
             await self.bridge.close()
-            clean = session is None or session.clean
+            if self.backend == "ble" and link and (session is None or session.prepared is not link):
+                # accept() may claim TCP before handle() creates its session.
+                # That canceled task cannot disconnect the prepared BLE link.
+                try:
+                    await link.disconnect()
+                    clean = True
+                except Exception as error:
+                    self.error = str(error) or type(error).__name__
+                    clean = False
+            else:
+                clean = session is None or session.clean
             self.bridge.blocked = not clean
         elif self.link:
             try:
@@ -229,6 +243,8 @@ class Controller:
                 self.bridge.blocked = True
         self.link = None
         self.state = "blocked" if self.bridge.blocked else "disconnected"
+        if self.backend == "ble" and not self.bridge.blocked:
+            self.error = ""
         return self.status()
 
     async def close(self):

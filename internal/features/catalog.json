@@ -2066,8 +2066,12 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "POST /api/physical/lf/plan",
+          "POST /api/physical/lf/write",
+          "POST /api/features/check"
+        ],
         "controls": []
       },
       "cli": {
@@ -2084,14 +2088,19 @@
         "entries": [
           "Client.CloneLF",
           "Client.EncodeLFIdentity",
-          "HIDFormats"
+          "HIDFormats",
+          "LFPhysicalWriteRequest.Plan",
+          "LFPhysicalWriteRequest.Requirements"
         ]
       },
       "notes": [
-        "Protocol determines the write command; encoding/decoding is offline and must not be confused with writing a physical card."
+        "Protocol determines the write command; encoding/decoding is offline and must not be confused with writing a physical card.",
+        "Explicit isolated test target and signed current-session plan are required. Readback verifies selected protocol identity only; it does not verify T55xx passwords or uniquely bind a physical target."
       ],
       "sources": [
-        "lf_workflows.go"
+        "lf_workflows.go",
+        "lf_write.go",
+        "cmd/chameleon/serve_lf_write.go"
       ],
       "effect": "parameter-dependent"
     },
@@ -2731,13 +2740,13 @@
           "POST /api/database",
           "POST /api/features/check"
         ],
-        "controls": [
-          "#card-promote-classic"
-        ]
+        "controls": []
       },
       "cli": {
-        "status": "missing",
-        "entries": []
+        "status": "supported",
+        "entries": [
+          "read-draft promote --kind classic"
+        ]
       },
       "sdk": {
         "status": "supported",
@@ -2749,7 +2758,7 @@
       "notes": [
         "Offline conversion requires a complete Classic read, observed identity, full memory, known keys and consistent block 0 / trailer access bytes.",
         "Creates a new saved card and retains the original draft. Does not write a device or physical card.",
-        "Legacy drafts without identity, partial/error results, Type2 and LF are rejected. Four- and seven-byte UID layouts only; requested geometry is not chip authentication."
+        "Legacy drafts without identity, partial/error sources, unresolved masks and invalid geometry are rejected. Merge evidence retains every source and requires a successful full read authority."
       ],
       "sources": [
         "classic_identity.go",
@@ -4371,6 +4380,494 @@
         "reader_requests.go",
         "cmd/chameleon/serve_reader.go"
       ]
+    },
+    {
+      "id": "library.promote-lf",
+      "title": "Convert a validated LF read draft",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/database",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "read-draft promote --kind lf"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUICard.LFPromotionError",
+          "GUICard.PromoteLFDraft"
+        ]
+      },
+      "notes": [
+        "Mapped protocol identity only; diagnostic and unsupported payloads remain drafts. Original read provenance is retained."
+      ],
+      "sources": [
+        "lf_promotion.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "library.promote-type2",
+      "title": "Convert a modeled complete Type2 read draft",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/database",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "read-draft promote --kind type2"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUICard.Type2PromotionError",
+          "GUICard.PromoteType2Draft"
+        ]
+      },
+      "notes": [
+        "All observed non-secret memory must be complete. Hidden credentials require explicit new emulator-only credentials; they are never presented as observed card secrets. Active mirror configurations are rejected."
+      ],
+      "sources": [
+        "type2_promotion.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "library.merge-classic",
+      "title": "Merge matching Classic draft evidence",
+      "device": false,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/database",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUICard.ClassicMergePreview",
+          "GUICard.ValidateClassicMerge",
+          "GUICard.MergeClassicDraft",
+          "GUICard.ClassicSelectedRepairPreview",
+          "GUICard.ApplyClassicSelectedRepair"
+        ]
+      },
+      "notes": [
+        "Explicit same-card assertion and matching captured identity are required. Conflicting bytes require explicit resolution. Sources remain immutable; partial-only unions do not establish a successful complete read."
+      ],
+      "sources": [
+        "classic_repair.go",
+        "classic_repair_selected.go"
+      ],
+      "effect": "offline"
+    },
+    {
+      "id": "reader.type2-workflow",
+      "title": "Modeled Type2 full, range and authenticated reads",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/type2-workflow",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "reader type2"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Type2WorkflowRead.Requirements",
+          "Client.ReadType2Workflow"
+        ]
+      },
+      "notes": [
+        "GET_VERSION determines modeled geometry. Unreadable and hidden bytes retain masks; supplied passwords are excluded from results."
+      ],
+      "sources": [
+        "type2_workflow.go",
+        "cmd/chameleon/serve_type2_workflow.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.type2-write",
+      "title": "Plan and verify one ordinary Type2 user-page write",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/type2-write-plan",
+          "POST /api/reader/type2-write",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Type2PageWrite.Requirements",
+          "Client.PlanType2UserPage",
+          "Client.WriteType2UserPageObserved"
+        ]
+      },
+      "notes": [
+        "Requires modeled ordinary user page, matching UID and expected original bytes, current-session signed plan and explicit confirmation. Manufacturer, OTP, lock, configuration and credential pages are excluded. No automatic replay."
+      ],
+      "sources": [
+        "type2_workflow.go",
+        "cmd/chameleon/serve_type2_workflow.go"
+      ],
+      "effect": "rf-write"
+    },
+    {
+      "id": "reader.classic-repair",
+      "title": "Classic reread with source identity",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic-repair",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "reader classic-repair"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicRepairRequest.Requirements",
+          "Client.ReadClassicRepair",
+          "Client.ReadClassicSelectedRepair"
+        ]
+      },
+      "notes": [
+        "Full and selected-block rereads require matching captured identity, geometry and explicit keys. Selected observations remain sparse evidence; no library entry changes automatically."
+      ],
+      "sources": [
+        "classic_repair_io.go",
+        "cmd/chameleon/serve_classic_repair.go",
+        "classic_repair_selected.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.classic-verify",
+      "title": "Verify supplied Classic sector keys",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic-verify",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "reader classic-verify"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicKeyVerificationRequest.Requirements",
+          "Client.VerifyClassicKeys"
+        ]
+      },
+      "notes": [
+        "Explicit candidate keys are verified by authentication or readable-Key-B evidence. Verification does not read complete memory, fill unknown draft bytes or require recovery helpers."
+      ],
+      "sources": [
+        "classic_repair_io.go",
+        "cmd/chameleon/serve_classic_repair.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.classic-recover",
+      "title": "Bounded Classic key recovery",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic-recover",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "reader classic-recover"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicRecoveryRequest.Requirements",
+          "Client.RecoverClassicBound"
+        ]
+      },
+      "notes": [
+        "Key recovery requires server-configured helpers and bounded limits; supplied or recovered key material is not a claim of complete readable memory."
+      ],
+      "sources": [
+        "classic_repair_io.go",
+        "cmd/chameleon/serve_classic_repair.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "reader.classic-write",
+      "title": "Plan and verify Classic physical writes",
+      "device": true,
+      "write": true,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic-write",
+          "POST /api/reader/classic-write-plan",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "missing",
+        "entries": []
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicPhysicalWriteRequest.Requirements",
+          "PlanClassicPhysicalWrite",
+          "Client.WriteClassicPlanned"
+        ]
+      },
+      "notes": [
+        "Requires a complete target backup, explicit credentials and signed current-session Web plan. Public plan checksums exclude trailer keys. Block 0 is excluded; trailers are opt-in. Guarded execution pre-authenticates candidates and never replays a write after any write-status failure."
+      ],
+      "sources": [
+        "classic_repair_io.go",
+        "cmd/chameleon/serve_classic_repair.go",
+        "classic_clone.go"
+      ],
+      "effect": "rf-write"
+    },
+    {
+      "id": "reader.classic-dictionary",
+      "title": "Bounded Classic dictionary checks",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1001,
+        1002,
+        2000,
+        2007,
+        2008,
+        2012
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/classic-dictionary",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "reader classic-dictionary"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicDictionaryRequest.Requirements",
+          "Client.CheckClassicDictionaryBound"
+        ]
+      },
+      "notes": [
+        "Requires explicit identity, geometry, candidate keys and a 1–30 second limit. Independent verification follows discovery."
+      ],
+      "sources": [
+        "classic_repair_dictionary.go",
+        "cmd/chameleon/serve_classic_repair.go"
+      ],
+      "effect": "transient-rf"
+    },
+    {
+      "id": "library.edit-lf-device",
+      "title": "Firmware-validated ioProx file editing",
+      "device": true,
+      "write": false,
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [
+        {
+          "when": "ioProx raw identity validation",
+          "commands": [
+            3012
+          ]
+        },
+        {
+          "when": "ioProx structured composition",
+          "commands": [
+            3013
+          ]
+        }
+      ],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/lf-edit"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "lf encode"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.EditLFIdentity",
+          "GUICard.EditLFIdentityOffline",
+          "LFIdentityInput.EditRequirements"
+        ]
+      },
+      "notes": [
+        "Host codecs edit ordinary LF files offline. ioProx composition/decoding uses firmware; the result is a file edit with no RF or emulator write."
+      ],
+      "sources": [
+        "lf_editor.go",
+        "cmd/chameleon/serve_lf_editor.go"
+      ],
+      "effect": "read"
     }
   ]
 }
