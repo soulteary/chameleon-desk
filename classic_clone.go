@@ -14,14 +14,17 @@ type ClassicCloneOptions struct {
 	ExpectedIdentity *ClassicIdentity
 	// BeforeWrite runs once at the first write-command boundary.
 	BeforeWrite func()
-	// NoWriteRetry pre-authenticates candidates and sends at most one write per block.
+	// Deprecated: writes are never retried, including when this field is false.
+	// Candidates are authenticated before issuing one WRITE per block.
 	NoWriteRetry bool
 }
 type ClassicCloneResult struct {
-	WrittenBlocks       int  `json:"written_blocks"`
-	VerifiedBlocks      int  `json:"verified_blocks"`
-	ManufacturerSkipped bool `json:"manufacturer_skipped"`
-	TrailersWritten     bool `json:"trailers_written"`
+	WriteAttempted      bool   `json:"write_attempted"`
+	Outcome             string `json:"outcome"`
+	WrittenBlocks       int    `json:"written_blocks"`
+	VerifiedBlocks      int    `json:"verified_blocks"`
+	ManufacturerSkipped bool   `json:"manufacturer_skipped"`
+	TrailersWritten     bool   `json:"trailers_written"`
 }
 
 func ValidateClassicAccess(trailer []byte) error {
@@ -39,6 +42,7 @@ func ValidateClassicAccess(trailer []byte) error {
 // block 0 is always skipped. Trailer writes are opt-in and happen after each
 // sector's data. Failure can leave partial data/new keys; no automatic retries.
 func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target ClassicKeyMap, o ClassicCloneOptions) (out ClassicCloneResult, err error) {
+	defer func() { out.Outcome = finishWriteOutcome(out.WriteAttempted, &err) }()
 	if e := d.Validate(); e != nil {
 		return out, e
 	}
@@ -114,16 +118,14 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 					if side == 1 {
 						kind = KeyB
 					}
-					if o.NoWriteRetry {
-						p, _ := keyPayload(block, kind, key)
-						if _, authErr := s.expect(ctx, CmdMf1AuthOneKeyBlock, p, 0); authErr != nil {
-							var status *StatusError
-							if errors.As(authErr, &status) && (status.Status == 2 || status.Status == 6) {
-								writeErr = authErr
-								continue
-							}
-							return authErr
+					p, _ := keyPayload(block, kind, key)
+					if _, authErr := s.expect(ctx, CmdMf1AuthOneKeyBlock, p, 0); authErr != nil {
+						var status *StatusError
+						if errors.As(authErr, &status) && (status.Status == 2 || status.Status == 6) {
+							writeErr = authErr
+							continue
 						}
+						return authErr
 					}
 					if !writeStarted {
 						if err := ctx.Err(); err != nil {
@@ -133,19 +135,14 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 							o.BeforeWrite()
 						}
 						writeStarted = true
+						out.WriteAttempted = true
 					}
 					writeErr = s.WriteClassicBlock(ctx, block, kind, key, data)
 					if writeErr == nil {
 						usedKind, usedKey = kind, key
 						break
 					}
-					if o.NoWriteRetry {
-						return writeErr
-					}
-					var status *StatusError
-					if !errors.As(writeErr, &status) || (status.Status != 2 && status.Status != 6) {
-						return writeErr
-					}
+					return writeErr
 				}
 				if writeErr != nil {
 					return writeErr

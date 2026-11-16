@@ -281,6 +281,8 @@ func TestWorkflowPreservesOperationAndOutputErrors(t *testing.T) {
 			return 0x68, []byte{1}
 		case 2000:
 			return 0, []byte{4, 1, 2, 3, 4, 4, 0, 9, 0}
+		case 2007:
+			return 0, nil
 		case 2009:
 			if e := os.WriteFile(output, []byte("external"), 0600); e != nil {
 				t.Error(e)

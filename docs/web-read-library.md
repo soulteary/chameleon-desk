@@ -29,8 +29,8 @@ The card library also accepts the reader's previously exported
 `{schema:1, read_result, error}` envelopes through **从导出的读取结果恢复到卡库**.
 An envelope exported from the reader before refresh can be reopened here.
 Retained task history can explicitly import a completed or partial confirmed
-read without repeating the device operation. A server restart discards history;
-it is not durable library storage.
+read without repeating the device operation. A server restart retains task metadata and receipts, but not read-result bodies;
+the task journal is not card-library storage.
 Importing the same result again creates another ID; it does not overwrite an
 existing card by UID or merge partial reads.
 

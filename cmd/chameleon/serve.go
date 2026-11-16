@@ -16,9 +16,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -59,6 +62,12 @@ type webServer struct {
 
 func runServe(args []string) error {
 	f := flag.NewFlagSet("serve", flag.ContinueOnError)
+	journalDefault, err := defaultTaskJournalPath()
+	if err != nil {
+		return err
+	}
+	journalPath := f.String("task-journal", journalDefault, "private durable task journal; one server per file, never replayed")
+	taskTokenFile := f.String("task-token-file", "", "private task-client token file (default: JOURNAL.token)")
 	addr := f.String("addr", "127.0.0.1:8088", "loopback listen address (localhost, 127.0.0.1 or ::1)")
 	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
@@ -115,6 +124,13 @@ func runServe(args []string) error {
 		}
 		defer ws.closeBridgeClient()
 	}
+	if *journalPath == "" {
+		return fmt.Errorf("--task-journal must not be empty")
+	}
+	if err := ws.tasks.openJournal(*journalPath); err != nil {
+		return fmt.Errorf("open task journal: %w", err)
+	}
+	defer func() { ws.tasks.stop(); ws.closeSession() }()
 	startupTarget := ws.port
 	if ws.nativePort != "" {
 		startupTarget = ws.nativePort
@@ -124,20 +140,42 @@ func runServe(args []string) error {
 			return err
 		}
 	}
-	defer ws.closeSession()
-	defer ws.tasks.stop()
 	mux := http.NewServeMux()
 	if e = ws.routes(mux); e != nil {
 		return e
+	}
+	tokenPath := *taskTokenFile
+	if tokenPath == "" {
+		tokenPath = *journalPath + ".token"
 	}
 	ln, e := net.Listen("tcp", *addr)
 	if e != nil {
 		return e
 	}
+	if err := writeTaskTokenFile(tokenPath, ws.token); err != nil {
+		ln.Close()
+		return fmt.Errorf("write task-client token: %w", err)
+	}
 	_, ws.listenPort, _ = net.SplitHostPort(ln.Addr().String())
 	fmt.Printf("Chameleon Desk on http://%s/  (writes %s)\n", ln.Addr(), map[bool]string{true: "ENABLED", false: "disabled — pass --allow-writes to enable"}[ws.allowWrites])
 	srv := &http.Server{Handler: ws.logging(mux), ReadHeaderTimeout: 10 * time.Second}
-	return srv.Serve(ln)
+	fmt.Printf("Task client token: %s\n", tokenPath)
+	shutdown, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-shutdown.Done():
+			_ = srv.Close()
+		case <-done:
+		}
+	}()
+	e = srv.Serve(ln)
+	if errors.Is(e, http.ErrServerClosed) {
+		return nil
+	}
+	return e
 }
 
 func (ws *webServer) routes(mux *http.ServeMux) error {
@@ -153,33 +191,18 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	}
 	mux.HandleFunc("/api/tasks", ws.handleTasks)
 	mux.HandleFunc("/api/tasks/", ws.handleTasks)
-	mux.HandleFunc("/api/settings/read", ws.handleSettingsRead)
-	mux.HandleFunc("/api/settings/configure", ws.handleSettingsConfigure)
-	mux.HandleFunc("/api/slot/details", ws.handleSlotDetails)
-	mux.HandleFunc("/api/slot/edit", ws.handleSlotEdit)
-	// Device reads.
-	mux.HandleFunc("/api/info", ws.handleInfo)
-	mux.HandleFunc("/api/scan/hf", ws.handleScanHF)
-	mux.HandleFunc("/api/scan/lf", ws.handleScanLF)
-	mux.HandleFunc("/api/reader/classic", ws.handleClassicRead)
-	mux.HandleFunc("/api/reader/type2", ws.handleType2Read)
-	mux.HandleFunc("/api/reader/lf", ws.handleLFRead)
-	mux.HandleFunc("/api/reader/classic-dictionary", ws.handleClassicDictionary)
-	mux.HandleFunc("/api/reader/classic-repair", ws.handleClassicRepair)
-	mux.HandleFunc("/api/reader/classic-verify", ws.handleClassicVerify)
-	mux.HandleFunc("/api/reader/classic-recover", ws.handleClassicRecover)
-	mux.HandleFunc("/api/reader/classic-write-plan", ws.handleClassicWritePlan)
-	mux.HandleFunc("/api/reader/classic-write", ws.handleClassicWrite)
-	mux.HandleFunc("/api/reader/type2-workflow", ws.handleType2WorkflowRead)
-	mux.HandleFunc("/api/reader/type2-write-plan", ws.handleType2WritePlan)
-	mux.HandleFunc("/api/reader/type2-write", ws.handleType2UserPageWrite)
-	mux.HandleFunc("/api/reader/lf-edit", ws.handleLFIdentityEdit)
-	mux.HandleFunc("/api/physical/lf/plan", ws.handleLFWritePlan)
-	mux.HandleFunc("/api/physical/lf/write", ws.handleLFWrite)
+	for _, operation := range chameleon.Operations() {
+		handler := ws.operationHandler(operation.Path)
+		if handler == nil {
+			return fmt.Errorf("operation %s has no handler", operation.ID)
+		}
+		mux.HandleFunc(operation.Path, handler)
+	}
+	mux.HandleFunc("/api/operations", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]any{"schema_version": chameleon.OperationSchemaVersion, "operations": chameleon.Operations()})
+	})
 	mux.HandleFunc("/api/firmware/check", ws.handleFirmwareCheck)
-	// Device writes (gated).
-	mux.HandleFunc("/api/slot/activate", ws.handleSlotActivate)
-	mux.HandleFunc("/api/slot/load-card", ws.handleSlotLoadCard)
 	// Offline tools (no device).
 	mux.HandleFunc("/api/ndef/read", ws.handleNdefRead)
 	mux.HandleFunc("/api/ndef/write", ws.handleNdefWrite)
@@ -190,7 +213,6 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/dictionary/download", ws.handleDictDownload)
 	mux.HandleFunc("/api/database", ws.handleDatabase)
 	mux.HandleFunc("/api/capabilities", ws.handleCaps)
-	mux.HandleFunc("/api/features/device", ws.handleFeatureDevice)
 	mux.HandleFunc("/api/features/check", ws.handleFeatureCheck)
 	for _, path := range []string{"status", "scan", "select", "connect", "disconnect"} {
 		mux.HandleFunc("/api/bridge/"+path, ws.handleBridge)
@@ -225,8 +247,11 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			method := http.MethodPost
 			switch r.URL.Path {
-			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status", "/api/features/device", "/api/session/status", "/api/session/ports", "/api/settings/read", "/api/slot/details":
+			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status", "/api/features/device", "/api/operations", "/api/session/status", "/api/session/ports", "/api/settings/read", "/api/slot/details":
 				method = http.MethodGet
+			}
+			if operation, ok := chameleon.OperationForPath(r.URL.Path); ok {
+				method = operation.Method
 			}
 			if (r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/")) && r.Method == http.MethodGet {
 				method = http.MethodGet
@@ -339,7 +364,10 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 	w.Header().Set("Cache-Control", "no-store")
 	var out any
 	e := ws.withDevice(r.Context(), func(ctx context.Context, c *chameleon.Client) error {
-		stopProgress := ws.taskProgress(ctx, c)
+		stopProgress, err := ws.taskProgress(ctx, c)
+		if err != nil {
+			return err
+		}
 		defer stopProgress()
 		v, e := fn(ctx, c)
 		out = v
@@ -375,7 +403,7 @@ func (ws *webServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 func (ws *webServer) handleCaps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridgeMedium() == "ble", "usb_bridge_enabled": ws.bridgeMedium() == "usb-serial", "device_sessions_enabled": ws.sessionEnabled, "native_usb_maintenance_enabled": ws.nativePort != "", "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
+	writeJSON(w, map[string]any{"background_tasks_enabled": ws.sessionEnabled, "writes_enabled": ws.allowWrites, "csrf_token": ws.token, "ble_bridge_enabled": ws.bridgeMedium() == "ble", "usb_bridge_enabled": ws.bridgeMedium() == "usb-serial", "device_sessions_enabled": ws.sessionEnabled, "native_usb_maintenance_enabled": ws.nativePort != "", "operation_schema_version": chameleon.OperationSchemaVersion, "operations": chameleon.Operations(), "feature_schema_version": chameleon.FeatureSchemaVersion, "feature_catalog": chameleon.Features(), "feature_device": nil, "feature_states": ws.featureStates(nil)})
 }
 
 func (ws *webServer) handleScanHF(w http.ResponseWriter, r *http.Request) {

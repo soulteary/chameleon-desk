@@ -97,7 +97,8 @@ committed.
 7. Refresh the page while a task runs and query its existing ID. Confirm that
    task-result import does not rerun the command. Disconnect/reconnect and verify
    that old responses cannot replace current data or authorize a previous plan.
-   A server restart loses task history; it must not replay a write.
+   A server restart retains task metadata/receipts, marks running writes unknown,
+   and must not replay a write. Result bodies are not retained.
 
 ## Remaining matrix
 

@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "operations": [
+    {
+      "id": "device.info",
+      "path": "/api/info",
+      "method": "GET",
+      "feature_id": "device.info",
+      "write": false
+    },
+    {
+      "id": "device.features",
+      "path": "/api/features/device",
+      "method": "GET",
+      "feature_id": "device.features",
+      "write": false
+    },
+    {
+      "id": "reader.hf-scan",
+      "path": "/api/scan/hf",
+      "method": "GET",
+      "feature_id": "reader.hf-scan",
+      "write": false
+    },
+    {
+      "id": "reader.lf-scan",
+      "path": "/api/scan/lf",
+      "method": "GET",
+      "feature_id": "reader.lf-scan",
+      "write": false
+    },
+    {
+      "id": "slot.activate",
+      "path": "/api/slot/activate",
+      "method": "POST",
+      "feature_id": "slot.activate",
+      "write": true
+    },
+    {
+      "id": "slot.load-card",
+      "path": "/api/slot/load-card",
+      "method": "POST",
+      "feature_id": "slot.load-card",
+      "write": true
+    },
+    {
+      "id": "device.settings",
+      "path": "/api/settings/read",
+      "method": "GET",
+      "feature_id": "device.settings",
+      "write": false
+    },
+    {
+      "id": "device.configure",
+      "path": "/api/settings/configure",
+      "method": "POST",
+      "feature_id": "device.configure",
+      "write": true
+    },
+    {
+      "id": "slot.read-details",
+      "path": "/api/slot/details",
+      "method": "GET",
+      "feature_id": "slot.read-details",
+      "write": false
+    },
+    {
+      "id": "slot.configure",
+      "path": "/api/slot/edit",
+      "method": "POST",
+      "feature_id": "slot.configure",
+      "write": true
+    },
+    {
+      "id": "reader.classic",
+      "path": "/api/reader/classic",
+      "method": "POST",
+      "feature_id": "reader.classic-keyed",
+      "write": false
+    },
+    {
+      "id": "reader.type2",
+      "path": "/api/reader/type2",
+      "method": "POST",
+      "feature_id": "reader.type2-range",
+      "write": false
+    },
+    {
+      "id": "reader.lf",
+      "path": "/api/reader/lf",
+      "method": "POST",
+      "feature_id": "reader.lf",
+      "write": false
+    },
+    {
+      "id": "reader.classic-dictionary",
+      "path": "/api/reader/classic-dictionary",
+      "method": "POST",
+      "feature_id": "reader.classic-dictionary",
+      "write": false
+    },
+    {
+      "id": "reader.classic-repair",
+      "path": "/api/reader/classic-repair",
+      "method": "POST",
+      "feature_id": "reader.classic-repair",
+      "write": false
+    },
+    {
+      "id": "reader.classic-verify",
+      "path": "/api/reader/classic-verify",
+      "method": "POST",
+      "feature_id": "reader.classic-verify",
+      "write": false
+    },
+    {
+      "id": "reader.classic-recover",
+      "path": "/api/reader/classic-recover",
+      "method": "POST",
+      "feature_id": "reader.classic-recover",
+      "write": false
+    },
+    {
+      "id": "reader.type2-workflow",
+      "path": "/api/reader/type2-workflow",
+      "method": "POST",
+      "feature_id": "reader.type2-workflow",
+      "write": false
+    },
+    {
+      "id": "reader.type2-write-plan",
+      "path": "/api/reader/type2-write-plan",
+      "method": "POST",
+      "feature_id": "reader.type2-write",
+      "write": false
+    },
+    {
+      "id": "reader.type2-write",
+      "path": "/api/reader/type2-write",
+      "method": "POST",
+      "feature_id": "reader.type2-write",
+      "write": true
+    },
+    {
+      "id": "reader.classic-write-plan",
+      "path": "/api/reader/classic-write-plan",
+      "method": "POST",
+      "feature_id": "reader.classic-write",
+      "write": false
+    },
+    {
+      "id": "reader.classic-write",
+      "path": "/api/reader/classic-write",
+      "method": "POST",
+      "feature_id": "reader.classic-write",
+      "write": true
+    },
+    {
+      "id": "reader.lf-edit",
+      "path": "/api/reader/lf-edit",
+      "method": "POST",
+      "feature_id": "library.edit-lf-device",
+      "write": false
+    },
+    {
+      "id": "lf.write-plan",
+      "path": "/api/physical/lf/plan",
+      "method": "POST",
+      "feature_id": "lf.clone",
+      "write": false
+    },
+    {
+      "id": "lf.write",
+      "path": "/api/physical/lf/write",
+      "method": "POST",
+      "feature_id": "lf.clone",
+      "write": true
+    }
+  ]
+}

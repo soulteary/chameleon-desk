@@ -48,8 +48,9 @@ async function api(path, opts = {}) {
   const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
-    const taskPath = ["/api/reader/classic-dictionary","/api/reader/lf-edit","/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/reader/classic-repair","/api/reader/classic-verify","/api/reader/classic-recover","/api/reader/classic-write-plan","/api/reader/classic-write","/api/reader/type2-workflow","/api/reader/type2-write-plan","/api/reader/type2-write","/api/physical/lf/plan","/api/physical/lf/write","/api/settings/read","/api/settings/configure","/api/slot/details","/api/slot/edit","/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
-    if (backgroundTasks && taskPath) {
+    const taskOperation=backgroundTasks?.operation(path);
+    if(backgroundTasks && deviceRequest && !taskOperation && !["/api/features/check","/api/firmware/check"].includes(path))throw new Error("此操作未在服务端登记；请更新 Desk 并刷新页面");
+    if (backgroundTasks && taskOperation) {
      const value=await backgroundTasks.execute(path,{...opts,headers});
      if(epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
      return value;
@@ -632,10 +633,11 @@ async function loadCapabilities() {
     if (sessionsEnabled) await refreshDeviceSession();
     if (caps.background_tasks_enabled === true && !backgroundTasks) {
       $("#tasks-panel").hidden=false;
-      backgroundTasks=new window.DeskBackgroundTasks({api,container:$("#task-list"),onReaderResult:(result,current)=>{if(busy.has("database"))throw Error("卡库正在处理，请稍后重试");return runTask("database",()=>libraryEditor.importRead(result,current));}});
+      backgroundTasks=new window.DeskBackgroundTasks({operations:caps.operation_schema_version===1?caps.operations:[],api,container:$("#task-list"),onReaderResult:(result,current)=>{if(busy.has("database"))throw Error("卡库正在处理，请稍后重试");return runTask("database",()=>libraryEditor.importRead(result,current));}});
       backgroundTasks.start();
       window.addEventListener("pagehide",()=>backgroundTasks.stop(),{once:true});
     }
+    if(backgroundTasks)backgroundTasks.configureOperations(caps.operation_schema_version===1?caps.operations:[]);
     $("#bridge-panel").hidden = !bridgeEnabled;
     if (bridgeEnabled) await refreshBridgeStatus();
     $("#write-note").textContent = writesEnabled ? "设备写入已启用" : "只读模式 · 仅查看设备配置";

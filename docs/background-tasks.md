@@ -1,126 +1,199 @@
-# Background device tasks
+# Server-owned device tasks
 
-The Web UI submits device information, feature probes, HF/LF scans, slot
-activation, saved-card loads, settings reads/configuration and slot details/edits
-as server-owned tasks. Refreshing or closing the
-page does not cancel them. The device window lists retained tasks, their session,
-progress, cancellation status and results. Results recovered after refresh stay
-in task history; they are not applied to the current device or slot view.
-Existing synchronous endpoints remain compatible. Offline file tools, firmware
-update checks and connection management are not background tasks in this phase.
+Web, CLI and Go task clients submit the same registered device operations to an
+existing Desk server. The server owns execution and the serialized device session.
+Refreshing/closing a page or stopping a polling client does not cancel a task.
+Existing synchronous endpoints remain compatible. See
+[operation registration and write policy](operations-and-write-policy.md) for
+scope, model/transport checks and changes to legacy write behavior.
 
-## States, progress and outcomes
+## States and outcomes
 
 States are `queued`, `running`, `succeeded`, `failed`, `canceled` and `interrupted`.
-`cancel_requested` is a separate flag: a cancellation request is not proof that
-work has stopped or that an acknowledged command was undone. A successful result
-can win a race with a late cancellation request.
+`cancel_requested` is independent: cancellation is not rollback. A successful
+result can win a late cancellation race. Queued cancellation sends no device
+commands. An interrupted command can invalidate its connection; reconnect
+explicitly when required. No reconnect, command replay or resumed write happens
+automatically.
 
-Progress reports `queued`, `device` or `finished`, with command attempts and
-received responses while the device operation holds its gate. `commands_attempted`
-counts SDK request attempts, including a write that might fail partway through
-transmission. `responses_received` counts protocol responses, not successful
-workflow steps. Neither is a percentage or proof of persistent storage. The final
-saved-card result retains its existing `completed_steps`, `verified`, `persisted`
-and `activated` fields, including partial results on errors.
+Outcomes are:
 
-- `not_started`: the task has not entered its device callback. Cancellation while
-  queued does not issue commands. Validation or session rejection can fail here.
-- `write_not_started`: configuration preflight stopped before calling a mutating
-  SDK method; read-only probes may already have run.
-- `in_progress`: the device callback has started; its result is pending.
-- `completed`: the existing operation returned success. This means its own
-  acknowledgement/verification contract, not extra guarantees from the task layer.
-- `read_interrupted`: a read workflow entered its callback but failed. Scans can
-  temporarily change mode; examine errors and device state after interruption.
-- `write_outcome_unknown`: a slot mutation entered its callback but did not
-  complete successfully, including cancellation, timeout or connection loss.
-  Some commands may have taken effect. Retain partial results and read device
-  state before deciding whether another explicit write is appropriate.
+- `not_started`: the device callback was not entered. Validation or a changed
+  session can fail here; cancellation while queued issues no command.
+- `write_not_started`: a handler with an explicit write boundary stopped during
+  preflight, before entering its mutating method. Read-only probes may have run.
+- `in_progress`: the callback is active; the outcome is pending.
+- `completed`: the handler returned success under its own verification contract.
+- `read_interrupted`: a started read failed or its server process ended. RF reads
+  may temporarily change mode; inspect device state after interruption.
+- `write_outcome_unknown`: a started write failed without a definite pre-write
+  rejection, or a running write was recovered after process termination. Some
+  commands may already have taken effect. Read back before another explicit write.
 
-Cancellation signals the task context. The SDK may invalidate a connection when
-an in-flight command cannot be disambiguated; reconnect explicitly if necessary.
-There is no rollback, automatic reconnect or automatic replay. A session transition
-still waits on the common gate. Queued tasks retain the submitted identity and
-cannot execute against a replacement device session. Task progress does not hold
-the registry lock while writing an HTTP response, so queries do not block cancel
-or device completion on a slow HTTP reader.
+Phase and `commands_attempted` / `responses_received` are observations, not a
+percentage or proof of flash persistence. Partial workflow results retain their
+existing verified/saved/completed-step fields. Counts are polled in memory and
+saved at checkpoints; a crash can leave earlier counts, including zero for a
+write that was actually transmitted.
 
-## API
+## Durable history
 
-All task endpoints require the existing `X-Chameleon-Token`, including reads.
-Host/Origin checks and default write protection remain in force.
+`serve` opens a private append-only journal before accepting tasks. The default
+is `chameleon-desk/tasks.jsonl` beneath Go's `os.UserConfigDir()`:
+
+- Linux: `$XDG_CONFIG_HOME`, otherwise `~/.config`.
+- macOS: `~/Library/Application Support`.
+- Windows: `%AppData%`.
+
+Use `--task-journal PATH` to choose explicit storage. The parent is created with
+mode 0700, and the journal with 0600 on Unix; existing journals must be private
+regular files. Windows uses inherited filesystem ACLs; use a directory private
+to the Desk user. An OS file lock permits one server per journal and releases on
+process death. Separate servers need separate journals and token files.
+
+Accepted submissions are synced before HTTP 202. The running boundary is synced
+before the device callback is entered. Terminal state and cancellation are
+checkpointed as well. The journal stores metadata and keyed HMAC receipt digests;
+it excludes request bodies, keys, card contents, handler errors and result bodies.
+The private receipt key stays in the journal and is not returned by the API.
+Request/session IDs are caller-visible metadata; do not put secrets in them.
+Do not publish the raw journal as a diagnostic report.
+
+After restart with the same journal:
+
+- Queued records become `interrupted` / `not_started`.
+- Running reads become `interrupted` / `read_interrupted`.
+- Running writes become `interrupted` / `write_outcome_unknown`, even if the last
+  stored command count was zero. An in-flight write is never treated as resumable.
+- Terminal outcomes remain queryable; `recovered:true` identifies loaded records.
+- Result bodies are unavailable (`result_retained:false`). Export/import read
+  results into the existing card library before stopping the server if needed.
+- Receipt keys still identify the original task or return 410 after eviction;
+  they never execute it again. A new `server_id` identifies each process, while
+  `store_id` identifies the retained history. Physical confirmation tokens and
+  live device session IDs still expire with the process.
+
+A write can succeed while its terminal checkpoint fails. Current-process results
+may show that success; restart conservatively recovers the last durable running
+record as unknown. New submissions and queued callbacks stop after a journal
+failure. Existing in-flight operations may already have changed the device.
+The task panel/list reports `journal_error`; retain available results and inspect
+the target. There is no fallback to memory-only execution.
+
+Corrupt/truncated, replaced, non-private or locked journals prevent startup.
+Do not delete a journal to retry a write. Preserve it, inspect device state and
+restore a verified backup or inspect/repair the damaged record offline. A partial
+final append is deliberately not discarded automatically: losing a receipt could
+permit replay. File sync is not a guarantee against filesystem/hardware failure.
+
+Up to 16 nonterminal tasks, 128 task snapshots/results and 4096 receipt keys are
+retained. The append-only journal is limited to 64 MiB. Metadata eviction keeps
+receipts; there is no automatic receipt expiry or journal reset. At capacity,
+retain/export required history and resolve pending/unknown writes before an
+explicit archive and new journal. A new journal loses deduplication across that
+boundary. Never automate archival as a reason to resubmit old writes.
+
+## HTTP API
+
+Task reads and writes require the current `X-Chameleon-Token`. Host/Origin checks
+and `--allow-writes` still apply. Registered paths, methods and linked features
+come from `GET /api/operations`; there is no arbitrary handler or raw execution.
 
 ```http
 POST /api/tasks
 Content-Type: application/json
 X-Chameleon-Token: ...
 
-{"request_id":"unique-client-request-id","session_id":"observed-session-id","path":"/api/slot/activate","body":{"slot":1}}
+{"request_id":"caller-owned-request-0001","session_id":"observed-session-id","operation_id":"slot.activate","body":{"slot":1}}
 ```
 
-An accepted submission returns HTTP 202 and a task snapshot with opaque `id`.
-The allowed paths are `/api/info`, `/api/features/device`, `/api/scan/hf`,
-`/api/scan/lf`, `/api/slot/activate`, `/api/slot/load-card`, `/api/settings/read`,
-`/api/settings/configure`, `/api/slot/details` and `/api/slot/edit`. Read operations
-accept no body; write bodies use their existing schemas and checks. A malformed
-workflow body can produce an accepted task that subsequently fails validation
-without device access. There is no arbitrary route or raw-command execution.
+Legacy `path` submissions remain supported. If both path and operation ID are
+provided they must match. GET operations accept no body. POST bodies use the
+handler's existing schema; validation can fail in an accepted task before I/O.
+Each task has a five-minute outer bound and the existing device operation bound.
+This does not add an unbounded recovery worker service.
 
-- `GET /api/tasks`: server instance ID and retained task metadata, newest first.
-  Full results are fetched individually to avoid repeatedly polling card payloads.
-- `GET /api/tasks/{id}`: state, progress, outcome, original HTTP status and result.
+- `GET /api/tasks`: process/history IDs, durability/error status and retained
+  metadata, newest first. Result bodies require individual queries.
+- `GET /api/tasks/{id}`: metadata, outcome and result if still in memory.
+- `GET /api/tasks?request_id=...`: find an accepted request without resubmitting;
+  404 means no retained receipt, 410 means its snapshot was evicted.
 - `POST /api/tasks/{id}/cancel` with `{}`: request cancellation; query until terminal.
 
-The client supplies a 16–128-byte `request_id`. Within one server lifetime,
-repeating exactly the same input/key returns the existing task, never executes
-it again; different input with that key returns 409. This lookup precedes session
-replacement checks so an old submission can still be found. After result eviction,
-a retained receipt returns 410 rather than executing again. These receipts do
-not deduplicate legacy synchronous calls or independently generated request IDs.
+A request ID is 16–128 bytes. Within a journal's retained history, an identical
+submission returns the same task; different input returns 409; an evicted task
+returns 410. This lookup precedes session replacement checks. These receipts do
+not deduplicate independent IDs, legacy synchronous endpoints or direct SDK calls.
+The Web client submits once and queries history after ambiguous acceptance.
+Minimal browser receipts contain IDs/write flags, not card payloads or keys.
+A recovered history does not restore old results into current device views.
 
-The Web client sends each submission only once. If the response is lost, it queries
-history instead of resending a mutation. Minimal receipts (server ID, request ID,
-write flag) use same-tab `sessionStorage`; card payloads and keys are not stored
-there. Unknown-write receipts remain until explicitly dismissed after history is
-lost; dismissing a reminder does not resolve device state. Definitively rejected
-submissions (for example, validation, permission or capacity errors) are not kept
-as ambiguous writes. If storage is unavailable, the server list remains queryable after refresh.
-There is no automatic resubmission following a browser timeout or reload.
+## CLI
 
-## Lifetime and limits
+The server writes a private current-process token to `JOURNAL.token`; override
+with `--task-token-file`. It rotates on startup. The path is printed, not its
+contents. Do not share it or reuse a token path across servers.
 
-Tasks and deduplication receipts live in server memory, not a durable execution
-journal. Up to 16 nonterminal tasks and 128 results are retained; the oldest terminal
-result is evicted when needed. Up to 4096 receipt keys are accepted in one server
-lifetime, after which new submissions return 429. Running tasks are never evicted.
-Submission bodies are bounded by the card-body limit plus 64 KiB. Each task has a
-five-minute outer deadline; existing device operations still have their 30-second
-queue/operation bound and per-command timeout. This is not a long-running recovery
-worker service. All pages share the same server registry and device operation gate.
+```sh
+./chameleon serve --task-journal ./private-state/tasks.jsonl --allow-writes
+./chameleon tasks operations
+./chameleon tasks session --token-file ./private-state/tasks.jsonl.token
+./chameleon tasks list --token-file ./private-state/tasks.jsonl.token
+```
 
-Task queries/cancel do not take the device gate. No FIFO ordering is promised.
-If the server serving loop returns, teardown signals cancellation and waits for
-registered tasks. Process termination or a crash can lose records and interrupt
-hardware work; this phase does not add a durable shutdown journal.
-After a server restart, old IDs/receipts cannot be recovered or deduplicated by
-the new process. The Web UI shows an unresolved receipt warning when it observes
-a different server ID or missing history. It does not claim that a lost write
-failed or restart it. Completed tasks are not resumable write checkpoints.
+Connect the device through Desk's existing session controls first. For an explicit
+submission, use the observed session ID and retain your request ID before sending:
 
-Polling is used rather than an event stream. The task panel can be queried after
-refresh; other device views still follow the explicit session-isolation rules.
-Results may contain imported identifiers or metadata; they are not encrypted and
-are accessible to pages authorized for this local Desk server.
+```sh
+./chameleon tasks submit --token-file ./private-state/tasks.jsonl.token \
+  --request-id slot-activation-review-0001 --session-id OBSERVED_SESSION_ID \
+  --operation slot.activate --body-file activation.json
+./chameleon tasks find --token-file ./private-state/tasks.jsonl.token \
+  --request-id slot-activation-review-0001
+./chameleon tasks get --token-file ./private-state/tasks.jsonl.token --id TASK_ID
+./chameleon tasks wait --token-file ./private-state/tasks.jsonl.token --id TASK_ID
+./chameleon tasks cancel --token-file ./private-state/tasks.jsonl.token --id TASK_ID
+```
+
+`activation.json` contains `{"slot":1}`. Commands use `--server` for another
+loopback Desk origin. `submit` sends once and returns acceptance, not workflow
+success. `get`/`wait` print the outcome; inspect it rather than interpreting a
+successful HTTP query as a successful device write. Interrupting `wait` or its
+`--timeout` stops polling only. Cancellation is a separate explicit action.
+
+## Go SDK
+
+```go
+client, err := chameleon.NewTaskClient("http://127.0.0.1:8088", token)
+if err != nil { return err }
+input := chameleon.TaskSubmission{
+    RequestID: "slot-activation-review-0001", // retain before calling Submit
+    SessionID: observedSessionID,
+    OperationID: "slot.activate",
+    Body: json.RawMessage(`{"slot":1}`),
+}
+task, err := client.Submit(ctx, input)
+if err != nil {
+    // If TaskRequestError.Ambiguous, use Find with the retained RequestID.
+    // Do not call Submit again to recover a missing acceptance response.
+    return err
+}
+final, err := client.Wait(ctx, task.ID, time.Second)
+```
+
+`TaskClient` permits loopback HTTP origins, does not use environment HTTP proxies,
+follows no redirects and does not retry POST. `TaskHTTPError` exposes query/rejection HTTP status. `TaskRequestError` carries request
+ID, HTTP status and acceptance ambiguity. Invalid/malformed success responses are
+also ambiguous. `Find`, `Get`, `List`, `Cancel` and `Session` are explicit APIs;
+`Wait` polls GET only. A client context cancellation does not cancel server work.
 
 ## Validation
 
-Offline Go and race tests cover task ownership, deduplication, queued cancellation,
-in-flight write cancellation, partial/unknown outcome handling, session changes,
-query authorization and shutdown. Web fixtures cover one-shot submission, query
-recovery, cancellation, storage failure, restart ambiguity and text-only rendering.
-The Chromium simulator verifies that a task survives page reload without issuing
-its firmware commands twice. Physical adapters/cards and power-loss recovery are
-not established by these tests.
-
-Reader tasks also accept POST bodies at `/api/reader/classic`, `/api/reader/type2` and `/api/reader/lf` with `write:false`. They share session identity, authorization, limits, cancellation and refresh-query behavior. See [Web reader workflows](web-reader.md) for partial data and RF/mode cleanup semantics.
+Offline tests cover write failures after authentication, per-block no-replay,
+T55 candidate bounds, journal ownership/corruption/replacement, process-death
+recovery, failure before admission/callback and lost terminal checkpoints. HTTP
+SDK/CLI tests cover shared session guards, request lookup, deduplication after
+restart, lost acceptance and redirect/rejection handling. Web fixtures cover
+receipt handling, registry dispatch and result availability. Chromium verifies
+page reload and a killed/restarted Desk process without a second write command.
+These checks do not qualify physical cards, adapters or actual power-loss behavior.

@@ -9,8 +9,9 @@ not select a device or supply default credentials.
 All device operations use the current serialized session and background tasks.
 Results can be queried after a page refresh while the same server process is
 running. Task history can import confirmed read data without repeating the
-reader command. A server restart discards its task history; export results and
-save imported cards for durable storage.
+reader command. A server restart retains task metadata and receipts, but not result bodies;
+export results and save imported cards for durable storage. See
+[background tasks](background-tasks.md).
 
 ## Reads, repair and conversion
 

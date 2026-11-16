@@ -83,7 +83,7 @@ see the workflow documentation before writing. Interrupted writes are not
 replayed automatically. See the [hardware acceptance record](docs/hardware-acceptance.md)
 for tested devices and remaining gaps.
 
-Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task records are held in server memory and do not survive a server restart.
+Device information, scans and slot writes use [background tasks](docs/background-tasks.md) with progress, cancellation and results that can be queried after a page refresh. Interrupted writes can have an unknown outcome and are not replayed automatically. Task metadata and deduplication receipts survive server restart in a private journal; result bodies remain in memory. Running writes recover with an unknown outcome and are never resumed. Web, `chameleon tasks` and the Go `TaskClient` share the [operation registry and write policy](docs/operations-and-write-policy.md).
 
 Offline file tools work without a connected device. Valid card-library changes
 are saved automatically in IndexedDB and restored after refresh or restart,

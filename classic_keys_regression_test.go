@@ -130,7 +130,7 @@ func TestCloneKnownSchema2TrailersStillWorks(t *testing.T) {
 			}
 			p := append([]byte{0x60, byte(block)}, oldA...)
 			value := data[block*16 : (block+1)*16]
-			steps = append(steps, readerStep{command: 2009, request: append(append([]byte(nil), p...), value...)})
+			steps = append(steps, readerStep{command: 2007, request: p}, readerStep{command: 2009, request: append(append([]byte(nil), p...), value...)})
 			read := append([]byte(nil), value...)
 			if block%4 == 3 {
 				p = append([]byte{0x60, byte(block)}, newA...)

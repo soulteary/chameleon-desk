@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,38 +16,28 @@ import (
 
 type taskKey struct{}
 type webTask struct {
-	ID              string          `json:"id"`
-	RequestID       string          `json:"request_id"`
-	SessionID       string          `json:"session_id"`
-	Path            string          `json:"path"`
-	WriteAttempted  *bool           `json:"write_attempted,omitempty"`
-	Write           bool            `json:"write"`
-	State           string          `json:"state"`
-	Phase           string          `json:"phase"`
-	Outcome         string          `json:"outcome"`
-	Created         time.Time       `json:"created_at"`
-	Updated         time.Time       `json:"updated_at"`
-	Commands        uint64          `json:"commands_attempted"`
-	Responses       uint64          `json:"responses_received"`
-	Status          int             `json:"http_status,omitempty"`
-	Result          json.RawMessage `json:"result,omitempty"`
-	CancelRequested bool            `json:"cancel_requested"`
-	started         bool
-	cancel          context.CancelFunc
+	chameleon.TaskSnapshot
+	started bool
+	cancel  context.CancelFunc
 }
 type taskReceipt struct {
 	hash [32]byte
 	id   string
 }
 type webTasks struct {
-	mu       sync.Mutex
-	once     sync.Once
-	records  map[string]*webTask
-	receipts map[string]taskReceipt
-	order    []string
-	serverID string
-	stopped  bool
-	wg       sync.WaitGroup
+	journalClosed bool
+	journal       *taskJournal
+	journalError  error
+	receiptKey    [32]byte
+	storeID       string
+	mu            sync.Mutex
+	once          sync.Once
+	records       map[string]*webTask
+	receipts      map[string]taskReceipt
+	order         []string
+	serverID      string
+	stopped       bool
+	wg            sync.WaitGroup
 }
 
 func (ts *webTasks) init() {
@@ -56,6 +45,8 @@ func (ts *webTasks) init() {
 		ts.records = make(map[string]*webTask)
 		ts.receipts = make(map[string]taskReceipt)
 		ts.serverID = newTaskID()
+		ts.storeID = ts.serverID
+		ts.newReceiptKey()
 	})
 }
 func newTaskID() string {
@@ -76,19 +67,21 @@ func (ts *webTasks) stop() {
 		if !taskTerminal(t) {
 			t.CancelRequested = true
 			t.cancel()
+			_ = ts.persistLocked(t)
 		}
 	}
 	ts.mu.Unlock()
 	ts.wg.Wait()
+	ts.mu.Lock()
+	if ts.journal != nil && !ts.journalClosed {
+		ts.journalClosed = true
+		_ = ts.journal.file.Close()
+	}
+	ts.mu.Unlock()
 }
 func taskPath(path string) (string, bool) {
-	switch path {
-	case "/api/reader/classic-dictionary", "/api/reader/lf-edit", "/api/reader/classic", "/api/reader/type2", "/api/reader/lf", "/api/reader/classic-repair", "/api/reader/classic-verify", "/api/reader/classic-recover", "/api/reader/type2-workflow", "/api/reader/type2-write-plan", "/api/reader/classic-write-plan", "/api/physical/lf/plan":
-		return "POST", false
-	case "/api/settings/read", "/api/slot/details", "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/features/device":
-		return "GET", false
-	case "/api/settings/configure", "/api/slot/edit", "/api/slot/activate", "/api/slot/load-card", "/api/reader/type2-write", "/api/reader/classic-write", "/api/physical/lf/write":
-		return "POST", true
+	if o, ok := chameleon.OperationForPath(path); ok {
+		return o.Method, o.Write
 	}
 	return "", false
 }
@@ -99,6 +92,23 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	if r.Method == "GET" {
 		ts.mu.Lock()
+		if r.URL.Path == "/api/tasks" && r.URL.Query().Has("request_id") {
+			receipt, ok := ts.receipts[r.URL.Query().Get("request_id")]
+			if !ok {
+				ts.mu.Unlock()
+				writeErr(w, 404, fmt.Errorf("request receipt not found; do not resubmit a write"))
+				return
+			}
+			if t := ts.records[receipt.id]; t != nil {
+				snapshot := *t
+				ts.mu.Unlock()
+				writeJSON(w, snapshot)
+				return
+			}
+			ts.mu.Unlock()
+			writeErr(w, 410, fmt.Errorf("task result expired; request will not be replayed"))
+			return
+		}
 		if r.URL.Path == "/api/tasks" {
 			rows := []webTask{}
 			for i := len(ts.order) - 1; i >= 0; i-- {
@@ -109,8 +119,12 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			serverID := ts.serverID
+			storeID, durable, journalError := ts.storeID, ts.journal != nil, ""
+			if ts.journalError != nil {
+				journalError = "Task journal failed; new submissions are blocked. Inspect device state before further writes."
+			}
 			ts.mu.Unlock()
-			writeJSON(w, map[string]any{"server_id": serverID, "tasks": rows})
+			writeJSON(w, map[string]any{"server_id": serverID, "store_id": storeID, "durable": durable, "journal_error": journalError, "tasks": rows})
 			return
 		}
 		if t := ts.records[id]; t != nil {
@@ -140,6 +154,7 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 			t.CancelRequested = true
 			t.Updated = time.Now().UTC()
 			t.cancel()
+			_ = ts.persistLocked(t)
 		}
 		snapshot := *t
 		ts.mu.Unlock()
@@ -150,16 +165,24 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, fmt.Errorf("unknown task action"))
 		return
 	}
-	var input struct {
-		RequestID string          `json:"request_id"`
-		SessionID string          `json:"session_id"`
-		Path      string          `json:"path"`
-		Body      json.RawMessage `json:"body,omitempty"`
-	}
+	var input chameleon.TaskSubmission
 	if err := decodeBody(r, &input); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
+	var operation chameleon.OperationDefinition
+	if input.OperationID != "" {
+		var err error
+		operation, err = chameleon.LookupOperation(input.OperationID)
+		if err != nil || (input.Path != "" && input.Path != operation.Path) {
+			writeErr(w, 400, fmt.Errorf("unknown or conflicting operation"))
+			return
+		}
+		input.Path = operation.Path
+	} else {
+		operation, _ = chameleon.OperationForPath(input.Path)
+	}
+	input.OperationID = operation.ID
 	method, write := taskPath(input.Path)
 	if method == "" || len(input.RequestID) < 16 || len(input.RequestID) > 128 || input.SessionID == "" {
 		writeErr(w, 400, fmt.Errorf("supported path, request_id (16–128 bytes), and session_id are required"))
@@ -172,8 +195,7 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 	if write && !ws.needWrites(w) {
 		return
 	}
-	payload, _ := json.Marshal(input)
-	hash := sha256.Sum256(payload)
+	hash := ts.digest(input)
 	ts.mu.Lock()
 	if prior, ok := ts.receipts[input.RequestID]; ok {
 		if prior.hash != hash {
@@ -194,6 +216,11 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 	if input.SessionID != ws.currentSessionID() {
 		ts.mu.Unlock()
 		writeErr(w, 409, fmt.Errorf("device session changed"))
+		return
+	}
+	if ts.journalError != nil {
+		ts.mu.Unlock()
+		writeErr(w, 503, fmt.Errorf("task journal unavailable; no work was started"))
 		return
 	}
 	active := 0
@@ -218,11 +245,20 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	ctx = context.WithValue(ctx, sessionContextKey{}, input.SessionID)
-	t := &webTask{ID: newTaskID(), RequestID: input.RequestID, SessionID: input.SessionID, Path: input.Path, Write: write, State: "queued", Phase: "queued", Outcome: "not_started", Created: time.Now().UTC(), cancel: cancel}
+	t := &webTask{TaskSnapshot: chameleon.TaskSnapshot{ID: newTaskID(), RequestID: input.RequestID, SessionID: input.SessionID, OperationID: operation.ID, Path: input.Path, Write: write, State: "queued", Phase: "queued", Outcome: "not_started", Created: time.Now().UTC()}, cancel: cancel}
 	t.Updated = t.Created
 	ts.records[t.ID] = t
 	ts.receipts[input.RequestID] = taskReceipt{hash, t.ID}
 	ts.order = append(ts.order, t.ID)
+	if err := ts.persistLocked(t); err != nil {
+		t.State = "failed"
+		t.Phase = "finished"
+		t.Status = 503
+		cancel()
+		ts.mu.Unlock()
+		writeErr(w, 503, fmt.Errorf("could not durably record task; no work was started; query request_id before further action"))
+		return
+	}
 	ctx = context.WithValue(ctx, taskKey{}, t)
 	ts.wg.Add(1)
 	snapshot := *t
@@ -241,11 +277,13 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 			}
 			ts.mu.Lock()
 			defer ts.mu.Unlock()
+			defer func() { _ = ts.persistLocked(t) }()
 			t.Status = out.status
 			if t.Status == 0 {
 				t.Status = 200
 			}
 			t.Result = append(json.RawMessage(nil), out.body.Bytes()...)
+			t.ResultRetained = len(t.Result) > 0
 			t.Phase = "finished"
 			t.Updated = time.Now().UTC()
 			if t.Status < 400 {
@@ -272,58 +310,7 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 
-		switch input.Path {
-		case "/api/reader/classic-dictionary":
-			ws.handleClassicDictionary(out, request)
-		case "/api/reader/lf-edit":
-			ws.handleLFIdentityEdit(out, request)
-		case "/api/reader/classic-repair":
-			ws.handleClassicRepair(out, request)
-		case "/api/reader/classic-verify":
-			ws.handleClassicVerify(out, request)
-		case "/api/reader/classic-recover":
-			ws.handleClassicRecover(out, request)
-		case "/api/reader/classic-write-plan":
-			ws.handleClassicWritePlan(out, request)
-		case "/api/reader/classic-write":
-			ws.handleClassicWrite(out, request)
-		case "/api/reader/type2-workflow":
-			ws.handleType2WorkflowRead(out, request)
-		case "/api/reader/type2-write-plan":
-			ws.handleType2WritePlan(out, request)
-		case "/api/reader/type2-write":
-			ws.handleType2UserPageWrite(out, request)
-		case "/api/physical/lf/plan":
-			ws.handleLFWritePlan(out, request)
-		case "/api/physical/lf/write":
-			ws.handleLFWrite(out, request)
-		case "/api/reader/classic":
-			ws.handleClassicRead(out, request)
-		case "/api/reader/type2":
-			ws.handleType2Read(out, request)
-		case "/api/reader/lf":
-			ws.handleLFRead(out, request)
-		case "/api/settings/read":
-			ws.handleSettingsRead(out, request)
-		case "/api/settings/configure":
-			ws.handleSettingsConfigure(out, request)
-		case "/api/slot/details":
-			ws.handleSlotDetails(out, request)
-		case "/api/slot/edit":
-			ws.handleSlotEdit(out, request)
-		case "/api/info":
-			ws.handleInfo(out, request)
-		case "/api/features/device":
-			ws.handleFeatureDevice(out, request)
-		case "/api/scan/hf":
-			ws.handleScanHF(out, request)
-		case "/api/scan/lf":
-			ws.handleScanLF(out, request)
-		case "/api/slot/activate":
-			ws.handleSlotActivate(out, request)
-		case "/api/slot/load-card":
-			ws.handleSlotLoadCard(out, request)
-		}
+		ws.operationHandler(input.Path)(out, request)
 
 	}()
 	w.Header().Set("Content-Type", "application/json")
@@ -349,10 +336,10 @@ func (w *taskResponse) Write(b []byte) (int, error) {
 	}
 	return w.body.Write(b)
 }
-func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) func() {
+func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) (func(), error) {
 	t, _ := ctx.Value(taskKey{}).(*webTask)
 	if t == nil {
-		return func() {}
+		return func() {}, nil
 	}
 	ts := &ws.tasks
 	base := c.Stats()
@@ -362,7 +349,17 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) func
 	t.Outcome = "in_progress"
 	t.Phase = "device"
 	t.Updated = time.Now().UTC()
+	err := ts.persistLocked(t)
+	if err != nil {
+		t.started = false
+		t.State = "queued"
+		t.Phase = "queued"
+		t.Outcome = "not_started"
+	}
 	ts.mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("could not record task start; device callback was not entered: %w", err)
+	}
 	done, finished := make(chan struct{}), make(chan struct{})
 	update := func() {
 		s := c.Stats()
@@ -388,5 +385,61 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) func
 			}
 		}
 	}()
-	return func() { close(done); <-finished }
+	return func() { close(done); <-finished }, nil
+}
+
+func (ws *webServer) operationHandler(path string) http.HandlerFunc {
+	switch path {
+	case "/api/reader/classic-dictionary":
+		return ws.handleClassicDictionary
+	case "/api/reader/lf-edit":
+		return ws.handleLFIdentityEdit
+	case "/api/reader/classic-repair":
+		return ws.handleClassicRepair
+	case "/api/reader/classic-verify":
+		return ws.handleClassicVerify
+	case "/api/reader/classic-recover":
+		return ws.handleClassicRecover
+	case "/api/reader/classic-write-plan":
+		return ws.handleClassicWritePlan
+	case "/api/reader/classic-write":
+		return ws.handleClassicWrite
+	case "/api/reader/type2-workflow":
+		return ws.handleType2WorkflowRead
+	case "/api/reader/type2-write-plan":
+		return ws.handleType2WritePlan
+	case "/api/reader/type2-write":
+		return ws.handleType2UserPageWrite
+	case "/api/physical/lf/plan":
+		return ws.handleLFWritePlan
+	case "/api/physical/lf/write":
+		return ws.handleLFWrite
+	case "/api/reader/classic":
+		return ws.handleClassicRead
+	case "/api/reader/type2":
+		return ws.handleType2Read
+	case "/api/reader/lf":
+		return ws.handleLFRead
+	case "/api/settings/read":
+		return ws.handleSettingsRead
+	case "/api/settings/configure":
+		return ws.handleSettingsConfigure
+	case "/api/slot/details":
+		return ws.handleSlotDetails
+	case "/api/slot/edit":
+		return ws.handleSlotEdit
+	case "/api/info":
+		return ws.handleInfo
+	case "/api/features/device":
+		return ws.handleFeatureDevice
+	case "/api/scan/hf":
+		return ws.handleScanHF
+	case "/api/scan/lf":
+		return ws.handleScanLF
+	case "/api/slot/activate":
+		return ws.handleSlotActivate
+	case "/api/slot/load-card":
+		return ws.handleSlotLoadCard
+	}
+	return nil
 }
