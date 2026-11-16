@@ -10,6 +10,12 @@ import (
 type ClassicCloneOptions struct {
 	WriteTrailers  bool
 	PreserveAccess bool
+	// ExpectedIdentity optionally binds each physical write to captured anticollision metadata.
+	ExpectedIdentity *ClassicIdentity
+	// BeforeWrite runs once at the first write-command boundary.
+	BeforeWrite func()
+	// NoWriteRetry pre-authenticates candidates and sends at most one write per block.
+	NoWriteRetry bool
 }
 type ClassicCloneResult struct {
 	WrittenBlocks       int  `json:"written_blocks"`
@@ -42,6 +48,14 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 	if e := target.Validate(); e != nil {
 		return out, e
 	}
+	if o.ExpectedIdentity != nil {
+		if err := o.ExpectedIdentity.Validate(); err != nil {
+			return out, err
+		}
+		if !bytes.Equal(o.ExpectedIdentity.UID, target.UID) {
+			return out, fmt.Errorf("target UID differs from expected Classic identity")
+		}
+	}
 	geometry := map[uint16]int{1000: 5, 1001: 16, 1002: 32, 1003: 40}
 	if geometry[d.TagType] != len(target.Sectors) {
 		return out, fmt.Errorf("target key map and source geometry differ")
@@ -62,10 +76,13 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 		}
 	}
 	out.ManufacturerSkipped = true
+	writeStarted := false
 	err = c.Reader(ctx, func(s *ReaderSession) error {
 		for _, sector := range target.Sectors {
-			if e := ensureUID(ctx, s, target.UID); e != nil {
-				return e
+			if o.ExpectedIdentity == nil {
+				if e := ensureUID(ctx, s, target.UID); e != nil {
+					return e
+				}
 			}
 			first, count, _ := ClassicSectorGeometry(sector.Sector)
 			for block := first; block < first+count; block++ {
@@ -75,6 +92,12 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 				trailer := block == first+count-1
 				if trailer && !o.WriteTrailers {
 					continue
+				}
+				if o.ExpectedIdentity != nil {
+					expected := *o.ExpectedIdentity
+					if e := observeClassicIdentity(ctx, s, target.UID, &expected); e != nil {
+						return e
+					}
 				}
 				data := append([]byte(nil), d.Data[block*16:(block+1)*16]...)
 				if trailer && !o.PreserveAccess {
@@ -91,10 +114,33 @@ func (c *Client) CloneClassic(ctx context.Context, d ClassicCardDump, target Cla
 					if side == 1 {
 						kind = KeyB
 					}
+					if o.NoWriteRetry {
+						p, _ := keyPayload(block, kind, key)
+						if _, authErr := s.expect(ctx, CmdMf1AuthOneKeyBlock, p, 0); authErr != nil {
+							var status *StatusError
+							if errors.As(authErr, &status) && (status.Status == 2 || status.Status == 6) {
+								writeErr = authErr
+								continue
+							}
+							return authErr
+						}
+					}
+					if !writeStarted {
+						if err := ctx.Err(); err != nil {
+							return err
+						}
+						if o.BeforeWrite != nil {
+							o.BeforeWrite()
+						}
+						writeStarted = true
+					}
 					writeErr = s.WriteClassicBlock(ctx, block, kind, key, data)
 					if writeErr == nil {
 						usedKind, usedKey = kind, key
 						break
+					}
+					if o.NoWriteRetry {
+						return writeErr
 					}
 					var status *StatusError
 					if !errors.As(writeErr, &status) || (status.Status != 2 && status.Status != 6) {

@@ -10,18 +10,19 @@ import (
 
 // ReadResult describes one reader operation, not a complete emulator image.
 type ReadResult struct {
-	Identity  *ClassicIdentity `json:"identity,omitempty"`
-	Schema    int              `json:"schema"`
-	Kind      string           `json:"kind"`
-	Complete  bool             `json:"complete"`
-	Start     int              `json:"start"`
-	Requested int              `json:"requested_units"`
-	Read      int              `json:"units_read"`
-	UID       HexBytes         `json:"uid,omitempty"`
-	Data      HexBytes         `json:"data,omitempty"`
-	Dump      *ClassicCardDump `json:"dump,omitempty"`
-	Record    *LFRecord        `json:"record,omitempty"`
-	Present   *bool            `json:"present,omitempty"`
+	Type2     *Type2ReadMetadata `json:"type2,omitempty"`
+	Identity  *ClassicIdentity   `json:"identity,omitempty"`
+	Schema    int                `json:"schema"`
+	Kind      string             `json:"kind"`
+	Complete  bool               `json:"complete"`
+	Start     int                `json:"start"`
+	Requested int                `json:"requested_units"`
+	Read      int                `json:"units_read"`
+	UID       HexBytes           `json:"uid,omitempty"`
+	Data      HexBytes           `json:"data,omitempty"`
+	Dump      *ClassicCardDump   `json:"dump,omitempty"`
+	Record    *LFRecord          `json:"record,omitempty"`
+	Present   *bool              `json:"present,omitempty"`
 }
 
 // ReadCardData keeps the original observation separate from the editable draft.
@@ -42,6 +43,9 @@ func (r ReadResult) draftRows() ([]string, error) {
 	width := 0
 	switch r.Kind {
 	case "classic":
+		if r.Type2 != nil {
+			return nil, fmt.Errorf("Type2 metadata is not valid on Classic results")
+		}
 		if r.Identity != nil {
 			if err := r.Identity.Validate(); err != nil {
 				return nil, err
@@ -56,12 +60,17 @@ func (r ReadResult) draftRows() ([]string, error) {
 		}
 		data, width = d.Data, 16
 	case "type2":
+		if r.Type2 != nil {
+			if err := ValidateType2ReadResult(r); err != nil {
+				return nil, err
+			}
+		}
 		if r.Identity != nil || r.Start+r.Requested > 256 || r.Dump != nil || r.Record != nil || r.Present != nil {
 			return nil, fmt.Errorf("invalid Type2 range")
 		}
 		data, width = r.Data, 4
 	case "lf":
-		if r.Identity != nil || r.Start != 0 || r.Requested != 1 || !r.Complete || r.Present == nil || !*r.Present || r.Record == nil || r.Dump != nil || len(r.UID) != 0 || len(r.Data) != 0 {
+		if r.Type2 != nil || r.Identity != nil || r.Start != 0 || r.Requested != 1 || !r.Complete || r.Present == nil || !*r.Present || r.Record == nil || r.Dump != nil || len(r.UID) != 0 || len(r.Data) != 0 {
 			return nil, fmt.Errorf("LF import requires a successful present-card result")
 		}
 		rec := r.Record
@@ -108,6 +117,9 @@ func (r ReadResult) draftRows() ([]string, error) {
 			row := rows[trailer]
 			rows[trailer] = row[:offset] + strings.Repeat("??", 6) + row[offset+12:]
 		}
+	}
+	if r.Type2 != nil {
+		return ApplyType2ReadMasks(r.Type2, rows)
 	}
 	return rows, nil
 }
@@ -170,6 +182,10 @@ func (c GUICard) ReadDraft() (*ReadCardData, error) {
 	if err != nil {
 		return nil, err
 	}
+	original, err = c.ClassicRepairRows(v, original)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := cleanReadRows(v.Rows, original)
 	if err != nil {
 		return nil, err
@@ -205,6 +221,10 @@ func (c GUICard) EditData(name string, rows []string) (GUICard, error) {
 	}
 	if draft != nil {
 		original, _ := draft.Result.draftRows()
+		original, err = c.ClassicRepairRows(*draft, original)
+		if err != nil {
+			return c, err
+		}
 		draft.Rows, err = cleanReadRows(rows, original)
 		if err != nil {
 			return c, err
@@ -224,7 +244,7 @@ func (c GUICard) EditData(name string, rows []string) (GUICard, error) {
 			unit = 4
 		}
 		if !ok {
-			return c, fmt.Errorf("data editing supports HF memory cards and Desk read drafts")
+			return c.EditLFData(name, rows)
 		}
 		if len(rows) > 256 {
 			return c, fmt.Errorf("data editor supports at most 256 memory rows")

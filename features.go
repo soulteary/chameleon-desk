@@ -97,19 +97,31 @@ type FeatureAvailability struct {
 // FeatureRequest resolves requirements for selected parameters without I/O.
 // Not all CLI workflows have resolvers; unresolved parameterized entries remain unknown.
 type FeatureRequest struct {
-	ClassicRead       *ClassicRead   `json:"classic_read,omitempty"`
-	Type2Read         *Type2Read     `json:"type2_read,omitempty"`
-	LFRead            *LFRead        `json:"lf_read,omitempty"`
-	SettingsPatch     *SettingsPatch `json:"settings_patch,omitempty"`
-	SlotEdit          *SlotEdit      `json:"slot_edit,omitempty"`
-	Card              *GUICard       `json:"-"`
-	Slot              int            `json:"slot"`
-	Persist           bool           `json:"persist"`
-	Activate          bool           `json:"activate"`
-	Command           *Command       `json:"command"`
-	AllowUnregistered bool           `json:"allow_unregistered"`
-	Model             string         `json:"model"`
-	Version           string         `json:"version"`
+	LFIdentity        *LFIdentityInput               `json:"lf_identity,omitempty"`
+	LFWrite           *LFPhysicalWriteRequest        `json:"lf_write,omitempty"`
+	Type2Workflow     *Type2WorkflowRead             `json:"type2_workflow,omitempty"`
+	Type2Write        *Type2PageWrite                `json:"type2_write,omitempty"`
+	Type2Promotion    *Type2PromotionOptions         `json:"type2_promotion,omitempty"`
+	ClassicDictionary *ClassicDictionaryRequest      `json:"classic_dictionary,omitempty"`
+	ClassicRepair     *ClassicRepairRequest          `json:"classic_repair,omitempty"`
+	ClassicVerify     *ClassicKeyVerificationRequest `json:"classic_verify,omitempty"`
+	ClassicRecovery   *ClassicRecoveryRequest        `json:"classic_recovery,omitempty"`
+	ClassicWrite      *ClassicPhysicalWriteRequest   `json:"classic_write,omitempty"`
+	OtherCard         *GUICard                       `json:"-"`
+	MergeOptions      *ClassicMergeOptions           `json:"merge_options,omitempty"`
+	ClassicRead       *ClassicRead                   `json:"classic_read,omitempty"`
+	Type2Read         *Type2Read                     `json:"type2_read,omitempty"`
+	LFRead            *LFRead                        `json:"lf_read,omitempty"`
+	SettingsPatch     *SettingsPatch                 `json:"settings_patch,omitempty"`
+	SlotEdit          *SlotEdit                      `json:"slot_edit,omitempty"`
+	Card              *GUICard                       `json:"-"`
+	Slot              int                            `json:"slot"`
+	Persist           bool                           `json:"persist"`
+	Activate          bool                           `json:"activate"`
+	Command           *Command                       `json:"command"`
+	AllowUnregistered bool                           `json:"allow_unregistered"`
+	Model             string                         `json:"model"`
+	Version           string                         `json:"version"`
 }
 
 func uniqueCommands(v []Command) []Command {
@@ -197,10 +209,59 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 				unresolved = false
 			}
 		}
+		if f.ID == "library.promote-lf" && request.Card != nil {
+			unresolved = false
+			if e := request.Card.LFPromotionError(); e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			}
+		}
+		if f.ID == "library.promote-type2" && request.Card != nil {
+			unresolved = false
+			options := Type2PromotionOptions{}
+			if request.Type2Promotion != nil {
+				options = *request.Type2Promotion
+			}
+			if e := request.Card.Type2PromotionError(options); e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			}
+		}
+		if f.ID == "library.merge-classic" && request.Card != nil && request.OtherCard != nil && request.MergeOptions != nil {
+			unresolved = false
+			if e := request.Card.ValidateClassicMerge(*request.OtherCard, *request.MergeOptions); e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			}
+		}
 		var readCommands []Command
 		var readErr error
 		resolvedRead := false
 		switch {
+		case f.ID == "library.edit-lf-device" && request.LFIdentity != nil:
+			readCommands, readErr = request.LFIdentity.EditRequirements()
+			resolvedRead = true
+		case f.ID == "lf.clone" && request.LFWrite != nil:
+			readCommands, readErr = request.LFWrite.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.type2-workflow" && request.Type2Workflow != nil:
+			readCommands, readErr = request.Type2Workflow.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.type2-write" && request.Type2Write != nil:
+			readCommands, readErr = request.Type2Write.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.classic-dictionary" && request.ClassicDictionary != nil:
+			readCommands, readErr = request.ClassicDictionary.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.classic-repair" && request.ClassicRepair != nil:
+			readCommands, readErr = request.ClassicRepair.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.classic-verify" && request.ClassicVerify != nil:
+			readCommands, readErr = request.ClassicVerify.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.classic-recover" && request.ClassicRecovery != nil:
+			readCommands, readErr = request.ClassicRecovery.Requirements()
+			resolvedRead = true
+		case f.ID == "reader.classic-write" && request.ClassicWrite != nil:
+			readCommands, readErr = request.ClassicWrite.Requirements()
+			resolvedRead = true
 		case f.ID == "reader.classic-keyed" && request.ClassicRead != nil:
 			readCommands, readErr = request.ClassicRead.Requirements()
 			resolvedRead = true
