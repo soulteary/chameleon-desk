@@ -66,3 +66,33 @@ func TestIOProxFeatureSelectsDecodeOrComposeWithoutUnion(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestCurrentSlotFeatureResolvesExactCommandsAndTransport(t *testing.T) {
+	input := SlotReadRequest{Slot: 1, Sense: SenseHF, TagType: 1001}
+	commands, _ := input.Requirements()
+	model := byte(0)
+	var caps []uint16
+	for _, cmd := range commands {
+		caps = append(caps, uint16(cmd))
+	}
+	ctx := FeatureContext{Device: &FeatureDevice{ModelID: &model, Capabilities: caps, Transport: TransportInfo{Connection: "tcp", Medium: "ble"}}}
+	state, e := EvaluateFeature("slot.read-current", "web", ctx, &FeatureRequest{SlotRead: &input})
+	if e != nil || state.State != "available" {
+		t.Fatal(state, e)
+	}
+	mode := byte(1)
+	state, e = EvaluateFeature("slot.read-current", "web", ctx, &FeatureRequest{SlotRead: &input, DeviceMode: &mode})
+	if e != nil || state.State != "unavailable" {
+		t.Fatal(state, e)
+	}
+	ctx.Device.Capabilities = []uint16{1002, 1018}
+	state, e = EvaluateFeature("slot.read-current", "web", ctx, &FeatureRequest{SlotRead: &input})
+	if e != nil || state.State != "unavailable" {
+		t.Fatal(state, e)
+	}
+	ctx.Device.Transport.NativeUSBMaintenance = true
+	state, _ = EvaluateFeature("slot.read-current", "web", ctx, &FeatureRequest{SlotRead: &input})
+	if state.State != "unavailable" {
+		t.Fatal(state)
+	}
+}

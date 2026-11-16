@@ -52,7 +52,7 @@
     const result=task.result||this.results.get(task.id);
     if(result){const details=node("details"),pre=node("pre",JSON.stringify(result,null,2));details.open=this.expanded.has(task.id);details.ontoggle=()=>{if(details.open)this.expanded.add(task.id);else this.expanded.delete(task.id);};details.append(node("summary","查看结果与已确认阶段"),pre);row.append(details);}
     const readValue=result?.schema===1?result:result?.result;
-    if(this.onReaderResult&&terminal(task)&&!task.write&&task.path.startsWith('/api/reader/')&&readValue?.schema===1&&['classic','type2','lf'].includes(readValue.kind)&&readValue.units_read>0){
+    if(this.onReaderResult&&terminal(task)&&!task.write&&(task.path.startsWith('/api/reader/')||task.path==='/api/slot/read-current')&&readValue?.schema===1&&['classic','type2','lf','slot'].includes(readValue.kind)&&readValue.units_read>0&&!readValue.slot_snapshot?.source_changed){
      const button=node('button','导入读取结果到卡库'),server=this.serverID,source=result,key=server+':'+task.id;button.disabled=this.importing.has(key);
      button.onclick=async()=>{if(this.importing.has(key))return;this.importing.add(key);button.disabled=true;try{await this.onReaderResult({value:readValue,error:result?.error||''},()=>this.serverID===server&&this.visibleTasks.get(task.id)?.session_id===task.session_id&&terminal(this.visibleTasks.get(task.id))&&(this.results.get(task.id)===source||this.visibleTasks.get(task.id)?.result===source));}catch(error){row.append(node('p',error.message));}finally{this.importing.delete(key);button.disabled=false;}};
      row.append(button);

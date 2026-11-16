@@ -8,14 +8,14 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let backgroundTasks = null, readerController = null, workflowController = null;
+let backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
 let featureAvailability = null;
 function clearFeatureDevice() { featureAvailability?.clear(); }
-function featureInfo(info) { featureAvailability?.observe(info); }
+function featureInfo(info) { featureAvailability?.observe(info); slotReader?.observe(info); }
 async function refreshFeatures() {
  try {
   const value = await api("/api/features/device");
@@ -103,7 +103,7 @@ function updateWriteButtons() {
   updateLibraryButtons();
   featureAvailability?.apply();
   libraryEditor?.sync();
-  readerController?.sync();workflowController?.sync();
+  readerController?.sync();workflowController?.sync();slotReader?.sync();
 }
 
 function updateLibraryButtons() {
@@ -112,7 +112,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
-  libraryEditor?.sync(); readerController?.sync();workflowController?.sync();
+  libraryEditor?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -463,6 +463,7 @@ function wire() {
   workflowController = new window.DeskReaderWorkflows({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current),notice:window.desktopToast});
   readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   libraryEditor = new window.DeskLibraryEditor({post:postJSON,run:runTask,getText:()=>$("#db-json").value,setText:text=>{$("#db-json").value=text;resetLibraryView();},changed:()=>libraryPersistence.changed(),busy:()=>busy.has("database")||!libraryState||libraryState.loading,features:featureAvailability,notice:window.desktopToast,display:card=>{$("#db-id").value=card.id;return showPre("#db-out",async()=>card,{op:"show",group:"database"});}});
+  slotReader = new window.DeskSlotReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));
   for(const id of ["#load-card-json", "#load-slot", "#load-persist", "#load-activate"]) {

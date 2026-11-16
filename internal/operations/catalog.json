@@ -175,6 +175,13 @@
       "method": "POST",
       "feature_id": "lf.clone",
       "write": true
+    },
+    {
+      "id": "slot.read-current",
+      "path": "/api/slot/read-current",
+      "method": "POST",
+      "feature_id": "slot.read-current",
+      "write": false
     }
   ]
 }

@@ -10,6 +10,7 @@ import (
 
 // ReadResult describes one reader operation, not a complete emulator image.
 type ReadResult struct {
+	Slot      *SlotSnapshot      `json:"slot_snapshot,omitempty"`
 	Type2     *Type2ReadMetadata `json:"type2,omitempty"`
 	Identity  *ClassicIdentity   `json:"identity,omitempty"`
 	Schema    int                `json:"schema"`
@@ -38,6 +39,22 @@ type ReadCardData struct {
 func (r ReadResult) draftRows() ([]string, error) {
 	if r.Schema != 1 || r.Requested < 1 || r.Requested > 256 || r.Read < 1 || r.Read > r.Requested || r.Start < 0 || r.Start > 255 || (r.Complete && r.Read != r.Requested) {
 		return nil, fmt.Errorf("read result has no confirmed data or invalid counters")
+	}
+	if r.Kind == "slot" {
+		if r.Slot == nil || r.Dump != nil || r.Type2 != nil || r.Record != nil || r.Identity != nil || r.Present != nil || len(r.Data) != 0 || r.Start != 0 || r.Requested != r.Slot.Units || r.Read != r.Slot.Read || r.Complete != r.Slot.Complete {
+			return nil, fmt.Errorf("invalid slot read envelope")
+		}
+		var uid HexBytes
+		if r.Slot.Identity != nil {
+			uid = r.Slot.Identity.UID
+		}
+		if !bytes.Equal(uid, r.UID) {
+			return nil, fmt.Errorf("slot identity UID differs from envelope")
+		}
+		return r.Slot.DraftRows()
+	}
+	if r.Slot != nil {
+		return nil, fmt.Errorf("slot snapshot metadata cannot be used as physical-card evidence")
 	}
 	var data []byte
 	width := 0
