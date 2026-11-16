@@ -11,7 +11,7 @@ let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPen
 let backgroundTasks = null, readerController = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
-let libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
+let libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
 let featureAvailability = null;
 function clearFeatureDevice() { featureAvailability?.clear(); }
@@ -99,6 +99,7 @@ function updateWriteButtons() {
   updateSessionButtons();
   updateLibraryButtons();
   featureAvailability?.apply();
+  libraryEditor?.sync();
   readerController?.sync();
 }
 
@@ -108,6 +109,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
+  libraryEditor?.sync(); readerController?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -115,7 +117,7 @@ function resetLibraryView() {
 function startLibraryPersistence() {
   libraryPersistence = new window.DeskLibraryPersistence({
     getText: () => $("#db-json").value,
-    setText: (text) => { $("#db-json").value = text; resetLibraryView(); },
+    setText: (text) => { $("#db-json").value = text; resetLibraryView(); libraryEditor?.clear(); },
     validate: async (database) => {
       const result = await postJSON("/api/database", { op: "validate", database });
       if (result.valid !== true) throw new Error("数据库校验未完成，未更新本地保存版本");
@@ -130,7 +132,7 @@ function startLibraryPersistence() {
   });
   $("#db-save-now").addEventListener("click", () => libraryPersistence.save());
   $("#db-reload").addEventListener("click", () => {
-    if (libraryPersistence.dirty && !window.confirm("重新读取将替换本页未保存内容。请先导出本页草稿，确认继续？")) return;
+    if ((libraryPersistence.dirty || libraryEditor?.dirty) && !window.confirm("重新读取将替换本页未保存内容。请先导出本页草稿，确认继续？")) return;
     runTask("database", () => libraryPersistence.load());
   });
   $("#db-restore-previous").addEventListener("click", () => {
@@ -143,10 +145,10 @@ function startLibraryPersistence() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#db-json").addEventListener("desk:before-library-replace", (event) => {
-    if (libraryPersistence.dirty && !window.confirm("导入将替换本页未保存的卡库。请先导出草稿，确认继续？")) event.preventDefault();
+    if ((libraryPersistence.dirty || libraryEditor?.dirty) && !window.confirm("导入将替换本页未保存的卡库。请先导出草稿，确认继续？")) event.preventDefault();
   });
   window.addEventListener("beforeunload", (event) => {
-    if (libraryPersistence.dirty || pendingLibraryMutation) { event.preventDefault(); event.returnValue = ""; }
+    if (libraryPersistence.dirty || pendingLibraryMutation || libraryEditor?.dirty || libraryEditor?.pending) { event.preventDefault(); event.returnValue = ""; }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && libraryPersistence.dirty) libraryPersistence.save();
@@ -455,7 +457,8 @@ function wire() {
       return busy.has(group) || (!!f.write && !writesEnabled) || button.dataset.slotActive === "true";
     }
   });
-  readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware")});
+  readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
+  libraryEditor = new window.DeskLibraryEditor({post:postJSON,run:runTask,getText:()=>$("#db-json").value,setText:text=>{$("#db-json").value=text;resetLibraryView();},changed:()=>libraryPersistence.changed(),busy:()=>busy.has("database")||!libraryState||libraryState.loading,features:featureAvailability,notice:window.desktopToast,display:card=>{$("#db-id").value=card.id;return showPre("#db-out",async()=>card,{op:"show",group:"database"});}});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));
   for(const id of ["#load-card-json", "#load-slot", "#load-persist", "#load-activate"]) {
@@ -473,7 +476,7 @@ function wire() {
     const details = el("details", "raw-result"); details.hidden = true; details.append(el("summary", null, "查看完整结果 JSON")); pre.before(summary, details); details.append(pre);
   });
   document.querySelectorAll("textarea").forEach((area) => {
-    if (area.closest(".reader-workflows")) return;
+    if (area.closest(".reader-workflows, .card-editor, .read-result-import")) return;
     const details = el("details", "json-input"); details.append(el("summary", null, "或粘贴 / 查看 JSON")); area.before(details); details.append(area);
   });
   $("#refresh-info").addEventListener("click", () => runTask("hardware", loadInfo));
@@ -568,6 +571,7 @@ function wire() {
       libraryPersistence.changed();
       window.desktopToast("数据库已更新，将自动保存到当前浏览器");
     }
+    if(payload.op==="show") libraryEditor.open(value);
     if(payload.op==="list"){
       if(!Array.isArray(value)||value.some((row)=>!row||typeof row.id!=="string"||!row.id)) throw new Error("卡片列表格式不完整，请重试搜索");
       const list=$("#library-results");let displayed=0;
@@ -594,7 +598,7 @@ function wire() {
   $("#db-show").addEventListener("click", () => dbCall({ op: "show", id: $("#db-id").value.trim() }));
   $("#db-add").addEventListener("click", () => dbCall({ op: "add" }));
   $("#db-delete").addEventListener("click", () => { if (!busy.has("database") && window.confirm("从当前卡库中移除这张卡片？此更改会自动保存到浏览器。")) dbCall({ op: "delete", id: $("#db-id").value.trim() }); });
-  $("#db-json").addEventListener("input", () => { resetLibraryView(); libraryPersistence?.changed(); });
+  $("#db-json").addEventListener("input", () => { resetLibraryView(); libraryPersistence?.changed(); libraryEditor?.sync(); });
   for (const id of ["#ndef-input", "#ndef-text", "#ndef-uri", "#ndef-language"]) $(id).addEventListener("input", () => { generatedCard = null; $("#ndef-use-result").hidden = true; invalidate("#ndef-out"); updateNdefSource(); });
   $("#db-card").addEventListener("input",()=>updateCardSource("#db-card","#db-card-source"));
   $("#db-id").addEventListener("input",()=>invalidate("#db-out"));

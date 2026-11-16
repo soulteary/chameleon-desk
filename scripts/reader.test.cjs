@@ -2,14 +2,14 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {JSDOM}=require('jsdom');
-function fixture(t,handler){
+function fixture(t,handler,options={}){
  const dom=new JSDOM(fs.readFileSync('cmd/chameleon/webui/index.html','utf8'),{url:'http://127.0.0.1/',runScripts:'outside-only'});
  dom.window.eval(fs.readFileSync('cmd/chameleon/webui/feature-availability.js','utf8'));
  dom.window.eval(fs.readFileSync('cmd/chameleon/webui/reader.js','utf8'));t.after(()=>dom.window.close());
  const $=id=>dom.window.document.getElementById(id),calls=[],downloads=[];
  dom.window.Blob=global.Blob;dom.window.URL.createObjectURL=blob=>{downloads.push({blob});return 'blob:test';};dom.window.URL.revokeObjectURL=()=>{};dom.window.HTMLAnchorElement.prototype.click=function(){downloads.at(-1).name=this.download;};
  const features=new dom.window.DeskFeatureAvailability({api:async()=>({}),changed(){features.apply();},baseDisabled:()=>false,writeAllowed:()=>false});
- const controller=new dom.window.DeskReader({features,post:async(path,value)=>{calls.push({path,value});return handler?handler(path,value):{schema_version:1,state:{id:value.id,state:'available',reasons:[]}};},run:async(_group,fn)=>fn()});features.device={model_id:0};
+ const controller=new dom.window.DeskReader({features,post:async(path,value)=>{calls.push({path,value});return handler?handler(path,value):{schema_version:1,state:{id:value.id,state:'available',reasons:[]}};},run:async(_group,fn)=>fn(),...options});features.device={model_id:0};
  return {dom,$,calls,features,controller,downloads};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -53,4 +53,15 @@ test('rendering is text-only and a new input invalidates exported data',async t=
 test('inconsistent completed byte counts cannot be exported as a successful read',async t=>{
  const p=fixture(t);p.controller.show('type2',{schema:1,kind:'type2',complete:true,requested_units:4,units_read:4,data:'00'});
  assert.match(p.$('reader-type2-result').textContent,/格式无效/);assert.equal(p.$('reader-type2-export').disabled,true);
+});
+
+test('reader import requires confirmed data and offline library availability and rejects a stale source',async t=>{
+ let received,current;const p=fixture(t,null,{importRead:async(result,check)=>{received=result;current=check;}});
+ p.features.states.set('library.database',{id:'library.database',state:'available',reasons:[]});
+ p.controller.show('type2',{schema:1,kind:'type2',complete:false,start:2,requested_units:4,units_read:1,data:'01020304'});assert.equal(p.$('reader-type2-import').disabled,false);
+ await p.$('reader-type2-import').onclick();assert.equal(received.value.start,2);assert(current());
+ p.controller.invalidate('type2');assert(!current());assert(p.$('reader-type2-import').disabled);
+ p.controller.show('type2',{schema:1,kind:'type2',complete:false,start:2,requested_units:4,units_read:0});assert(p.$('reader-type2-import').disabled);assert.match(p.$('reader-type2-import-reason').textContent,/没有已确认/);
+ p.controller.show('lf',{schema:1,kind:'lf',complete:true,requested_units:1,units_read:0,present:false});assert(p.$('reader-lf-import').disabled);
+ p.features.states.set('library.database',{id:'library.database',state:'unknown',reasons:[]});p.controller.show('classic',{schema:1,kind:'classic',complete:false,start:0,requested_units:20,units_read:1,dump:{data:'11'.repeat(16)}});assert(p.$('reader-classic-import').disabled);assert.match(p.$('reader-classic-import-reason').textContent,/能力尚未就绪/);
 });

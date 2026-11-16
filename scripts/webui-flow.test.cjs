@@ -62,7 +62,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'reader.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'reader.js', 'library-editor.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };
@@ -1167,4 +1167,22 @@ test('maintenance scope disables application controls with a bridge migration re
  const hint=p.d.getElementById(p.$('#scan-hf').getAttribute('aria-describedby').split(' ').at(-1));
  assert.match(hint.textContent,/Python 桥/);
  assert.equal(p.$('#refresh-features').disabled,false);
+});
+
+test('card edits use library persistence and storage failure retains the new database and unsaved warning',async t=>{
+ const factory=new IDBFactory();let failSave=false;
+ const database={'flutter.cards':[JSON.stringify(card)],custom:'keep'};
+ const p=await page(t,{
+  '/api/database':opts=>{const body=JSON.parse(opts.body);if(body.op==='show')return response(card);assert.equal(body.op,'edit-data');const edited={...card,name:body.name,data:[[170,0,0,0]]};return response({database:{...database,'flutter.cards':[JSON.stringify(edited)]},card:edited});}
+ },{indexedDB:factory});
+ const write=p.w.DeskLibraryStore.prototype.write;
+ p.w.DeskLibraryStore.prototype.write=async function(...args){if(failSave)throw new p.w.DOMException('quota','QuotaExceededError');return write.apply(this,args);};
+ p.input('#db-json',JSON.stringify(database));await p.click('#db-save-now');await waitForLibrary(p,()=>!unloadPrevented(p));
+ p.input('#db-id',card.id);await p.click('#db-show');p.input('#card-edit-name','saved edit');p.input('#card-edit-rows','AA 00 00 00');
+ const before=p.$('#db-json').value;failSave=true;await p.click('#card-edit-save');assert.notEqual(p.$('#db-json').value,before);
+ await p.click('#db-save-now');await waitForLibrary(p,()=>p.$('#db-save-state').textContent.includes('空间不足'));assert.match(p.$('#db-json').value,/saved edit/);assert(unloadPrevented(p));
+ const recovered=await page(t,{},{indexedDB:factory});assert.equal(recovered.$('#db-json').value,before);
+ await p.click('[data-export-card]');assert.equal(JSON.parse(await p.downloads.at(-1).blob.text()).name,'saved edit');
+ failSave=false;await p.click('#db-save-now');await waitForLibrary(p,()=>!unloadPrevented(p));assert.match(p.$('#db-save-state').textContent,/已自动保存/);
+ const restored=await page(t,{},{indexedDB:factory});assert.match(restored.$('#db-json').value,/saved edit/);
 });

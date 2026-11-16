@@ -2670,7 +2670,9 @@
           "#db-list",
           "#db-show",
           "#db-add",
-          "#db-delete"
+          "#db-delete",
+          "#card-edit-save",
+          "#read-import-go"
         ]
       },
       "cli": {
@@ -2693,14 +2695,20 @@
           "GUIDatabase.AddCard",
           "GUIDatabase.ReplaceCard",
           "GUIDatabase.DeleteRecord",
-          "GUIDatabase.Merge"
+          "GUIDatabase.Merge",
+          "NewGUICardFromRead",
+          "GUICard.EditData"
         ]
       },
       "notes": [
-        "Web supports list/show/add/delete/validate, not edit/merge/folder workflows."
+        "Web supports list/show/add/delete/validate, read-result import and name/data editing. Merge and folder workflows have no dedicated Web entry.",
+        "Read drafts preserve source results, offsets and unknown-byte masks. They cannot be loaded into slots, used as NDEF cards or converted to binary/emulator images; export Desk JSON.",
+        "Editing does not resolve unknown bytes, infer Type2 capacity or establish a complete HF identity."
       ],
       "sources": [
-        "gui_database.go"
+        "gui_database.go",
+        "gui_library.go",
+        "read_card.go"
       ],
       "effect": "offline"
     },
@@ -2718,8 +2726,10 @@
       "commands": [],
       "conditional": [],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "partial",
+        "entries": [
+          "POST /api/database"
+        ],
         "controls": []
       },
       "cli": {
@@ -2739,7 +2749,9 @@
           "NewGUICardFromDump"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web imports reader results and exports Desk draft/card/database JSON. Binary/emulator-image conversion has no Web entry."
+      ],
       "sources": [
         "gui_card.go"
       ],

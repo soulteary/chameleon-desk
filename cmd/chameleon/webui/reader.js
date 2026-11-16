@@ -2,8 +2,8 @@
 (() => {
  const kinds={classic:{id:'reader.classic-keyed',field:'classic_read'},type2:{id:'reader.type2-range',field:'type2_read'},lf:{id:'reader.lf',field:'lf_read'}};
  class DeskReader {
-  constructor({post,features,run,busy=()=>false}){
-   Object.assign(this,{post,features,run,busy});this.epochs={};this.previews={};this.results=new Map();
+  constructor({post,features,run,busy=()=>false,importRead=null,libraryBusy=()=>false}){
+   Object.assign(this,{post,features,run,busy,importRead,libraryBusy});this.epochs={};this.previews={};this.results=new Map();
    this.get=id=>document.getElementById(id);
    for(const kind of Object.keys(kinds)){
     this.epochs[kind]=0;this.previews[kind]=0;
@@ -11,6 +11,7 @@
     this.get(`reader-${kind}-form`).addEventListener('change',event=>{if(event.target.tagName==='SELECT'){this.invalidate(kind);this.preview(kind);}});
     this.get(`reader-${kind}-go`).onclick=()=>run('hardware',()=>this.read(kind));
     this.get(`reader-${kind}-export`).onclick=()=>this.export(kind);
+    this.get(`reader-${kind}-import`).onclick=()=>run("database",async()=>{const result=this.results.get(kind);if(result&&this.importRead)await this.importRead(result,()=>this.results.get(kind)===result);});
    }
    this.get('reader-classic-template').onclick=()=>{
     const sectors=Number(this.get('reader-classic-size').value);
@@ -20,8 +21,13 @@
    document.addEventListener('desk-feature-device',()=>{this.clear();for(const kind of Object.keys(kinds))this.preview(kind);});
    for(const kind of Object.keys(kinds))this.preview(kind);
   }
-  invalidate(kind){this.epochs[kind]++;this.previews[kind]++;this.results.delete(kind);this.get(`reader-${kind}-result`).replaceChildren();this.get(`reader-${kind}-export`).disabled=true;}
-  sync(){for(const kind of Object.keys(kinds))this.get(`reader-${kind}-export`).disabled=this.busy()||!this.results.has(kind);}
+  invalidate(kind){this.epochs[kind]++;this.previews[kind]++;this.results.delete(kind);this.get(`reader-${kind}-result`).replaceChildren();this.get(`reader-${kind}-export`).disabled=true;this.sync();}
+  sync(){for(const kind of Object.keys(kinds)){
+   const result=this.results.get(kind),reason=!result?'请先完成读取':result.value.units_read<1?'没有已确认的数据，无法导入':kind==='lf'&&(!result.value.complete||!result.value.present)?'LF 导入要求成功读取且发现卡片':!this.importRead?'卡库入口未就绪':this.features.state('library.database').state!=='available'?'卡库能力尚未就绪':this.libraryBusy()?'卡库正在处理或恢复保存版本':'';
+   this.get(`reader-${kind}-export`).disabled=this.busy()||!result;
+   this.get(`reader-${kind}-import`).disabled=this.busy()||!!reason;
+   this.get(`reader-${kind}-import-reason`).textContent=reason;
+  }}
   clear(){for(const kind of Object.keys(kinds))this.invalidate(kind);for(const id of ['reader-classic-json','reader-classic-uid','reader-type2-uid','reader-lf-password'])this.get(id).value='';}
   input(kind){
    if(kind==='classic'){
@@ -61,7 +67,7 @@
    if(valid&&kind!=='lf'){const bytes=kind==='classic'?value.dump?.data:(value.data||'');valid=typeof bytes==='string'&&/^(?:[0-9a-fA-F]{2})*$/.test(bytes)&&bytes.length===value.units_read*(kind==='classic'?32:8)&&(!value.complete||value.units_read===value.requested_units);}
    if(valid&&kind==='lf'&&value.complete)valid=typeof value.present==='boolean'&&value.units_read===(value.present?1:0);
    if(!valid){out.append(node('p','读取结果格式无效，无法导出'));return;}
-   this.results.set(kind,{value,error});this.get(`reader-${kind}-export`).disabled=false;
+   this.results.set(kind,{value,error});this.get(`reader-${kind}-export`).disabled=false;this.sync();
    if(kind==='lf'){out.append(node('p',value.present===false?'未发现卡片':value.complete?'LF 读取完成':'LF 读取未完成'));}
    else{
     const unit=kind==='classic'?'块':'页';out.append(node('p',`${value.complete?'读取完成':'部分 / 中断结果'}：${value.units_read} / ${value.requested_units} ${unit}`));

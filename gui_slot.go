@@ -118,6 +118,9 @@ func guiExtraBytes(v []int, want int, what string) ([]byte, error) {
 // PlanGUICardLoad validates a saved GUI card and produces the exact write
 // sequence without a device. Unsupported tag types are rejected, as in the GUI.
 func PlanGUICardLoad(card GUICard, slot int) (GUICardLoadPlan, error) {
+	if e := card.RequireCardImage(); e != nil {
+		return GUICardLoadPlan{}, e
+	}
 	p := GUICardLoadPlan{Slot: slot, CardTagType: card.Tag, SlotTagType: card.Tag, Nickname: guiNickname(card.Name)}
 	if slot < 1 || slot > 8 {
 		return p, fmt.Errorf("slot must be 1..8")

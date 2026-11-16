@@ -69,6 +69,11 @@ Use `--port` to connect a device when the server starts:
 
 The [settings and slot editors](docs/web-configuration.md) provide settings readback, nickname/type/enable changes and explicitly confirmed single-channel initialization.
 
+The [reader-to-library workflow](docs/web-read-library.md) imports confirmed read
+results as Desk drafts, edits known bytes, and saves/exports JSON while retaining
+partial-data and unknown-key markers. These drafts cannot be loaded into slots
+or converted to binary/emulator images.
+
 The [Web reader workflows](docs/web-reader.md) add Classic per-sector supplied-key
 reading, UID-checked Type2 page ranges and LF protocol selection. They use the
 same session/task and capability checks, work in read-only mode, and distinguish

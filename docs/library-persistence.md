@@ -14,7 +14,7 @@ The new storage cannot recover data from an older page that was already closed.
 
 ## Automatic save and recovery
 
-Changes to the database JSON, imported database files, and successful add/delete
+Changes to the database JSON, imported database files, and successful add/delete, reader-result import and data-edit
 results schedule a save after 600 ms without another edit. Desk validates the
 complete database through its existing Go parser before storing it. Validation
 includes cards, dictionaries, folder references and the existing 32 MiB limit.
@@ -35,7 +35,9 @@ and origin: for example, `http://127.0.0.1:8088` differs from
 own library. The default server address is stable across normal restarts.
 
 Automatic saving covers the database, not a card pasted into the add-card input
-before pressing Add, search text, NDEF drafts, or other tools. Restoring the
+before pressing Add, unsaved card-editor changes, search text, NDEF drafts, or other tools.
+Use **保存编辑到卡库** first, then wait for the local save acknowledgement. See
+[reader drafts and data editing](web-read-library.md) for partial-data limits. Restoring the
 library does not run a search, connect hardware, or replay a card operation.
 
 ## Failures, retries and recovery controls

@@ -37,7 +37,7 @@ Inputs or observed device/session changes invalidate previews and the current
 result/export. Late responses do not update a new form/session. Retained task
 results stay in task history after refresh and are not applied to the current
 form. Keys/passwords are cleared after submission and when device facts change.
-They are not saved to the card library, localStorage or task submission receipts.
+Submitted key maps and passwords are not saved to the card library, localStorage or task submission receipts. Explicitly imported read results can contain card keys.
 This is DOM clearing, not secure memory erasure: the browser/request and server
 worker necessarily hold parameters while executing.
 
@@ -45,9 +45,11 @@ Exports are explicit JSON workflow envelopes (`schema`, `read_result`, `error`),
 with complete/partial filenames. They are not GUI card files. Complete Classic
 results include the SDK `dump` representation; incomplete prefixes must not be
 loaded as full card images. Type2 exports describe only the requested range,
-not automatically detected capacity. Card-library import/editing, automatic
-conversion, password-authenticated Type2 reading, key recovery and physical card
-writing are outside this phase.
+not automatically detected capacity. Results can now be explicitly imported as
+[Desk library drafts](web-read-library.md), edited and exported as JSON while
+preserving their original observations and unknown bytes. Automatic conversion,
+password-authenticated Type2 reading, key recovery and physical card writing
+remain outside these workflows.
 
 Classic results/exports can contain supplied or readable card keys. Task results
 are available to authorized pages of this local Desk service and remain in server

@@ -176,7 +176,7 @@
       const metadata = database || (Number.isInteger(parsed.tag) && Array.isArray(parsed.data)) || (typeof parsed.id === "string" && Array.isArray(parsed.keys));
       if (!metadata && parsed.error) throw new Error("请先完成操作");
       if (database && Array.isArray(parsed)) throw new Error("数据库必须是 JSON 对象");
-      if (b.hasAttribute("data-export-card") && (!parsed.tag || !parsed.data)) throw new Error("请先查看一张卡片");
+      if (b.hasAttribute("data-export-card") && (!Number.isInteger(parsed.tag) || !Array.isArray(parsed.data))) throw new Error("请先查看一张卡片");
       const url = URL.createObjectURL(new Blob([JSON.stringify(parsed, null, 2)], { type: "application/json" }));
       const a = document.createElement("a"); a.href = url; a.download = "chameleon-desk-" + b.dataset.export + ".json"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (_) { window.desktopToast("还没有可导出的成功结果"); }

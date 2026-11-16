@@ -27,6 +27,12 @@ function valueStrip(label, value, copy = true) {
 }
 function cardPanel(card, title = "卡片详情", subtitle = "当前卡片文件") {
   if (!card || !Number.isInteger(card.tag) || !Array.isArray(card.data)) throw new Error("卡片结果不完整，请重新读取");
+  if(card.desk_read){
+    const draft=card.desk_read,r=draft.read_result,panel=toolPanel('cards',card.name||title,'Desk 读取草稿',r.kind==='lf'?'LF':'HF');
+    panel.append(fieldGrid([['读取类型',r.kind],['原始 UID / ID',r.uid||r.record?.id],['原始读取状态',r.complete?'请求范围读取完成':'部分 / 中断'],['确认单元',r.units_read+' / '+r.requested_units],['起始单元',r.start],['文件 ID',card.id]]));
+    panel.append(el('p','inference-note','数据编辑位于下方。未知字节以 ?? 保留；原始读取结果与编辑分开保存。此草稿仅支持 Desk JSON，不可直接加载槽位或转换为二进制 / 镜像。'));
+    return panel;
+  }
   const panel = toolPanel("cards", card.name || title, subtitle, card.tag >= 1000 ? "HF" : "LF");
   const widths = [...new Set(card.data.map((row) => Array.isArray(row) ? row.length : 0))];
   const unit = widths.length === 1 && widths[0] === 4 ? "页" : widths.length === 1 && widths[0] === 16 ? "块" : "个单元";
@@ -87,15 +93,16 @@ function renderToolResult(sel, value, options = {}) {
       panel.append(el("p",null,value.length?"支持按名称、类型、UID 或 ID 搜索。":"可修改搜索条件，或导入 / 添加卡片。"));
     } else if(options.op==="add" || options.op==="delete") {
       panel=toolPanel("cards",options.op==="add"?"卡片已添加":"卡片已移除","数据库已在当前页面中更新","待保存");
-      panel.append(el("p",null,"请导出数据库并保留文件，刷新页面不会自动保存更改。"));
+      panel.append(el("p",null,"有效更改会自动保存到当前浏览器；请核对卡库保存状态，并导出独立备份。"));
       panel.append(panelButton("刷新卡片列表",()=>$("#db-list").click()));
     } else {
       panel=cardPanel(value);
-      panel.append(panelButton("在 NDEF 中打开",()=>{
+      const ndefButton=panelButton("在 NDEF 中打开",()=>{
         $("#ndef-input").value=JSON.stringify(value,null,2); $("#ndef-text").value=""; $("#ndef-uri").value="";
         $("#ndef-input").dispatchEvent(new Event("input",{bubbles:true})); $("#ndef-input").closest("details").open=false;
         document.querySelector('.dock [data-open="ndef"]').click();
-      }));
+      });
+      if(value.desk_read){ndefButton.disabled=true;panel.append(el("p","feature-disabled-reason","读取草稿缺少完整身份、容量或已知字节，不能用于 NDEF"));}panel.append(ndefButton);
     }
   } else if(sel==="#dict-out") {
     if(Array.isArray(value)) {

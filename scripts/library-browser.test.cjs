@@ -167,6 +167,13 @@ test('Chromium verifies capabilities, task reload tracking and configuration rea
   assert.equal(await page.locator('#reader-classic-json').inputValue(),'');
   await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));assert(await page.locator('#reader-classic-export').isEnabled());
   assert.match(await page.locator('#reader-classic-result').textContent(),/未知密钥/);
+  await page.locator('#reader-classic-import').click();
+  await page.waitForFunction(()=>document.querySelector('#card-edit-rows').value.includes('??'));
+  await page.locator('.dock [data-open="cards"]').click();
+  assert.match(await page.locator('#card-edit-limit').textContent(),/classic/);
+  assert.match(await page.locator('#card-edit-rows').inputValue(),/\?\? \?\? \?\? \?\? \?\? \?\?/);
+  await page.locator('.dock [data-open="read"]').click();
+
   await page.waitForFunction(()=>!document.querySelector('#read').hasAttribute('aria-busy'));
   await page.locator('#reader-type2-uid').fill('01020304');await page.locator('#reader-type2-start').fill('1');await page.locator('#reader-type2-count').fill('2');
   await page.waitForFunction(()=>!document.querySelector('#reader-type2-go').disabled);await page.locator('#reader-type2-go').click();
@@ -255,4 +262,25 @@ test('Chromium manages a USB bridge and reuses its device session after reload',
   assert.notEqual(await page.evaluate(()=>deviceSession.session_id),session);
   assert(!commands.some(c=>[1010,1014,1020,1030,1032,1037].includes(c)));
   assert.deepEqual(errors,[]);
+});
+
+test('Chromium imports a partial read, edits known bytes, persists and exports the draft without losing unknown pages', {skip:!binary,timeout:90000}, async t=>{
+ let server,browser;const errors=[];t.after(async()=>{if(browser)await browser.close();if(server)await server.close()});
+ server=await serve(binary);browser=await chromium.launch({headless:true,executablePath:process.env.CHAMELEON_TEST_CHROMIUM||undefined});const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="cards"]').click();
+ const result={schema:1,kind:'type2',complete:false,start:2,requested_units:3,units_read:1,uid:'01020304',data:'01020304'};
+ await page.locator('.read-result-import > summary').click();await page.locator('#read-import-json').fill(JSON.stringify({schema:1,read_result:result,error:'card changed'}));await page.locator('#read-import-go').click();
+ await page.waitForFunction(()=>document.querySelector('#card-edit-rows').value.includes('01 02 03 04'));
+ assert.match(await page.locator('#card-edit-limit').textContent(),/部分.*禁止槽位加载/);
+ await page.locator('#card-edit-name').fill('Edited partial read');await page.locator('#card-edit-rows').fill('?? ?? ?? ??\n?? ?? ?? ??\nAA 02 03 04\n?? ?? ?? ??\n?? ?? ?? ??');
+ await page.locator('#card-edit-save').click();await page.waitForFunction(()=>document.querySelector('#db-save-state').textContent.includes('已自动保存'));
+ const database=JSON.parse(await page.locator('#db-json').inputValue());const card=JSON.parse(database.cards[0]);assert.equal(await page.locator('#db-id').inputValue(),card.id);assert.equal(card.name,'Edited partial read');assert.equal(card.desk_read.rows[2],'AA020304');assert.equal(card.desk_read.read_result.data,'01020304');assert.equal(card.desk_read.error,'card changed');assert.equal(card.desk_read.rows[4],'????????');assert.deepEqual(card.data,[]);assert.equal(card.tag,0);
+ const downloadPromise=page.waitForEvent('download');await page.locator('[data-export-card]').click();const download=await downloadPromise;const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.deepEqual(exported,card);
+ await page.reload();await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="cards"]').click();await page.locator('#db-list').click();await page.locator('#library-results button[data-card-id]').click();await page.waitForFunction(()=>document.querySelector('#card-edit-name').value==='Edited partial read');
+ assert.match(await page.locator('#card-edit-rows').inputValue(),/AA 02 03 04/);assert.equal(await page.locator('#card-edit-save').isDisabled(),true);assert.equal(await page.locator('#cards button').filter({hasText:'在 NDEF 中打开'}).isDisabled(),true);
+ // A failed edit retains both the source and the committed snapshot.
+ await page.locator('#card-edit-rows').fill('00 00 00 00\n?? ?? ?? ??\nAA 02 03 04\n?? ?? ?? ??\n?? ?? ?? ??');await page.locator('#card-edit-save').click();await page.waitForFunction(()=>document.querySelector('#card-edit-state').textContent.startsWith('未保存：'));
+ assert.deepEqual(JSON.parse(await page.locator('#db-json').inputValue()),database);assert.equal(await page.locator('#card-edit-save').isEnabled(),true);
+ const warned=await page.evaluate(()=>{const event=new Event('beforeunload',{cancelable:true});dispatchEvent(event);return event.defaultPrevented});assert(warned);
+ assert.deepEqual(errors,[]);
 });
