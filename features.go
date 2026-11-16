@@ -97,6 +97,8 @@ type FeatureAvailability struct {
 // FeatureRequest resolves requirements for selected parameters without I/O.
 // Not all CLI workflows have resolvers; unresolved parameterized entries remain unknown.
 type FeatureRequest struct {
+	SlotRead          *SlotReadRequest               `json:"slot_read,omitempty"`
+	DeviceMode        *byte                          `json:"device_mode,omitempty"`
 	LFIdentity        *LFIdentityInput               `json:"lf_identity,omitempty"`
 	LFWrite           *LFPhysicalWriteRequest        `json:"lf_write,omitempty"`
 	Type2Workflow     *Type2WorkflowRead             `json:"type2_workflow,omitempty"`
@@ -235,6 +237,12 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 		var readErr error
 		resolvedRead := false
 		switch {
+		case f.ID == "slot.read-current" && request.SlotRead != nil:
+			readCommands, readErr = request.SlotRead.Requirements()
+			resolvedRead = true
+			if request.DeviceMode != nil && *request.DeviceMode != 0 {
+				reason("unavailable", "emulator_mode_required", "Current-slot reads require emulator mode; this operation does not change mode")
+			}
 		case f.ID == "library.edit-lf-device" && request.LFIdentity != nil:
 			readCommands, readErr = request.LFIdentity.EditRequirements()
 			resolvedRead = true

@@ -390,6 +390,8 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) (fun
 
 func (ws *webServer) operationHandler(path string) http.HandlerFunc {
 	switch path {
+	case "/api/slot/read-current":
+		return ws.handleSlotReadCurrent
 	case "/api/reader/classic-dictionary":
 		return ws.handleClassicDictionary
 	case "/api/reader/lf-edit":

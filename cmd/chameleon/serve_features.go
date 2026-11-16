@@ -39,6 +39,8 @@ func (ws *webServer) handleFeatureDevice(w http.ResponseWriter, r *http.Request)
 func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
+		SlotRead          *chameleon.SlotReadRequest               `json:"slot_read"`
+		DeviceMode        *byte                                    `json:"device_mode"`
 		LFIdentity        *chameleon.LFIdentityInput               `json:"lf_identity"`
 		LFWrite           *chameleon.LFPhysicalWriteRequest        `json:"lf_write"`
 		Type2Workflow     *chameleon.Type2WorkflowRead             `json:"type2_workflow"`
@@ -67,7 +69,7 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, 400, err)
 		return
 	}
-	request := chameleon.FeatureRequest{Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
+	request := chameleon.FeatureRequest{SlotRead: body.SlotRead, DeviceMode: body.DeviceMode, Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
 	request.ClassicRead, request.Type2Read, request.LFRead = body.ClassicRead, body.Type2Read, body.LFRead
 	request.LFWrite = body.LFWrite
 	request.LFIdentity = body.LFIdentity
@@ -78,6 +80,10 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 	var result chameleon.FeatureAvailability
 	var err error
 	switch body.ID {
+	case "slot.read-current":
+		if body.SlotRead == nil {
+			err = fmt.Errorf("slot_read is required")
+		}
 	case "reader.classic-keyed":
 		if body.ClassicRead == nil {
 			err = fmt.Errorf("classic_read is required")

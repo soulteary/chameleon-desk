@@ -246,12 +246,14 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			method := http.MethodPost
+			operationNeedsToken := false
 			switch r.URL.Path {
 			case "/api/info", "/api/scan/hf", "/api/scan/lf", "/api/capabilities", "/api/dictionary/sources", "/api/bridge/status", "/api/features/device", "/api/operations", "/api/session/status", "/api/session/ports", "/api/settings/read", "/api/slot/details":
 				method = http.MethodGet
 			}
 			if operation, ok := chameleon.OperationForPath(r.URL.Path); ok {
 				method = operation.Method
+				operationNeedsToken = operation.Method == http.MethodPost
 			}
 			if (r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/")) && r.Method == http.MethodGet {
 				method = http.MethodGet
@@ -261,7 +263,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			if (strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
+			if operationNeedsToken || (strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
 				if ws.token == "" || r.Header.Get("X-Chameleon-Token") != ws.token {
 					http.Error(w, "missing or invalid session token", http.StatusForbidden)
 					return
@@ -374,7 +376,7 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		return e
 	})
 	if e != nil {
-		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/settings/configure") && out != nil {
+		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/read-current" || r.URL.Path == "/api/settings/configure") && out != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			writeJSON(w, map[string]any{"error": e.Error(), "result": out})

@@ -95,6 +95,14 @@ func (d GUIDatabase) Records(dictionaries bool, query, sense string) ([]GUIRecor
 				s.TagName = "Desk " + draft.Result.Kind + " read draft"
 				s.Units = len(draft.Rows)
 				s.Frequency = "hf"
+				if draft.Result.Kind == "slot" && draft.Result.Slot != nil {
+					source := draft.Result.Slot
+					s.TagName = "Desk slot snapshot · " + TagName(source.TagType)
+					if source.Sense == SenseLF {
+						s.Frequency = "lf"
+						s.UID = draft.Rows[0]
+					}
+				}
 				if draft.Result.Kind == "lf" {
 					s.Frequency = "lf"
 					s.UID = draft.Rows[0]

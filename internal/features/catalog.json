@@ -850,8 +850,10 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "partial",
+        "entries": [
+          "POST /api/slot/read-current (current-slot read only; see slot.read-current)"
+        ],
         "controls": []
       },
       "cli": {
@@ -874,7 +876,9 @@
           "Client.LoadSlotMemory"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web reads the current slot into a source-preserving draft through slot.read-current. Arbitrary memory import, memory writes and image loading have no dedicated Web entry."
+      ],
       "sources": [
         "memory_files.go"
       ],
@@ -4829,7 +4833,7 @@
         ]
       },
       "notes": [
-        "Requires explicit identity, geometry, candidate keys and a 1\u201330 second limit. Independent verification follows discovery."
+        "Requires explicit identity, geometry, candidate keys and a 1–30 second limit. Independent verification follows discovery."
       ],
       "sources": [
         "classic_repair_dictionary.go",
@@ -4892,6 +4896,120 @@
         "cmd/chameleon/serve_lf_editor.go"
       ],
       "effect": "read"
+    },
+    {
+      "id": "slot.read-current",
+      "title": "Read the current emulator slot into a library draft",
+      "device": true,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [
+        1035,
+        1002,
+        1018,
+        1019,
+        1023,
+        1008
+      ],
+      "conditional": [
+        {
+          "when": "Classic HF channel",
+          "commands": [
+            4018,
+            4008
+          ]
+        },
+        {
+          "when": "Type2 HF channel",
+          "commands": [
+            4018,
+            4030,
+            4021
+          ]
+        },
+        {
+          "when": "EM410x/Electra LF channel",
+          "commands": [
+            5001
+          ]
+        },
+        {
+          "when": "HIDProx LF channel",
+          "commands": [
+            5003
+          ]
+        },
+        {
+          "when": "Viking LF channel",
+          "commands": [
+            5005
+          ]
+        },
+        {
+          "when": "PAC LF channel",
+          "commands": [
+            5007
+          ]
+        },
+        {
+          "when": "ioProx LF channel",
+          "commands": [
+            5009
+          ]
+        },
+        {
+          "when": "Jablotron LF channel",
+          "commands": [
+            5011
+          ]
+        },
+        {
+          "when": "IDTECK LF channel",
+          "commands": [
+            5013
+          ]
+        }
+      ],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/read-current"
+        ],
+        "controls": [
+          "#slot-read-go"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation slot.read-current"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReadCurrentSlot",
+          "SlotReadRequest.Requirements",
+          "SlotSnapshot.DraftRows"
+        ]
+      },
+      "notes": [
+        "Requires the observed active slot/type and emulator mode. Does not switch modes/slots, save, initialize or replay commands.",
+        "Classic 20/64/128/256 blocks, modeled Type2 layouts and supported LF identities only. Unknown/unconfirmed suffixes remain explicit; snapshots are not atomic RF or flash backups.",
+        "Imports as a distinct slot read draft, retaining source identity and checksum. Not eligible for physical-read promotion or slot loading in this phase."
+      ],
+      "sources": [
+        "slot_snapshot.go",
+        "read_card.go",
+        "cmd/chameleon/serve_slot_snapshot.go",
+        "cmd/chameleon/webui/slot-reader.js"
+      ]
     }
   ]
 }

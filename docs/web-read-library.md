@@ -202,3 +202,11 @@ failed saves, unsaved exports, selection replacement and result import. Chromium
 exercises reader-to-library handoff and a partial Type2 import/edit/save/export/
 refresh workflow against the actual service; persistence tests also cover browser
 and server restart. These tests do not qualify physical cards or adapters.
+
+## Emulator-slot snapshots
+
+The slot window imports `kind:"slot"` observations through the same read-draft
+and persistence path. They preserve emulator identity, exact confirmed bytes,
+unknown suffixes and the snapshot checksum. They remain distinct from physical
+Classic/Type2/LF reads and cannot use those promotion/repair flows. See
+[current-slot snapshots](current-slot-snapshots.md) for reading, preview and scope.

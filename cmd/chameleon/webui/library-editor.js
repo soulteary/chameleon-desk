@@ -47,7 +47,7 @@
    this.get('card-type2-options').hidden=this.card?.desk_read?.read_result?.kind!=='type2';
    this.get('card-merge-go').disabled=blocked||!classic||this.dirty||changed;this.get('card-merge-preview').disabled=blocked||!classic||this.dirty||changed;
    this.get('read-import-go').disabled=blocked;this.get('card-edit-recovery-go').disabled=blocked;this.memory?.sync(this.busy()||!this.card);
-   const reason=!this.allowed()?'卡库能力尚未就绪，请重试读取功能清单':!this.card?'请先选择读取草稿':!this.card.desk_read?'当前卡片不是读取草稿':!['classic','lf','type2'].includes(this.card.desk_read.read_result?.kind)?'此读取类型不支持转换':changed?'卡库已变化，请重新选择草稿':this.dirty?'请先保存或放弃编辑，再转换已保存的草稿':this.busy()||this.pending?'卡库正在处理':!this.promotion?'正在校验转换条件':this.promotion.state!=='available'?this.promotion.reasons.map(r=>r.message).join('；')||'转换条件未满足':'';
+   const reason=!this.allowed()?'卡库能力尚未就绪，请重试读取功能清单':!this.card?'请先选择读取草稿':!this.card.desk_read?'当前卡片不是读取草稿':this.card.desk_read.read_result?.kind==='slot'?'槽位快照仅保留模拟器数据，本阶段不转换为标准卡片':!['classic','lf','type2'].includes(this.card.desk_read.read_result?.kind)?'此读取类型不支持转换':changed?'卡库已变化，请重新选择草稿':this.dirty?'请先保存或放弃编辑，再转换已保存的草稿':this.busy()||this.pending?'卡库正在处理':!this.promotion?'正在校验转换条件':this.promotion.state!=='available'?this.promotion.reasons.map(r=>r.message).join('；')||'转换条件未满足':'';
    this.get('card-promote-classic').disabled=!!reason;
    this.get('card-promote-reason').textContent=reason||'转换生成新卡片，原始读取草稿保留；此操作不写设备或实体卡片。';
    this.get('card-edit-state').setAttribute('role',this.failure?'alert':'status');
@@ -69,13 +69,13 @@
    const protocol=!draft&&this.lfProtocol(card.tag);this.get('card-lf-identity').value=protocol?JSON.stringify({protocol,tag_type:card.tag,...(protocol==='ioprox'?{ioprox:{raw:card.uid?.slice(8,24)||''}}:{id:card.uid})},null,2):'';
    this.get('card-edit-rows').value=rows.map(row=>row.match(/.{2}/g)?.join(' ')||'').join('\n');
    const r=draft?.read_result;
-   this.get('card-edit-limit').textContent=draft?`Desk 读取草稿 · ${r.kind} · ${r.complete?'请求范围读取完成':'部分 / 中断读取'} · ${r.units_read} / ${r.requested_units} 单元。行号从 0 开始；?? 为未知字节，不能补值。原始读取结果保留。未转换的草稿禁止槽位加载、NDEF 与二进制 / 镜像转换；符合条件的 Classic、Type2 和 LF 可显式转换，JSON 导出保留标记。`:'每行对应一个块或页，从 0 开始；保持行数与宽度，未知空行必须保留。只修改文件，不写实体卡片。';
+   this.get('card-edit-limit').textContent=draft?.read_result?.kind==='slot'?`槽位快照草稿 · 槽位 ${r.slot_snapshot?.slot} · 类型 ${r.slot_snapshot?.tag_type} · ${r.units_read}/${r.requested_units} 单元；身份与原始数据保留，未知字节不能填值。此来源不作为实体卡读取证据。`:draft?`Desk 读取草稿 · ${r.kind} · ${r.complete?'请求范围读取完成':'部分 / 中断读取'} · ${r.units_read} / ${r.requested_units} 单元。行号从 0 开始；?? 为未知字节，不能补值。原始读取结果保留。未转换的草稿禁止槽位加载、NDEF 与二进制 / 镜像转换；符合条件的 Classic、Type2 和 LF 可显式转换，JSON 导出保留标记。`:'每行对应一个块或页，从 0 开始；保持行数与宽度，未知空行必须保留。只修改文件，不写实体卡片。';
    for(const id of ['card-type2-password','card-type2-pack'])this.get(id).value='';this.get('card-type2-confirm').checked=false;this.memory?.open(card);this.sync();this.previewReady=this.previewPromotion();this.lfPreviewReady=this.previewLFIdentity();
   }
   async importRead(result,current=()=>true){
    if(!this.allowed())throw Error('卡库能力尚未就绪');
    if(this.dirty)throw Error('请先保存或放弃当前卡片编辑');
-   const original=this.getText(),value=await this.request({op:'import-read',database:JSON.parse(original),read_result:result.value,read_error:result.error||'',name:`${result.value.kind} read ${result.value.uid||result.value.record?.protocol||''}`});
+   const original=this.getText(),value=await this.request({op:'import-read',database:JSON.parse(original),read_result:result.value,read_error:result.error||'',name:result.name||(result.value.kind==='slot'?result.value.slot_snapshot?.nickname||`槽位 ${result.value.slot_snapshot?.slot} 快照`:`${result.value.kind} read ${result.value.uid||result.value.record?.protocol||''}`)});
    if(!current()||this.getText()!==original||this.dirty)throw Error('读取结果或卡库已变化；未导入，请重新操作');
    this.commit(value);this.open(value.card);this.display(value.card);this.notice('读取结果已加入卡库，将自动保存；可在卡片库中编辑');
   }

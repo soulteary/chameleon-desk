@@ -197,3 +197,11 @@ restart, lost acceptance and redirect/rejection handling. Web fixtures cover
 receipt handling, registry dispatch and result availability. Chromium verifies
 page reload and a killed/restarted Desk process without a second write command.
 These checks do not qualify physical cards, adapters or actual power-loss behavior.
+
+## Current-slot read tasks
+
+`slot.read-current` (`POST /api/slot/read-current`) reads the observed active
+slot/channel in emulator mode without switching, saving or writing. Partial
+results retain confirmed units; a changed source prevents library import. The
+Web task panel can explicitly import retained slot snapshots as distinct drafts.
+See [current-slot snapshots](current-slot-snapshots.md) for layouts and limits.

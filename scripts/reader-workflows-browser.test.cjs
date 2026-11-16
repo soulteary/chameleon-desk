@@ -109,3 +109,35 @@ test('Chromium converts LF offline, restores an unsaved editor snapshot and appl
   const edited = cards(await library(page)).find(card => card.id === classic.id); assert.equal(edited.data[1][0], 0xaa); assert.deepEqual(edited.data[3].slice(0, 6), Array(6).fill(0xff)); assert.equal(edited.data[3][9], 0x69); assert.deepEqual(edited.data[3].slice(10), Array(6).fill(0xff)); assert.notDeepEqual(edited.data[3].slice(6, 9), classic.data[3].slice(6, 9));
   assert(requests.includes('/api/acl/decode')); assert(requests.includes('/api/acl/encode')); assert(!requests.some(url => url.startsWith('/api/reader/') || url.startsWith('/api/slot/'))); assert.deepEqual(errors, []);
 });
+
+async function slotSnapshotSimulator(){
+ const commands=[],sockets=new Set(),memory=Buffer.alloc(1024,0x42);let failSecond=true;
+ const types=Buffer.alloc(32),flags=Buffer.alloc(16);types.writeUInt16BE(1001,0);types.writeUInt16BE(100,2);flags[0]=flags[1]=1;
+ const capabilities=[1000,1033,1017,1035,1002,1025,1019,1023,1018,1008,4018,4008,5001];
+ const server=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));let buffer=Buffer.alloc(0);
+  socket.on('data',chunk=>{buffer=Buffer.concat([buffer,chunk]);while(buffer.length>=10){const size=buffer.readUInt16BE(6)+10;if(buffer.length<size)break;const frame=buffer.subarray(0,size),command=frame.readUInt16BE(2),input=frame.subarray(9,size-1);buffer=buffer.subarray(size);commands.push(command);let status=0x68,data=Buffer.alloc(0);
+   if(command===1000)data=Buffer.from([2,2]);else if(command===1033||command===1002||command===1018)data=Buffer.from([0]);else if(command===1017)data=Buffer.from('slot-fixture');else if(command===1035){data=Buffer.alloc(capabilities.length*2);capabilities.forEach((value,i)=>data.writeUInt16BE(value,i*2));}
+   else if(command===1025)data=Buffer.from([0x0e,0x74,80]);else if(command===1019)data=types;else if(command===1023)data=flags;else if(command===1008)data=Buffer.from('Current slot');else if(command===4018)data=Buffer.from([4,1,2,3,4,4,0,8,0]);
+   else if(command===4008){if(input[0]===32&&failSecond)status=103;else data=memory.subarray(input[0]*16,(input[0]+input[1])*16);}
+   else if(command===5001)data=Buffer.from([0,100,1,2,3,4,5]);else status=103;
+   const reply=Buffer.alloc(data.length+10);reply[0]=0x11;reply[1]=0xef;reply.writeUInt16BE(command,2);reply.writeUInt16BE(status,4);reply.writeUInt16BE(data.length,6);reply[8]=(-reply.subarray(0,8).reduce((sum,n)=>sum+n,0))&255;data.copy(reply,9);reply[reply.length-1]=(-data.reduce((sum,n)=>sum+n,0))&255;socket.write(reply);
+  }});
+ });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ return {commands,port:'tcp:127.0.0.1:'+server.address().port,complete(){failSecond=false},async close(){for(const socket of sockets)socket.destroy();await new Promise(resolve=>server.close(resolve))}};
+}
+test('Chromium reads current slot, previews unknown data and persists an imported snapshot without device writes',{skip:!binary,timeout:90000},async t=>{
+ const simulator=await slotSnapshotSimulator();let server,browser;const errors=[];
+ t.after(async()=>{if(browser)await browser.close();if(server)await server.close();await simulator.close()});
+ server=await serve(['--port',simulator.port]);browser=await launch();const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+ await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="slots"]').click();
+ assert(await page.locator('#slot-read-go').isDisabled());await page.locator('#refresh-slots').click();await page.waitForFunction(()=>!document.querySelector('#slot-read-go').disabled);
+ await page.locator('#slot-read-go').click();await page.waitForFunction(()=>document.querySelector('#slot-read-result').textContent.includes('32 / 64'));
+ assert.match(await page.locator('#slot-read-result').textContent(),/32: \?\?/);assert.match(await page.locator('#slot-read-result').textContent(),/UID 01020304/);assert(await page.locator('#slot-read-import').isEnabled());
+ await page.locator('#slot-read-name').fill('Slot snapshot partial');await page.locator('#slot-read-import').click();await saved(page);
+ const imported=cards(await library(page)).find(c=>c.name==='Slot snapshot partial');assert(imported);assert.equal(imported.tag,0);assert.equal(imported.desk_read.read_result.kind,'slot');assert.equal(imported.desk_read.rows.length,64);assert.equal(imported.desk_read.rows[32],'??'.repeat(16));assert.equal(imported.desk_read.read_result.slot_snapshot.identity.atqa,'0004');assert.equal(imported.desk_read.read_result.slot_snapshot.identity.ats,'');
+ const count=simulator.commands.filter(c=>c===4008).length;assert.equal(count,2);
+ await page.reload();await page.evaluate(()=>window.libraryReady);assert.equal(simulator.commands.filter(c=>c===4008).length,count);
+ await selectCard(page,imported.id);assert.match(await page.locator('#card-edit-limit').textContent(),/槽位快照草稿/);assert.match(await page.locator('#card-edit-rows').inputValue(),/\?\?/);assert(await page.locator('#card-promote-classic').isDisabled());
+ const pending=page.waitForEvent('download');await page.locator('[data-export-card]').click();const download=await pending;const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.equal(exported.desk_read.read_result.slot_snapshot.sha256,imported.desk_read.read_result.slot_snapshot.sha256);assert.equal(exported.desk_read.rows[32],'??'.repeat(16));
+ assert.equal(simulator.commands.some(c=>[1001,1003,1009,4000,4022].includes(c)),false);assert.deepEqual(errors,[]);
+});

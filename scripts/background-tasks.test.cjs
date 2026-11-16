@@ -80,3 +80,9 @@ test('journal failure is visible and operation metadata sets write receipts',asy
  assert.equal(controller.operation('/api/reader/classic-write').write,true);assert.equal(controller.operation('/api/reader/classic-write-plan').write,false);
  assert.throws(()=>controller.configureOperations([{id:'raw',path:'/api/raw',method:'POST',write:true,retry_policy:'automatic'}]),/清单无效/);
 });
+test('historical slot snapshots import through the read-library callback and source changes remain blocked',async t=>{
+ let got;const value={schema:1,kind:'slot',units_read:1,slot_snapshot:{source_changed:false}};
+ const p=fixture(t,async()=>({server_id:'server',tasks:[task({path:'/api/slot/read-current',write:false,state:'failed',outcome:'read_interrupted',result:{error:'partial',result:value}})]}));p.controller.onReaderResult=async(result,current)=>{got=result;assert.equal(current(),true)};
+ await p.controller.refresh();const button=[...p.dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes('导入'));assert(button);button.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(got.value.kind,'slot');assert.equal(got.error,'partial');
+ value.slot_snapshot.source_changed=true;await p.controller.refresh();assert.equal([...p.dom.window.document.querySelectorAll('button')].some(b=>b.textContent.includes('导入')),false);
+});

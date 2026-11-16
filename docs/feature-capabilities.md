@@ -177,3 +177,9 @@ validation against the live serialized session. Physical write plans are private
 HMAC bound to complete input and current session; public plan checksums exclude
 trailer credentials. Saved results remain user-supplied evidence, not authenticated
 hardware provenance.
+
+
+`slot.read-current` resolves commands from `SlotReadRequest`: observed current
+slot/type and selected HF/LF channel. It is a read-only operation; reader mode,
+unsupported layouts, missing commands and native USB maintenance are disabled
+with reasons. Previewed mode/slot facts do not replace the SDK's live checks.
