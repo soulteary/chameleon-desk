@@ -32,23 +32,27 @@ func isServe(args []string) bool { return len(args) >= 1 && args[0] == "serve" }
 // single-page UI. Reads are always allowed; card/device writes need the
 // explicit --allow-writes flag and a per-server token. It binds only to loopback.
 type webServer struct {
-	tasks          webTasks
-	sessionEnabled bool
-	sessionMu      sync.Mutex
-	sessionID      string
-	sessionClient  *chameleon.Client
-	sessionTarget  string
-	nativePort     string
-	port           string
-	timeout        time.Duration
-	allowWrites    bool
-	gateOnce       sync.Once
-	gate           chan struct{}
-	listenPort     string
-	token          string
-	bridge         managedBridge
-	bridgeMu       sync.Mutex
-	bridgeClient   *chameleon.Client
+	physicalOnce     sync.Once
+	physicalKey      [32]byte
+	physicalKeyError error
+	recoveryTools    string
+	tasks            webTasks
+	sessionEnabled   bool
+	sessionMu        sync.Mutex
+	sessionID        string
+	sessionClient    *chameleon.Client
+	sessionTarget    string
+	nativePort       string
+	port             string
+	timeout          time.Duration
+	allowWrites      bool
+	gateOnce         sync.Once
+	gate             chan struct{}
+	listenPort       string
+	token            string
+	bridge           managedBridge
+	bridgeMu         sync.Mutex
+	bridgeClient     *chameleon.Client
 	// Optional transport factory for offline simulations.
 	openDevice func(context.Context, string, time.Duration) (*chameleon.Client, error)
 }
@@ -58,6 +62,7 @@ func runServe(args []string) error {
 	addr := f.String("addr", "127.0.0.1:8088", "loopback listen address (localhost, 127.0.0.1 or ::1)")
 	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
+	recoveryTools := f.String("recovery-tools-dir", "tools/bin", "trusted local recovery helper directory; browser cannot select executables")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
 	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")
 	usbBridgeURL := f.String("usb-bridge", "", "HTTP loopback origin of a managed USB serial bridge")
@@ -80,7 +85,7 @@ func runServe(args []string) error {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("--addr must use a loopback host")
 	}
-	ws := &webServer{nativePort: *nativePort, sessionEnabled: true, port: *port, timeout: *timeout, allowWrites: *allowWrites}
+	ws := &webServer{recoveryTools: *recoveryTools, nativePort: *nativePort, sessionEnabled: true, port: *port, timeout: *timeout, allowWrites: *allowWrites}
 	ws.rotateSessionID()
 	if *nativePort != "" && (*bridgeURL != "" || *usbBridgeURL != "" || *port != "") {
 		return fmt.Errorf("--native-usb-maintenance cannot be combined with --port or managed bridge options")
@@ -159,6 +164,18 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/reader/classic", ws.handleClassicRead)
 	mux.HandleFunc("/api/reader/type2", ws.handleType2Read)
 	mux.HandleFunc("/api/reader/lf", ws.handleLFRead)
+	mux.HandleFunc("/api/reader/classic-dictionary", ws.handleClassicDictionary)
+	mux.HandleFunc("/api/reader/classic-repair", ws.handleClassicRepair)
+	mux.HandleFunc("/api/reader/classic-verify", ws.handleClassicVerify)
+	mux.HandleFunc("/api/reader/classic-recover", ws.handleClassicRecover)
+	mux.HandleFunc("/api/reader/classic-write-plan", ws.handleClassicWritePlan)
+	mux.HandleFunc("/api/reader/classic-write", ws.handleClassicWrite)
+	mux.HandleFunc("/api/reader/type2-workflow", ws.handleType2WorkflowRead)
+	mux.HandleFunc("/api/reader/type2-write-plan", ws.handleType2WritePlan)
+	mux.HandleFunc("/api/reader/type2-write", ws.handleType2UserPageWrite)
+	mux.HandleFunc("/api/reader/lf-edit", ws.handleLFIdentityEdit)
+	mux.HandleFunc("/api/physical/lf/plan", ws.handleLFWritePlan)
+	mux.HandleFunc("/api/physical/lf/write", ws.handleLFWrite)
 	mux.HandleFunc("/api/firmware/check", ws.handleFirmwareCheck)
 	// Device writes (gated).
 	mux.HandleFunc("/api/slot/activate", ws.handleSlotActivate)
@@ -219,7 +236,7 @@ func (ws *webServer) logging(next http.Handler) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, "/api/reader/") || r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
+			if (strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/tasks" || strings.HasPrefix(r.URL.Path, "/api/tasks/") || r.URL.Path == "/api/settings/configure" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/activate" || r.URL.Path == "/api/slot/load-card" || ((strings.HasPrefix(r.URL.Path, "/api/bridge/") || strings.HasPrefix(r.URL.Path, "/api/session/")) && method == http.MethodPost) {
 				if ws.token == "" || r.Header.Get("X-Chameleon-Token") != ws.token {
 					http.Error(w, "missing or invalid session token", http.StatusForbidden)
 					return
@@ -329,7 +346,7 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		return e
 	})
 	if e != nil {
-		if (strings.HasPrefix(r.URL.Path, "/api/reader/") || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/settings/configure") && out != nil {
+		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/settings/configure") && out != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			writeJSON(w, map[string]any{"error": e.Error(), "result": out})
@@ -693,16 +710,21 @@ func (ws *webServer) handleDictDownload(w http.ResponseWriter, r *http.Request) 
 
 func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Database   json.RawMessage       `json:"database"`
-		Op         string                `json:"op"`
-		ReadResult *chameleon.ReadResult `json:"read_result"`
-		ReadError  string                `json:"read_error"`
-		Name       string                `json:"name"`
-		Rows       []string              `json:"rows"`
-		Query      string                `json:"query"`
-		Sense      string                `json:"sense"`
-		ID         string                `json:"id"`
-		Card       json.RawMessage       `json:"card"`
+		Database       json.RawMessage                        `json:"database"`
+		Op             string                                 `json:"op"`
+		ReadResult     *chameleon.ReadResult                  `json:"read_result"`
+		Type2Promotion *chameleon.Type2PromotionOptions       `json:"type2_promotion"`
+		OtherID        string                                 `json:"other_id"`
+		MergeOptions   chameleon.ClassicMergeOptions          `json:"merge_options"`
+		SelectedRepair *chameleon.ClassicSelectedRepairResult `json:"selected_repair"`
+		LFIdentity     *chameleon.LFIdentityInput             `json:"lf_identity"`
+		ReadError      string                                 `json:"read_error"`
+		Name           string                                 `json:"name"`
+		Rows           []string                               `json:"rows"`
+		Query          string                                 `json:"query"`
+		Sense          string                                 `json:"sense"`
+		ID             string                                 `json:"id"`
+		Card           json.RawMessage                        `json:"card"`
 	}
 	if e := decodeBody(r, &body); e != nil {
 		writeErr(w, http.StatusBadRequest, e)
@@ -761,6 +783,57 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "edit-lf":
+		if body.LFIdentity == nil {
+			writeErr(w, 400, fmt.Errorf("lf_identity required"))
+			return
+		}
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		card, err = card.EditLFIdentityOffline(body.Name, *body.LFIdentity)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		next, err := db.ReplaceCard(card)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "repair-classic-preview", "repair-classic":
+		if body.SelectedRepair == nil {
+			writeErr(w, 400, fmt.Errorf("selected_repair required"))
+			return
+		}
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if body.Op == "repair-classic-preview" {
+			preview, err := card.ClassicSelectedRepairPreview(*body.SelectedRepair)
+			if err != nil {
+				writeErr(w, 422, err)
+				return
+			}
+			writeJSON(w, preview)
+			return
+		}
+		card, err = card.ApplyClassicSelectedRepair(*body.SelectedRepair, body.MergeOptions)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		next, err := db.AddCard(card)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
 	case "edit-data":
 		card, err := db.Card(body.ID)
 		if err != nil {
@@ -795,6 +868,62 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "promote-lf", "promote-type2":
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if body.Op == "promote-lf" {
+			card, err = card.PromoteLFDraft()
+		} else {
+			options := chameleon.Type2PromotionOptions{}
+			if body.Type2Promotion != nil {
+				options = *body.Type2Promotion
+			}
+			card, err = card.PromoteType2Draft(options)
+		}
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		next, err := db.AddCard(card)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
+	case "merge-classic-preview", "merge-classic":
+		card, err := db.Card(body.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		other, err := db.Card(body.OtherID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if body.Op == "merge-classic-preview" {
+			preview, err := card.ClassicMergePreview(other)
+			if err != nil {
+				writeErr(w, 422, err)
+				return
+			}
+			writeJSON(w, preview)
+			return
+		}
+		card, err = card.MergeClassicDraft(other, body.MergeOptions)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		next, err := db.AddCard(card)
+		if err != nil {
+			writeErr(w, 422, err)
+			return
+		}
+		writeJSON(w, map[string]any{"database": next, "card": card})
 	case "delete":
 		out, removed, e := db.DeleteRecord(false, body.ID)
 		if e != nil {
@@ -803,7 +932,7 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"removed": removed, "database": out})
 	default:
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("op must be validate, list, show, add, delete, import-read, edit-data or promote-classic"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("unsupported database operation; use validate, list, show, add, delete, import-read, edit-data, edit-lf, promote-classic, promote-lf, promote-type2, merge-classic-preview, merge-classic, repair-classic-preview or repair-classic"))
 	}
 }
 

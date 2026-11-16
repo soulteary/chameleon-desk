@@ -4,7 +4,8 @@ The Web library can explicitly convert an eligible Classic read draft into a
 standard saved card. Conversion is offline: it creates a new library record,
 keeps the source draft and uses the existing browser persistence. It works with
 the default read-only server and does not send device or physical-card writes.
-Type2 and LF draft conversion remain unavailable.
+Type2 and LF conversion use separate checks; see [Type2 workflows](type2-workflows.md)
+and [LF conversion](lf-promotion.md).
 
 ## Read, inspect and convert
 
@@ -13,7 +14,7 @@ Type2 and LF draft conversion remain unavailable.
 2. Select the draft. Save or discard pending data/name edits before converting.
    The conversion button checks the saved draft through the shared feature
    evaluator and displays its rejection reason when unavailable.
-3. Choose **转换为标准 Classic 卡片（保留草稿）**. The library receives a new ID;
+3. Choose **转换为标准卡片（保留草稿）**. The library receives a new ID;
    the original draft remains unchanged. Wait for **已自动保存** before closing.
 4. Export the selected standard card as JSON, or export the database to retain
    both records. Refresh/search/show restores the saved records at the same
@@ -30,8 +31,11 @@ not start a load, connect a device, format NDEF or enable physical-card writing.
 The SDK and actual database operation use the same checks as the preview:
 
 - A valid schema-1 Desk draft with a schema-2 Classic dump and a valid checksum.
-- `complete:true`, all requested units present, and no retained operation or
-  cleanup error. A full byte count after failed mode restoration is ineligible.
+- For an ordinary draft: `complete:true`, all requested units present, and no
+  operation or cleanup error. A full byte count after failed mode restoration is
+  ineligible. A merged draft requires complete effective coverage and at least
+  one successful full-read source; original errors remain in the evidence tree.
+  Selected or partial-only unions cannot establish that full-read authority.
 - Captured identity with matching UID, two ATQA bytes, an explicit SAK and an
   explicit ATS value. An empty ATS means observed absence; missing ATS is not
   silently treated as empty. Identity UID must match both result and dump UID.
@@ -55,8 +59,9 @@ This separation follows the manufacturer-block / RF-response distinction in the
 [NXP Classic EV1 data sheet, sections 8.6.1 and 9.4](https://www.nxp.com/docs/en/data-sheet/MF1S50YYX_V1.pdf).
 It does not infer response metadata from manufacturer bytes.
 
-Known memory bytes, including known trailer fields, can be edited before
-conversion. The converted card uses the current saved rows and name. These edits
+Known memory bytes, including known trailer fields on ordinary drafts, can be edited before
+conversion. Key bytes in merged evidence remain immutable; explicitly reread them
+to supply new verified evidence. The converted card uses the current saved rows and name. These edits
 are not reauthenticated against the source card; the original read and checksum
 remain separate evidence of what was observed. Block-0 identity conflicts must
 be corrected in the editor or resolved by a new read, not by silent rewriting.
@@ -110,7 +115,7 @@ checksum. Existing binary/image helpers compute/validate the current image.
 `desk_read_origin` is reserved; conversion refuses to overwrite a preexisting
 field with that name. The original draft and its unknown metadata are not
 modified. Standard JSON follows the existing GUI card representation; upstream
-programs may ignore the extra audit metadata. Unconverted drafts, Type2/LF and
+programs may ignore the extra audit metadata. Unconverted drafts and
 legacy identity-less drafts keep the existing image/load/NDEF restrictions.
 
 The browser applies a conversion response only if the selected draft, editor
@@ -140,7 +145,8 @@ submitted database, not a background hardware task or persisted server change.
 The SDK exposes `ClassicIdentity`, `ReadClassicWithIdentity`,
 `GUICard.ClassicPromotionError` and `GUICard.PromoteClassicDraft`. Preview does not
 allocate an ID. The conversion method repeats all validation and allocates a new
-ID only on success. There is no new dedicated CLI command in this phase.
+ID only on success. The CLI exposes `read-draft promote --kind classic`; see
+[reader CLI](reader-cli.md) for input envelopes and separate output requirements.
 
 ## Validation
 

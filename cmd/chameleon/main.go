@@ -132,6 +132,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "features" {
 		return runFeatures(os.Args[2:])
 	}
+	if isReaderWorkflowCLI(os.Args[1:]) {
+		return runReaderWorkflowCLI(os.Args[1:])
+	}
 	if isLibrary(os.Args[1:]) {
 		return runLibrary(os.Args[1:])
 	}

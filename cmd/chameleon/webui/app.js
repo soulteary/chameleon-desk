@@ -8,7 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let backgroundTasks = null, readerController = null;
+let backgroundTasks = null, readerController = null, workflowController = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
@@ -36,11 +36,11 @@ const groups = { hardware: ["device", "slots", "read"], database: ["cards"], nde
 async function api(path, opts = {}) {
   const epoch = sessionEpoch;
   let offlineFeatureCheck=false;
-  if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=JSON.parse(opts.body).id==="library.promote-classic";}catch(_){}}
-  const deviceRequest = path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
+  if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=JSON.parse(opts.body).id?.startsWith("library.");}catch(_){}}
+  const deviceRequest = path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
+  if (path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
   if ((deviceRequest || path.startsWith("/api/bridge/")) && deviceSession) headers["X-Chameleon-Session"] = deviceSession.session_id;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
@@ -48,7 +48,7 @@ async function api(path, opts = {}) {
   const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
-    const taskPath = ["/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/settings/read","/api/settings/configure","/api/slot/details","/api/slot/edit","/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
+    const taskPath = ["/api/reader/classic-dictionary","/api/reader/lf-edit","/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/reader/classic-repair","/api/reader/classic-verify","/api/reader/classic-recover","/api/reader/classic-write-plan","/api/reader/classic-write","/api/reader/type2-workflow","/api/reader/type2-write-plan","/api/reader/type2-write","/api/physical/lf/plan","/api/physical/lf/write","/api/settings/read","/api/settings/configure","/api/slot/details","/api/slot/edit","/api/info","/api/scan/hf","/api/scan/lf","/api/features/device","/api/slot/activate","/api/slot/load-card"].includes(path);
     if (backgroundTasks && taskPath) {
      const value=await backgroundTasks.execute(path,{...opts,headers});
      if(epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
@@ -72,7 +72,7 @@ async function api(path, opts = {}) {
     if (!r.ok) {
       const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
       error.status=r.status;
-      if (["/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path) && body?.result) error.result = body.result;
+      if (["/api/reader/classic-dictionary","/api/reader/lf-edit","/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/reader/classic-repair","/api/reader/classic-verify","/api/reader/classic-recover","/api/reader/classic-write-plan","/api/reader/classic-write","/api/reader/type2-workflow","/api/reader/type2-write-plan","/api/reader/type2-write","/api/physical/lf/plan","/api/physical/lf/write","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path) && body?.result) error.result = body.result;
       throw error;
     }
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
@@ -102,7 +102,7 @@ function updateWriteButtons() {
   updateLibraryButtons();
   featureAvailability?.apply();
   libraryEditor?.sync();
-  readerController?.sync();
+  readerController?.sync();workflowController?.sync();
 }
 
 function updateLibraryButtons() {
@@ -111,7 +111,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
-  libraryEditor?.sync(); readerController?.sync();
+  libraryEditor?.sync(); readerController?.sync();workflowController?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -459,6 +459,7 @@ function wire() {
       return busy.has(group) || (!!f.write && !writesEnabled) || button.dataset.slotActive === "true";
     }
   });
+  workflowController = new window.DeskReaderWorkflows({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current),notice:window.desktopToast});
   readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   libraryEditor = new window.DeskLibraryEditor({post:postJSON,run:runTask,getText:()=>$("#db-json").value,setText:text=>{$("#db-json").value=text;resetLibraryView();},changed:()=>libraryPersistence.changed(),busy:()=>busy.has("database")||!libraryState||libraryState.loading,features:featureAvailability,notice:window.desktopToast,display:card=>{$("#db-id").value=card.id;return showPre("#db-out",async()=>card,{op:"show",group:"database"});}});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
@@ -631,7 +632,7 @@ async function loadCapabilities() {
     if (sessionsEnabled) await refreshDeviceSession();
     if (caps.background_tasks_enabled === true && !backgroundTasks) {
       $("#tasks-panel").hidden=false;
-      backgroundTasks=new window.DeskBackgroundTasks({api,container:$("#task-list")});
+      backgroundTasks=new window.DeskBackgroundTasks({api,container:$("#task-list"),onReaderResult:(result,current)=>{if(busy.has("database"))throw Error("卡库正在处理，请稍后重试");return runTask("database",()=>libraryEditor.importRead(result,current));}});
       backgroundTasks.start();
       window.addEventListener("pagehide",()=>backgroundTasks.stop(),{once:true});
     }

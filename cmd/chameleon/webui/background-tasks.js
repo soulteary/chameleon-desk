@@ -2,13 +2,14 @@
 (() => {
  const terminal = task => ["succeeded", "failed", "canceled", "interrupted"].includes(task.state);
  class DeskBackgroundTasks {
-  constructor({api, container, storage, interval=1000}) {
-   this.api=api;this.container=container;try{this.storage=storage||window.sessionStorage;}catch(_){this.storage=null;}this.interval=interval;this.serverID=null;this.pending=[];this.timer=null;this.stopped=false;this.results=new Map();this.expanded=new Set();this.resultRevision=0;
+  constructor({api, container, storage, interval=1000, onReaderResult=null}) {
+   this.api=api;this.onReaderResult=onReaderResult;this.importing=new Set();this.container=container;try{this.storage=storage||window.sessionStorage;}catch(_){this.storage=null;}this.interval=interval;this.serverID=null;this.pending=[];this.timer=null;this.stopped=false;this.results=new Map();this.expanded=new Set();this.resultRevision=0;
    try {this.pending=JSON.parse(this.storage.getItem("desk.pending-tasks")||"[]");if(!Array.isArray(this.pending))this.pending=[];this.pending=this.pending.filter(p=>p&&typeof p.requestID==="string"&&typeof p.serverID==="string"&&typeof p.write==="boolean");}catch(_){this.pending=[];}
   }
   remember() {try{this.storage.setItem("desk.pending-tasks",JSON.stringify(this.pending));}catch(_){this.storageFailure=true;}}
   async refresh() {
-   const value=await this.api("/api/tasks");
+   const epoch=this.refreshEpoch=(this.refreshEpoch||0)+1,value=await this.api("/api/tasks");
+   if(epoch!==this.refreshEpoch)return this.visibleTasks?[...this.visibleTasks.values()]:[];
    if(!value||typeof value.server_id!=="string"||!Array.isArray(value.tasks))throw new Error("任务列表无效");
    if(this.serverID && this.serverID!==value.server_id){this.results.clear();this.resultRevision++;}
    this.serverID=value.server_id;this.render(value.tasks);return value.tasks;
@@ -16,6 +17,7 @@
   async start(){try{await this.refresh();}catch(error){this.container.textContent="无法读取任务："+error.message;}finally{if(!this.stopped)this.timer=setTimeout(()=>this.start(),this.interval);}}
   stop(){this.stopped=true;clearTimeout(this.timer);}
   render(tasks) {
+   this.visibleTasks=new Map(tasks.map(task=>[task.id,task]));
    const node=(tag,text)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;return n;};
    const renderKey=JSON.stringify([this.serverID,tasks,this.pending,this.resultRevision,this.storageFailure]);
    if(renderKey===this.renderKey)return;this.renderKey=renderKey;
@@ -41,7 +43,14 @@
     if(!terminal(task)){const cancel=node("button","取消任务");cancel.onclick=async()=>{cancel.disabled=true;try{await this.api(`/api/tasks/${task.id}/cancel`,{method:"POST",body:"{}"});await this.refresh();}catch(e){row.append(node("p",e.message));cancel.disabled=false;}};row.append(cancel);}
     const result=task.result||this.results.get(task.id);
     if(result){const details=node("details"),pre=node("pre",JSON.stringify(result,null,2));details.open=this.expanded.has(task.id);details.ontoggle=()=>{if(details.open)this.expanded.add(task.id);else this.expanded.delete(task.id);};details.append(node("summary","查看结果与已确认阶段"),pre);row.append(details);}
-    else if(terminal(task)){const query=node("button","查询任务结果");query.onclick=async()=>{query.disabled=true;try{const value=await this.api(`/api/tasks/${task.id}`);this.results.set(task.id,value.result);this.expanded.add(task.id);this.resultRevision++;await this.refresh();}catch(error){row.append(node("p",error.message));query.disabled=false;}};row.append(query);}
+    const readValue=result?.schema===1?result:result?.result;
+    if(this.onReaderResult&&terminal(task)&&!task.write&&task.path.startsWith('/api/reader/')&&readValue?.schema===1&&['classic','type2','lf'].includes(readValue.kind)&&readValue.units_read>0){
+     const button=node('button','导入读取结果到卡库'),server=this.serverID,source=result,key=server+':'+task.id;button.disabled=this.importing.has(key);
+     button.onclick=async()=>{if(this.importing.has(key))return;this.importing.add(key);button.disabled=true;try{await this.onReaderResult({value:readValue,error:result?.error||''},()=>this.serverID===server&&this.visibleTasks.get(task.id)?.session_id===task.session_id&&terminal(this.visibleTasks.get(task.id))&&(this.results.get(task.id)===source||this.visibleTasks.get(task.id)?.result===source));}catch(error){row.append(node('p',error.message));}finally{this.importing.delete(key);button.disabled=false;}};
+     row.append(button);
+    }
+
+    if(!result&&terminal(task)){const query=node("button","查询任务结果");query.onclick=async()=>{query.disabled=true;try{const server=this.serverID,value=await this.api(`/api/tasks/${task.id}`);if(this.serverID!==server||this.visibleTasks.get(task.id)?.session_id!==task.session_id)throw Error("任务来源已变化；旧结果未导入");this.results.set(task.id,value.result);this.expanded.add(task.id);this.resultRevision++;await this.refresh();}catch(error){row.append(node("p",error.message));query.disabled=false;}};row.append(query);}
     this.container.append(row);
     if(terminal(task)&&task.outcome!=="write_outcome_unknown")this.pending=this.pending.filter(p=>p.requestID!==task.request_id);
    }
@@ -51,7 +60,7 @@
    if(!this.serverID)await this.refresh();
    const sessionID=opts.headers?.["X-Chameleon-Session"];
    if(!sessionID)throw new Error("请先刷新设备会话");
-   const receipt={serverID:this.serverID,requestID:window.crypto.randomUUID(),write:["/api/slot/activate","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path)};
+   const receipt={serverID:this.serverID,requestID:window.crypto.randomUUID(),write:["/api/slot/activate","/api/slot/load-card","/api/slot/edit","/api/settings/configure","/api/reader/classic-write","/api/reader/type2-write","/api/physical/lf/write"].includes(path)};
    this.pending.push(receipt);this.remember();
    const input={request_id:receipt.requestID,session_id:sessionID,path};if(opts.body!=null)input.body=JSON.parse(opts.body);
    // Exactly one submission. Network ambiguity is resolved by querying, never
