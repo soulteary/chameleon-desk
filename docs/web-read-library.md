@@ -210,3 +210,7 @@ and persistence path. They preserve emulator identity, exact confirmed bytes,
 unknown suffixes and the snapshot checksum. They remain distinct from physical
 Classic/Type2/LF reads and cannot use those promotion/repair flows. See
 [current-slot snapshots](current-slot-snapshots.md) for reading, preview and scope.
+Complete snapshots can use the separate `library.promote-slot` conversion after
+type-specific validation. The new standard card retains its source draft and
+uncaptured scope; the original library draft remains. Physical-card writing is
+not enabled by this conversion.

@@ -203,6 +203,15 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 	}
 	unresolved := f.RequirementMode == "parameterized" || f.RequirementMode == "card-plan" || f.RequirementMode == "command" || f.RequirementMode == "external"
 	if request != nil {
+		if f.ID == "library.promote-slot" && request.Card != nil {
+			unresolved = false
+			if request.Type2Promotion != nil {
+				reason("unavailable", "invalid_parameters", "Slot conversion preserves observed emulator bytes; Type2 credential-assignment options do not apply")
+			}
+			if e := request.Card.SlotPromotionError(); e != nil {
+				reason("unavailable", "invalid_parameters", e.Error())
+			}
+		}
 		if f.ID == "library.promote-classic" && request.Card != nil {
 			unresolved = false
 			if e := request.Card.ClassicPromotionError(); e != nil {

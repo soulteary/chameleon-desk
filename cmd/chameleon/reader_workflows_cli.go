@@ -32,7 +32,7 @@ func isReaderWorkflowCLI(args []string) bool {
 func readerWorkflowUsage() {
 	fmt.Println("Usage: chameleon reader classic|lf|type2 --output FILE --port tcp:HOST:PORT [options]")
 	fmt.Println("       chameleon reader classic-repair|classic-verify|classic-dictionary|classic-recover --input FILE --output FILE --port tcp:HOST:PORT")
-	fmt.Println("       chameleon read-draft import|promote --input FILE [--kind auto|classic|lf|type2] [--plan] [--output FILE]")
+	fmt.Println("       chameleon read-draft import|promote --input FILE [--kind auto|classic|lf|type2|slot] [--plan] [--output FILE]")
 	fmt.Println("       chameleon database import-read|promote-read --input DATABASE [--source READ] [--id ID] [--output FILE]")
 }
 func runReaderWorkflowCLI(args []string) error {
@@ -116,6 +116,9 @@ func readDraftPromotion(c chameleon.GUICard, kind string, plan bool, options cha
 	var validate func() error
 	var promote func() (chameleon.GUICard, error)
 	switch kind {
+	case "slot":
+		validate = c.SlotPromotionError
+		promote = c.PromoteSlotDraft
 	case "classic":
 		validate = c.ClassicPromotionError
 		promote = c.PromoteClassicDraft
@@ -146,7 +149,7 @@ func runReadDraftCLI(args []string) error {
 	source := f.String("source", "", "database import-read: reader envelope")
 	id := f.String("id", "", "database promote-read: source card ID or unambiguous reference")
 	name := f.String("name", "", "imported draft name")
-	kind := f.String("kind", "auto", "conversion kind: auto, classic, lf or type2")
+	kind := f.String("kind", "auto", "conversion kind: auto, classic, lf, type2 or slot")
 	emulatorPassword := f.String("emulator-password", "", "Type2 conversion only: explicit four-byte emulator password in hex")
 	emulatorPACK := f.String("emulator-pack", "", "Type2 conversion only: explicit two-byte emulator PACK in hex")
 	confirmCredentials := f.Bool("confirm-emulator-credentials", false, "assign emulator credentials; source hidden credentials remain unknown")

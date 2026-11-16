@@ -898,13 +898,19 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"database": next, "card": card})
-	case "promote-lf", "promote-type2":
+	case "promote-slot", "promote-lf", "promote-type2":
+		if body.Op == "promote-slot" && body.Type2Promotion != nil {
+			writeErr(w, 400, fmt.Errorf("slot conversion preserves observed emulator bytes; Type2 credential-assignment options do not apply"))
+			return
+		}
 		card, err := db.Card(body.ID)
 		if err != nil {
 			writeErr(w, 404, err)
 			return
 		}
-		if body.Op == "promote-lf" {
+		if body.Op == "promote-slot" {
+			card, err = card.PromoteSlotDraft()
+		} else if body.Op == "promote-lf" {
 			card, err = card.PromoteLFDraft()
 		} else {
 			options := chameleon.Type2PromotionOptions{}
@@ -962,7 +968,7 @@ func (ws *webServer) handleDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"removed": removed, "database": out})
 	default:
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("unsupported database operation; use validate, list, show, add, delete, import-read, edit-data, edit-lf, promote-classic, promote-lf, promote-type2, merge-classic-preview, merge-classic, repair-classic-preview or repair-classic"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("unsupported database operation; use validate, list, show, add, delete, import-read, edit-data, edit-lf, promote-slot, promote-classic, promote-lf, promote-type2, merge-classic-preview, merge-classic, repair-classic-preview or repair-classic"))
 	}
 }
 

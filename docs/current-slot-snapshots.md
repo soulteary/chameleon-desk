@@ -112,11 +112,90 @@ rows can be edited through the existing editor while the original observation
 and checksum remain unchanged. Unknown bytes cannot be supplied by this editor.
 Card JSON/database metadata continues to use the existing lossless container.
 
-Even a complete slot snapshot remains a draft in this phase. Standard-card
-conversion, slot loading, binary/NDEF export, physical writing and Classic repair
-are not enabled for this source kind. This avoids dropping unknown/scope metadata
-or treating emulator identity as physical-read authority. Exact memory and
-anticollision identity are retained separately even when they differ.
+Imported snapshots remain drafts until an explicit conversion passes the checks
+below. Partial snapshots remain JSON drafts. Physical-read promotion and Classic
+repair are separate workflows; slot observations do not become physical-card
+read evidence. Exact memory and anticollision identity remain separate even when
+they differ; inconsistent identity prevents standard-card conversion.
+
+## Explicit standard-card conversion
+
+In the card library, select a saved slot draft. The existing **转换为标准卡片（保留草稿）**
+button checks `library.promote-slot` and shows a reason when conversion is not
+available. Save or discard pending edits before converting. Conversion is offline
+and requires neither a device connection nor `--allow-writes`. It creates a new
+standard saved-card record; it leaves the source draft unchanged and uses the
+existing autosave, save-error, conflict and recovery controls. Wait for **已自动保存**
+before closing the page. Refreshing does not repeat conversion.
+
+All of these conditions must hold:
+
+- A valid schema-1 slot snapshot and envelope, matching checksum, complete modeled
+  geometry, confirmed metadata, no unknown ranges, no source-change flag and no
+  read error. Replacing unknown bytes or changing completion flags does not repair
+  an interrupted snapshot.
+- Complete captured HF identity, or a matching LF protocol/type/encoded identity.
+  Original memory and saved edited rows are checked independently. Editing a
+  draft cannot make invalid original evidence eligible.
+- Classic: Mini/1K/2K/4K with four- or seven-byte UID, matching geometry/SAK,
+  block-0 UID and valid access-bit complements in every trailer. All memory and
+  key bytes must be known emulator bytes. Manufacturer bytes remain opaque;
+  conversion does not impose a universal block-0 BCC/SAK/ATQA layout.
+- Type2: slot types 1100–1108 with the existing modeled page count, seven-byte UID,
+  SAK 00, ATQA 0044, explicit empty ATS, and matching UID/BCC pages. Stored emulator
+  password/PACK pages are copied exactly. The separate physical-Type2 conversion
+  options for assigning unknown credentials do not apply and are rejected.
+- LF: the snapshot protocols listed above, including IDTECK, with valid encoded
+  identities according to the existing codecs. Edited ioProx bytes are rejected
+  because the host codec does not establish their firmware encoding relationship.
+
+`GUICard.SlotPromotionError` and `GUICard.PromoteSlotDraft` share these checks with
+feature previews and the Web conversion handler. A preview does not replace
+validation at conversion time. Missing identity, incomplete memory, invalid
+Classic trailers, inconsistent Type2 UID/BCC, invalid LF encodings and reserved
+provenance conflicts produce reasons without adding a standard card.
+
+The standard card retains unrelated card metadata and a `desk_read_origin` object
+with `schema:1`, `source:"emulator_slot"`, `source_card_id`,
+`physical_write_allowed:false` and the complete original `draft` extension. That
+extension retains the observation, checksum, edits, unknown/scope markers and
+future source fields. The Web editor displays the source slot and its scope on
+the converted card, including after reload. Export card/database JSON to retain
+this provenance; raw binary/emulator images do not carry it.
+
+Version, signature, counters, advanced emulator configuration and flash state
+remain uncaptured. Conversion neither assigns Type2 extras nor claims to restore
+them. Separately attached `extra.ultralightVersion`, `ultralightSignature` or
+`ultralightCounters` are rejected for Type2 slot conversion rather than described
+as captured fields. Unrelated `extra` metadata is preserved. Complete stored
+Type2 bytes are emulator RAM, so physical RF credential masks and mirror-byte
+rules are not applied to this source kind.
+
+Converted cards may use existing file export and slot-load planning. Loading is
+an explicit separate device write, with its existing capability, session and
+write-permission checks. Default initialization can change uncaptured settings;
+it is not a full snapshot/configuration restore. No physical-card write handoff
+is added. The existing LF saved-card write planner and capability check reject
+slot-derived cards, including after editing and JSON reload. Classic/Type2
+physical write APIs retain their separate request formats; conversion does not
+produce those requests or confirmations. Source metadata is not authentication
+or an access-control mechanism for manually reconstructed bytes.
+
+Offline CLI conversion uses the same validation and new-ID behavior:
+
+```sh
+./chameleon read-draft promote --kind slot --input slot-draft.json --plan
+./chameleon read-draft promote --kind slot --input slot-draft.json --output card.json
+./chameleon database promote-read --kind slot --input database.json \
+  --id SOURCE_DRAFT_ID --output converted-database.json
+```
+
+`--kind auto` also selects slot conversion for a slot draft. Keep output files
+separate from their inputs. SDK callers use `source.PromoteSlotDraft()` followed
+by `database.AddCard(converted)`, then persist through their existing store. The
+Web API uses `POST /api/features/check` with `id:"library.promote-slot"` and `card`,
+and `POST /api/database` with `op:"promote-slot"`, `database` and the source `id`.
+Neither endpoint sends device commands.
 
 ## SDK and CLI task entry
 
@@ -161,4 +240,8 @@ read-only task registration, session/token/method enforcement, deduplication and
 offline library import. Web fixtures cover stale responses/import guards and
 unknown-data rendering. Chromium covers partial read, preview, autosave, reload
 and lossless export while checking that no mutation commands were issued.
+Conversion tests cover all modeled snapshot types, original/edited validation,
+append-only library behavior, source preservation, CLI/HTTP previews and the LF
+physical-write boundary. Chromium also covers explicit conversion, retained
+source records, autosave, reload and provenance export.
 These tests do not qualify physical adapters/cards or concurrent RF activity.

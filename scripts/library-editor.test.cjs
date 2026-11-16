@@ -173,3 +173,23 @@ test('device replacement rejects an in-flight firmware-backed LF edit before lib
  const io={...lfCard,tag:201,uid:'01531234007854E03A5D65AB00000000'};let resolve;const p=fixture(t,(_value,path)=>path==='/api/features/check'?{schema_version:1,state:{id:'library.edit-lf-device',state:'available',reasons:[]}}:new Promise(r=>resolve=r));p.editor.features.device={session:'old'};p.editor.open(io);await p.editor.lfPreviewReady;
  const pending=p.editor.applyLFIdentity();p.editor.features.device={session:'new'};p.w.document.dispatchEvent(new p.w.Event('desk-feature-device'));resolve({database:{bad:true},card:io});await assert.rejects(pending,/已变化/);assert.equal(p.changes,0);
 });
+
+test('slot conversion uses its own offline preview and retains the origin notice on standard cards',async t=>{
+ const source=classicDraft();source.desk_read.read_result.kind='slot';source.desk_read.read_result.slot_snapshot={slot:3,sense:2,tag_type:1001,sha256:'ab'.repeat(32)};
+ const standard={id:'slot-standard',name:'slot',tag:1001,uid:'01020304',data:Array.from({length:64},()=>Array(16).fill(0)),desk_read_origin:{schema:1,source:'emulator_slot',source_card_id:source.id,physical_write_allowed:false,draft:source.desk_read}};
+ const p=fixture(t,value=>value.id==='library.promote-slot'?{schema_version:1,state:{id:value.id,state:'available',reasons:[]}}:{database:{cards:[source.id,standard.id]},card:standard});
+ p.editor.open(source);await p.editor.previewReady;assert.equal(p.calls[0].value.id,'library.promote-slot');assert.equal(p.$('card-type2-options').hidden,true);assert.equal(p.$('card-promote-classic').disabled,false);
+ await p.editor.promote();assert.equal(p.calls[1].value.op,'promote-slot');assert.equal(p.calls[1].value.type2_promotion,undefined);assert.equal(p.changes,1);assert.equal(p.$('card-slot-origin').hidden,false);assert.match(p.$('card-slot-origin').textContent,/模拟器槽位 3.*实体卡写入未开放/);assert.equal(p.$('card-promote-classic').disabled,true);
+ p.editor.clear();assert.equal(p.$('card-slot-origin').hidden,true);assert.equal(p.$('card-slot-origin').textContent,'');
+});
+test('slot rejection reasons stay visible and invalidated previews do not enable conversion',async t=>{
+ const source=classicDraft();source.desk_read.read_result.kind='slot';
+ const p=fixture(t,value=>({schema_version:1,state:{id:value.id,state:'unavailable',reasons:[{message:'slot conversion requires a complete snapshot'}]}}));
+ p.editor.open(source);await p.editor.previewReady;assert.match(p.$('card-promote-reason').textContent,/complete snapshot/);await p.editor.promote();assert.equal(p.calls.length,1);
+ let resolve;const q=fixture(t,()=>new Promise(r=>resolve=r));q.editor.open(source);const pending=q.editor.previewReady;q.input('card-edit-name','changed');resolve({schema_version:1,state:{id:'library.promote-slot',state:'available',reasons:[]}});await pending;assert.equal(q.$('card-promote-classic').disabled,true);assert.match(q.$('card-promote-reason').textContent,/先保存/);
+});
+test('a late slot conversion cannot replace a newer library and source remains selected on failure',async t=>{
+ const source=classicDraft();source.desk_read.read_result.kind='slot';let resolve;
+ const p=fixture(t,value=>value.id==='library.promote-slot'?{schema_version:1,state:{id:value.id,state:'available',reasons:[]}}:new Promise(r=>resolve=r));
+ p.editor.open(source);await p.editor.previewReady;const pending=p.editor.promote();p.text='{"newer":true}';resolve({database:{old:true},card:{id:'slot-standard'}});await assert.rejects(pending,/已变化/);assert.equal(p.text,'{"newer":true}');assert.equal(p.changes,0);assert.equal(p.editor.card.id,source.id);
+});

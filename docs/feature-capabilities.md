@@ -183,3 +183,10 @@ hardware provenance.
 slot/type and selected HF/LF channel. It is a read-only operation; reader mode,
 unsupported layouts, missing commands and native USB maintenance are disabled
 with reasons. Previewed mode/slot facts do not replace the SDK's live checks.
+
+`library.promote-slot` is an offline parameterized feature for the selected saved
+slot draft. It requires complete error-free data, captured identity and the same
+type-specific checks as conversion. It remains independent of device/write
+permissions. Rejection reasons are shown next to the shared conversion button.
+`lf.clone` rejects slot-derived standard cards; conversion does not authorize
+physical-card writing. See [slot conversion](current-slot-snapshots.md#explicit-standard-card-conversion).
