@@ -5002,13 +5002,62 @@
       "notes": [
         "Requires the observed active slot/type and emulator mode. Does not switch modes/slots, save, initialize or replay commands.",
         "Classic 20/64/128/256 blocks, modeled Type2 layouts and supported LF identities only. Unknown/unconfirmed suffixes remain explicit; snapshots are not atomic RF or flash backups.",
-        "Imports as a distinct slot read draft, retaining source identity and checksum. Not eligible for physical-read promotion or slot loading in this phase."
+        "Imports as a distinct slot read draft, retaining source identity and checksum. Complete, valid drafts can be explicitly converted through library.promote-slot; physical-read promotion remains separate."
       ],
       "sources": [
         "slot_snapshot.go",
         "read_card.go",
         "cmd/chameleon/serve_slot_snapshot.go",
         "cmd/chameleon/webui/slot-reader.js"
+      ]
+    },
+    {
+      "id": "library.promote-slot",
+      "title": "Convert a complete slot snapshot to a standard saved card",
+      "device": false,
+      "write": false,
+      "effect": "offline",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/database (promote-slot)",
+          "POST /api/features/check"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "read-draft promote --kind slot",
+          "database promote-read --kind slot"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUICard.SlotPromotionError",
+          "GUICard.PromoteSlotDraft"
+        ]
+      },
+      "notes": [
+        "Offline, explicit conversion requires a complete error-free slot snapshot, captured identity and valid source and edited memory. Partial results and unknown bytes cannot be promoted.",
+        "Classic requires matching block-0 UID, supported identity/geometry and valid trailer access bytes. Type2 requires matching UID/BCC and modeled geometry; known emulator credentials remain exact bytes. LF uses the existing protocol codecs; edited ioProx requires firmware validation and is rejected here.",
+        "Creates a new saved card, preserving the source draft and uncaptured scope in desk_read_origin. Configuration, Type2 version/signature/counters and physical-source provenance are not inferred.",
+        "Slot loading uses its existing separate checks and is not a full configuration restore. No physical-card write handoff is added; the saved-card LF writer rejects slot-derived sources."
+      ],
+      "sources": [
+        "slot_promotion.go",
+        "classic_promotion.go",
+        "type2_workflow.go",
+        "cmd/chameleon/webui/library-editor.js"
       ]
     }
   ]

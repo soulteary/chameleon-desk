@@ -35,17 +35,7 @@ func (c GUICard) classicPromotionCard() (GUICard, error) {
 	if r.Identity == nil {
 		return GUICard{}, fmt.Errorf("Classic identity is missing; read the card again with identity capture")
 	}
-	if err := r.Identity.Validate(); err != nil {
-		return GUICard{}, err
-	}
 	id := r.Identity
-	if len(id.UID) != 4 && len(id.UID) != 7 {
-		return GUICard{}, fmt.Errorf("Classic conversion supports four- and seven-byte UID block-0 layouts only")
-	}
-	expected := map[uint16]byte{1000: 9, 1001: 8, 1002: 8, 1003: 0x18}[r.Dump.TagType]
-	if *id.SAK&0x7f != expected {
-		return GUICard{}, fmt.Errorf("observed SAK is inconsistent with the requested Classic geometry")
-	}
 	if len(r.Dump.UnknownKeys) != 0 {
 		return GUICard{}, fmt.Errorf("Classic conversion requires all sector keys to be known")
 	}
@@ -60,22 +50,9 @@ func (c GUICard) classicPromotionCard() (GUICard, error) {
 		}
 		rows[i] = b
 	}
-	if len(rows) != guiClassicBlocks[r.Dump.TagType] {
-		return GUICard{}, fmt.Errorf("Classic memory is incomplete")
-	}
 	for _, data := range [][][]byte{classicRows(r.Dump.Data), rows} {
-		if err := validateClassicBlockIdentity(data[0], *id); err != nil {
+		if err := validateClassicConversionRows(r.Dump.TagType, *id, data); err != nil {
 			return GUICard{}, err
-		}
-		for sector := 0; sector < 40; sector++ {
-			first, count, _ := ClassicSectorGeometry(sector)
-			trailer := first + count - 1
-			if trailer >= len(data) {
-				break
-			}
-			if err := ValidateClassicAccess(data[trailer]); err != nil {
-				return GUICard{}, fmt.Errorf("sector %d trailer: %w", sector, err)
-			}
 		}
 	}
 	out := c.withField("desk_read", nil)
@@ -94,6 +71,44 @@ func (c GUICard) classicPromotionCard() (GUICard, error) {
 	}
 	return out, nil
 }
+
+// Both physical-read and slot conversion validate original and edited memory.
+// This helper establishes a saved-card layout, not physical-card provenance.
+func validateClassicConversionRows(tag uint16, id ClassicIdentity, rows [][]byte) error {
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	if len(id.UID) != 4 && len(id.UID) != 7 {
+		return fmt.Errorf("Classic conversion supports four- and seven-byte UID block-0 layouts only")
+	}
+	n, ok := guiClassicBlocks[tag]
+	if !ok || len(rows) != n {
+		return fmt.Errorf("Classic memory is incomplete")
+	}
+	if *id.SAK&0x7f != map[uint16]byte{1000: 9, 1001: 8, 1002: 8, 1003: 0x18}[tag] {
+		return fmt.Errorf("observed SAK is inconsistent with the requested Classic geometry")
+	}
+	for i, row := range rows {
+		if len(row) != 16 {
+			return fmt.Errorf("Classic row %d must contain sixteen known bytes", i)
+		}
+	}
+	if err := validateClassicBlockIdentity(rows[0], id); err != nil {
+		return err
+	}
+	for sector := 0; sector < 40; sector++ {
+		first, count, _ := ClassicSectorGeometry(sector)
+		trailer := first + count - 1
+		if trailer >= len(rows) {
+			break
+		}
+		if err := ValidateClassicAccess(rows[trailer]); err != nil {
+			return fmt.Errorf("sector %d trailer: %w", sector, err)
+		}
+	}
+	return nil
+}
+
 func classicRows(data []byte) [][]byte {
 	rows := make([][]byte, len(data)/16)
 	for i := range rows {

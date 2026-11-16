@@ -26,7 +26,7 @@
   }
   allowed(){return this.features.state('library.database').state==='available';}
   invalidatePromotion(){this.promotionEpoch=(this.promotionEpoch||0)+1;this.promotion=null;
-   if(this.features.states){for(const id of ['library.promote-classic','library.promote-lf','library.promote-type2'])this.features.states.set(id,{id,state:'unknown',reasons:[{code:'parameters_required',message:'Select and check a saved read draft'}],required_commands:[]});this.features.render?.();}
+   if(this.features.states){for(const id of ['library.promote-classic','library.promote-lf','library.promote-type2','library.promote-slot'])this.features.states.set(id,{id,state:'unknown',reasons:[{code:'parameters_required',message:'Select and check a saved read draft'}],required_commands:[]});this.features.render?.();}
   }
   sync(){
    const changed=this.card&&this.base!==this.getText(),blocked=this.busy()||this.pending||!this.allowed();
@@ -47,9 +47,12 @@
    this.get('card-type2-options').hidden=this.card?.desk_read?.read_result?.kind!=='type2';
    this.get('card-merge-go').disabled=blocked||!classic||this.dirty||changed;this.get('card-merge-preview').disabled=blocked||!classic||this.dirty||changed;
    this.get('read-import-go').disabled=blocked;this.get('card-edit-recovery-go').disabled=blocked;this.memory?.sync(this.busy()||!this.card);
-   const reason=!this.allowed()?'卡库能力尚未就绪，请重试读取功能清单':!this.card?'请先选择读取草稿':!this.card.desk_read?'当前卡片不是读取草稿':this.card.desk_read.read_result?.kind==='slot'?'槽位快照仅保留模拟器数据，本阶段不转换为标准卡片':!['classic','lf','type2'].includes(this.card.desk_read.read_result?.kind)?'此读取类型不支持转换':changed?'卡库已变化，请重新选择草稿':this.dirty?'请先保存或放弃编辑，再转换已保存的草稿':this.busy()||this.pending?'卡库正在处理':!this.promotion?'正在校验转换条件':this.promotion.state!=='available'?this.promotion.reasons.map(r=>r.message).join('；')||'转换条件未满足':'';
+   const reason=!this.allowed()?'卡库能力尚未就绪，请重试读取功能清单':!this.card?'请先选择读取草稿':!this.card.desk_read?'当前卡片不是读取草稿':!['classic','lf','type2','slot'].includes(this.card.desk_read.read_result?.kind)?'此读取类型不支持转换':changed?'卡库已变化，请重新选择草稿':this.dirty?'请先保存或放弃编辑，再转换已保存的草稿':this.busy()||this.pending?'卡库正在处理':!this.promotion?'正在校验转换条件':this.promotion.state!=='available'?this.promotion.reasons.map(r=>r.message).join('；')||'转换条件未满足':'';
    this.get('card-promote-classic').disabled=!!reason;
    this.get('card-promote-reason').textContent=reason||'转换生成新卡片，原始读取草稿保留；此操作不写设备或实体卡片。';
+   const origin=this.card?.desk_read_origin,slot=origin?.draft?.read_result?.slot_snapshot;
+   this.get('card-slot-origin').hidden=origin?.source!=='emulator_slot'&&origin?.draft?.read_result?.kind!=='slot';
+   this.get('card-slot-origin').textContent=slot?`来源：模拟器槽位 ${slot.slot} · ${slot.sense===2?'HF':'LF'} · 类型 ${slot.tag_type}；原草稿 ${origin.source_card_id}。身份和原始快照保留于来源记录；配置、版本、签名和计数器未采集，实体卡写入未开放。`:'';
    this.get('card-edit-state').setAttribute('role',this.failure?'alert':'status');
    this.get('card-edit-state').textContent=this.failure?'未保存：'+this.failure:changed?'卡库已变化；编辑草稿仍保留，请导出草稿或放弃后重新选择卡片':this.dirty?'编辑尚未保存到卡库；关闭或刷新页面前请保存':this.card?'编辑已加入卡库；本地持久化状态见上方':'请在卡库中查看一张卡片后编辑';
    this.get('read-import-reason').textContent=!this.allowed()?'卡库能力尚未就绪，请重试读取功能清单':this.busy()?'卡库正在处理或读取保存版本':'';
@@ -92,7 +95,7 @@
    this.dirty=false;this.open(current);this.get('card-edit-name').value=value.name;this.get('card-edit-rows').value=value.rows_text;this.dirty=true;this.revision++;this.invalidatePromotion();this.memory?.render();this.sync();this.notice('编辑草稿已恢复到本页，校验并保存后才会进入卡库');
   }
   async previewPromotion(){
-   if(!this.card?.desk_read)return;const kind=this.card.desk_read.read_result?.kind;if(!['classic','lf','type2'].includes(kind))return;const id='library.promote-'+kind;
+   if(!this.card?.desk_read)return;const kind=this.card.desk_read.read_result?.kind;if(!['classic','lf','type2','slot'].includes(kind))return;const id='library.promote-'+kind;
    const epoch=this.promotionEpoch,card=this.card,base=this.base;
    try{
     const result=await this.post('/api/features/check',{id,card,type2_promotion:kind==='type2'?this.type2Options():undefined});

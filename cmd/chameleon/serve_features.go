@@ -96,7 +96,7 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 		if body.LFRead == nil {
 			err = fmt.Errorf("lf_read is required")
 		}
-	case "slot.load-card", "library.promote-classic", "library.promote-lf", "library.promote-type2", "library.merge-classic":
+	case "slot.load-card", "library.promote-slot", "library.promote-classic", "library.promote-lf", "library.promote-type2", "library.merge-classic":
 		var card chameleon.GUICard
 		card, err = chameleon.ParseGUICard(body.Card)
 		if err == nil {

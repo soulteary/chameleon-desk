@@ -112,6 +112,7 @@ test('Chromium converts LF offline, restores an unsaved editor snapshot and appl
 
 async function slotSnapshotSimulator(){
  const commands=[],sockets=new Set(),memory=Buffer.alloc(1024,0x42);let failSecond=true;
+ Buffer.from([1,2,3,4]).copy(memory);for(let block=3;block<64;block+=4)Buffer.from([0xff,7,0x80]).copy(memory,block*16+6);
  const types=Buffer.alloc(32),flags=Buffer.alloc(16);types.writeUInt16BE(1001,0);types.writeUInt16BE(100,2);flags[0]=flags[1]=1;
  const capabilities=[1000,1033,1017,1035,1002,1025,1019,1023,1018,1008,4018,4008,5001];
  const server=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));let buffer=Buffer.alloc(0);
@@ -140,4 +141,20 @@ test('Chromium reads current slot, previews unknown data and persists an importe
  await selectCard(page,imported.id);assert.match(await page.locator('#card-edit-limit').textContent(),/槽位快照草稿/);assert.match(await page.locator('#card-edit-rows').inputValue(),/\?\?/);assert(await page.locator('#card-promote-classic').isDisabled());
  const pending=page.waitForEvent('download');await page.locator('[data-export-card]').click();const download=await pending;const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.equal(exported.desk_read.read_result.slot_snapshot.sha256,imported.desk_read.read_result.slot_snapshot.sha256);assert.equal(exported.desk_read.rows[32],'??'.repeat(16));
  assert.equal(simulator.commands.some(c=>[1001,1003,1009,4000,4022].includes(c)),false);assert.deepEqual(errors,[]);
+});
+
+test('Chromium explicitly converts a complete slot snapshot and retains both records and provenance after reload',{skip:!binary,timeout:90000},async t=>{
+ const simulator=await slotSnapshotSimulator();simulator.complete();let server,browser;const errors=[],requests=[];
+ t.after(async()=>{if(browser)await browser.close();if(server)await server.close();await simulator.close()});
+ server=await serve(['--port',simulator.port]);browser=await launch();const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());page.on('request',request=>requests.push(new URL(request.url()).pathname));
+ await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="slots"]').click();await page.locator('#refresh-slots').click();await page.waitForFunction(()=>!document.querySelector('#slot-read-go').disabled);
+ await page.locator('#slot-read-go').click();await page.waitForFunction(()=>document.querySelector('#slot-read-result').textContent.includes('64 / 64'));
+ await page.locator('#slot-read-import').click();await page.locator('.dock [data-open="cards"]').click();await page.waitForFunction(()=>!document.querySelector('#card-promote-classic').disabled);await saved(page);
+ const before=await library(page),source=cards(before).find(c=>c.desk_read?.read_result.kind==='slot');assert(source);assert.equal(source.desk_read.read_result.complete,true);assert.equal(source.desk_read.read_result.slot_snapshot.unknown_ranges.length,0);
+ await page.locator('#card-promote-classic').click();await page.waitForFunction(()=>!document.querySelector('#card-slot-origin').hidden);await saved(page);
+ const database=await library(page),standard=cards(database).find(c=>c.desk_read_origin?.source==='emulator_slot');assert(standard);assert.notEqual(standard.id,source.id);assert.equal(standard.tag,1001);assert.equal(standard.uid,'01020304');assert.deepEqual(standard.atqa,[0,4]);assert.equal(standard.sak,8);assert.equal(standard.desk_read_origin.source_card_id,source.id);assert.equal(standard.desk_read_origin.physical_write_allowed,false);assert.deepEqual(standard.desk_read_origin.draft,source.desk_read);assert.deepEqual(cards(database).find(c=>c.id===source.id),source);
+ assert.match(await page.locator('#card-slot-origin').textContent(),/模拟器槽位 1.*实体卡写入未开放/);assert(requests.includes('/api/features/check'));assert(requests.includes('/api/database'));
+ await page.reload();await page.evaluate(()=>window.libraryReady);assert.deepEqual(await library(page),database);await selectCard(page,standard.id);assert.match(await page.locator('#card-slot-origin').textContent(),/模拟器槽位 1/);
+ const pending=page.waitForEvent('download');await page.locator('[data-export-card]').click();const download=await pending,exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.deepEqual(exported.desk_read_origin,standard.desk_read_origin);
+ assert.equal(simulator.commands.filter(c=>c===4008).length,2);assert.equal(simulator.commands.some(c=>[1001,1003,1009,4000,4022].includes(c)),false);assert.equal(requests.some(p=>p.startsWith('/api/physical/')||p.includes('write-plan')),false);assert.deepEqual(errors,[]);
 });

@@ -62,6 +62,16 @@ func type2LayoutForVersion(version []byte) (type2Layout, error) {
 	return type2Layout{}, fmt.Errorf("unsupported Type2 model/version; no capacity is inferred from SAK or failed commands")
 }
 
+func validateType2Identity(id ClassicIdentity) error {
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	if len(id.UID) != 7 || len(*id.ATS) != 0 || *id.SAK != 0 || !bytes.Equal(id.ATQA, []byte{0, 0x44}) {
+		return fmt.Errorf("recognized Type2 layouts require a seven-byte UID, SAK 00 and ATQA 0044")
+	}
+	return nil
+}
+
 func (m Type2ReadMetadata) Validate() error {
 	layout, err := type2LayoutForVersion(m.Version)
 	if err != nil {
@@ -70,11 +80,8 @@ func (m Type2ReadMetadata) Validate() error {
 	if m.Schema != 1 || m.Model != layout.name || m.TagType != layout.tag || m.Pages != layout.pages || m.UserFirst != 4 || m.UserLast != layout.userLast || m.Identity == nil {
 		return fmt.Errorf("invalid Type2 model metadata")
 	}
-	if err = m.Identity.Validate(); err != nil {
+	if err = validateType2Identity(*m.Identity); err != nil {
 		return err
-	}
-	if len(m.Identity.UID) != 7 || len(*m.Identity.ATS) != 0 || *m.Identity.SAK != 0 || !bytes.Equal(m.Identity.ATQA, []byte{0, 0x44}) {
-		return fmt.Errorf("recognized Type2 layouts require a seven-byte UID, SAK 00 and ATQA 0044")
 	}
 	if len(m.Counters) > 3 {
 		return fmt.Errorf("invalid Type2 counter count")

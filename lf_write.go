@@ -47,7 +47,7 @@ func (r LFPhysicalWriteRequest) Plan() (LFPhysicalWritePlan, error) {
 	if err := r.Source.Validate(); err != nil {
 		return plan, err
 	}
-	if err := r.Source.RequireCardImage(); err != nil {
+	if err := r.Source.requirePhysicalCardSource(); err != nil {
 		return plan, err
 	}
 	if len(r.Source.Data) != 0 {
