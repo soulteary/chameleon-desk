@@ -8,14 +8,14 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
+let emulatorTools = null, backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
-let libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
+let libraryManager = null, libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
 const busy = new Set();
 let featureAvailability = null;
 function clearFeatureDevice() { featureAvailability?.clear(); }
-function featureInfo(info) { featureAvailability?.observe(info); slotReader?.observe(info); }
+function featureInfo(info) { featureAvailability?.observe(info); slotReader?.observe(info);emulatorTools?.observe(info); }
 async function refreshFeatures() {
  try {
   const value = await api("/api/features/device");
@@ -37,10 +37,11 @@ async function api(path, opts = {}) {
   const epoch = sessionEpoch;
   let offlineFeatureCheck=false;
   if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=JSON.parse(opts.body).id?.startsWith("library.");}catch(_){}}
-  const deviceRequest = path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
+  const taskOperation=backgroundTasks?.operation(path);
+  const deviceRequest = !!taskOperation || path.startsWith("/api/device/") || path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
+  if (taskOperation || path.startsWith("/api/device/") || path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
   if ((deviceRequest || path.startsWith("/api/bridge/")) && deviceSession) headers["X-Chameleon-Session"] = deviceSession.session_id;
   const controller = new AbortController();
   // Firmware checks allow 30s of device access followed by 60s of HTTP work.
@@ -48,7 +49,6 @@ async function api(path, opts = {}) {
   const budget = path === "/api/firmware/check" ? 95000 : path === "/api/dictionary/download" ? 65000 : 60000;
   const timeout = setTimeout(() => controller.abort(), budget);
   try {
-    const taskOperation=backgroundTasks?.operation(path);
     if(backgroundTasks && deviceRequest && !taskOperation && !["/api/features/check","/api/firmware/check"].includes(path))throw new Error("此操作未在服务端登记；请更新 Desk 并刷新页面");
     if (backgroundTasks && taskOperation) {
      const value=await backgroundTasks.execute(path,{...opts,headers});
@@ -73,7 +73,7 @@ async function api(path, opts = {}) {
     if (!r.ok) {
       const error = new Error((body && body.error) || ("请求失败（HTTP " + r.status + "），请检查服务是否仍在运行"));
       error.status=r.status;
-      if (["/api/reader/classic-dictionary","/api/reader/lf-edit","/api/reader/classic","/api/reader/type2","/api/reader/lf","/api/reader/classic-repair","/api/reader/classic-verify","/api/reader/classic-recover","/api/reader/classic-write-plan","/api/reader/classic-write","/api/reader/type2-workflow","/api/reader/type2-write-plan","/api/reader/type2-write","/api/physical/lf/plan","/api/physical/lf/write","/api/slot/load-card","/api/slot/edit","/api/settings/configure"].includes(path) && body?.result) error.result = body.result;
+      if ((taskOperation || deviceRequest) && body?.result) error.result = body.result;
       throw error;
     }
     if (!ct.includes("json")) throw new Error("服务返回了非 JSON 内容，请重启服务并刷新页面");
@@ -102,8 +102,8 @@ function updateWriteButtons() {
   updateSessionButtons();
   updateLibraryButtons();
   featureAvailability?.apply();
-  libraryEditor?.sync();
-  readerController?.sync();workflowController?.sync();slotReader?.sync();
+  libraryEditor?.sync();libraryManager?.sync();
+  readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();
 }
 
 function updateLibraryButtons() {
@@ -112,7 +112,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
-  libraryEditor?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();
+  libraryEditor?.sync();libraryManager?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -135,7 +135,7 @@ function startLibraryPersistence() {
   });
   $("#db-save-now").addEventListener("click", () => libraryPersistence.save());
   $("#db-reload").addEventListener("click", () => {
-    if ((libraryPersistence.dirty || libraryEditor?.dirty) && !window.confirm("重新读取将替换本页未保存内容。请先导出本页草稿，确认继续？")) return;
+    if ((libraryPersistence.dirty || libraryEditor?.dirty || libraryManager?.dirty) && !window.confirm("重新读取将替换本页未保存内容。请先导出本页草稿，确认继续？")) return;
     runTask("database", () => libraryPersistence.load());
   });
   $("#db-restore-previous").addEventListener("click", () => {
@@ -148,10 +148,10 @@ function startLibraryPersistence() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#db-json").addEventListener("desk:before-library-replace", (event) => {
-    if ((libraryPersistence.dirty || libraryEditor?.dirty) && !window.confirm("导入将替换本页未保存的卡库。请先导出草稿，确认继续？")) event.preventDefault();
+    if ((libraryPersistence.dirty || libraryEditor?.dirty || libraryManager?.dirty) && !window.confirm("导入将替换本页未保存的卡库。请先导出草稿，确认继续？")) event.preventDefault();
   });
   window.addEventListener("beforeunload", (event) => {
-    if (libraryPersistence.dirty || pendingLibraryMutation || libraryEditor?.dirty || libraryEditor?.pending) { event.preventDefault(); event.returnValue = ""; }
+    if (libraryPersistence.dirty || pendingLibraryMutation || libraryEditor?.dirty || libraryEditor?.pending || libraryManager?.dirty || libraryManager?.pending) { event.preventDefault(); event.returnValue = ""; }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && libraryPersistence.dirty) libraryPersistence.save();
@@ -460,10 +460,14 @@ function wire() {
       return busy.has(group) || (!!f.write && !writesEnabled) || button.dataset.slotActive === "true";
     }
   });
-  workflowController = new window.DeskReaderWorkflows({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current),notice:window.desktopToast});
+  workflowController = new window.DeskReaderWorkflows({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current),onSelectedRepair:async(result,current)=>{if(libraryEditor.dirty)throw Error("先保存或放弃当前编辑");const base=$("#db-json").value,source=JSON.parse(result.input.raw).source,card=await postJSON("/api/database",{op:"show",database:JSON.parse(base),id:source.id});if(!current()||base!==$("#db-json").value||libraryEditor.dirty)throw Error("来源或卡库已变化，未应用补读");libraryEditor.open(card);$("#card-selected-repair").value=JSON.stringify({schema:1,result:result.value,error:result.error||null});$("#card-selected-repair").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector('.dock [data-open="cards"]').click();$("#card-selected-repair-tools").open=true;},notice:window.desktopToast});
+  new window.DeskWorkflowForms({controller:workflowController,getText:()=>$("#db-json").value});
   readerController = new window.DeskReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   libraryEditor = new window.DeskLibraryEditor({post:postJSON,run:runTask,getText:()=>$("#db-json").value,setText:text=>{$("#db-json").value=text;resetLibraryView();},changed:()=>libraryPersistence.changed(),busy:()=>busy.has("database")||!libraryState||libraryState.loading,features:featureAvailability,notice:window.desktopToast,display:card=>{$("#db-id").value=card.id;return showPre("#db-out",async()=>card,{op:"show",group:"database"});}});
+  libraryManager = new window.DeskLibraryManager({post:postJSON,run:runTask,getText:()=>$("#db-json").value,setText:text=>{$("#db-json").value=text;resetLibraryView();},changed:()=>libraryPersistence.changed(),busy:()=>busy.has("database")||!libraryState||libraryState.loading,canMutate:()=>!libraryEditor?.dirty,features:featureAvailability,selectCard:id=>dbCall({op:"show",id})});
+  new window.DeskConflictForms({getText:()=>$("#db-json").value});
   slotReader = new window.DeskSlotReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
+  emulatorTools = new window.DeskEmulatorTools({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),writeAllowed:()=>writesEnabled});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));
   for(const id of ["#load-card-json", "#load-slot", "#load-persist", "#load-activate"]) {
@@ -477,11 +481,12 @@ function wire() {
   $("#bridge-refresh").addEventListener("click", () => runTask("hardware", refreshBridgeStatus));
   $("#bridge-devices").addEventListener("change", updateBridgeButtons);
   document.querySelectorAll("pre").forEach((pre) => {
+    if(!Object.hasOwn(outputGroups,"#"+pre.id))return;
     const summary = el("div", "result-summary tool-result"); summary.hidden = true; summary.setAttribute("role", "status");
     const details = el("details", "raw-result"); details.hidden = true; details.append(el("summary", null, "查看完整结果 JSON")); pre.before(summary, details); details.append(pre);
   });
   document.querySelectorAll("textarea").forEach((area) => {
-    if (area.closest(".reader-workflows, .card-editor, .read-result-import")) return;
+    if (area.closest(".reader-workflows, .card-editor, .read-result-import, #library-manager")) return;
     const details = el("details", "json-input"); details.append(el("summary", null, "或粘贴 / 查看 JSON")); area.before(details); details.append(area);
   });
   $("#refresh-info").addEventListener("click", () => runTask("hardware", loadInfo));
@@ -603,7 +608,7 @@ function wire() {
   $("#db-show").addEventListener("click", () => dbCall({ op: "show", id: $("#db-id").value.trim() }));
   $("#db-add").addEventListener("click", () => dbCall({ op: "add" }));
   $("#db-delete").addEventListener("click", () => { if (!busy.has("database") && window.confirm("从当前卡库中移除这张卡片？此更改会自动保存到浏览器。")) dbCall({ op: "delete", id: $("#db-id").value.trim() }); });
-  $("#db-json").addEventListener("input", () => { resetLibraryView(); libraryPersistence?.changed(); libraryEditor?.sync(); });
+  $("#db-json").addEventListener("input", () => { resetLibraryView(); libraryPersistence?.changed(); libraryEditor?.sync();libraryManager?.sync(); });
   for (const id of ["#ndef-input", "#ndef-text", "#ndef-uri", "#ndef-language"]) $(id).addEventListener("input", () => { generatedCard = null; $("#ndef-use-result").hidden = true; invalidate("#ndef-out"); updateNdefSource(); });
   $("#db-card").addEventListener("input",()=>updateCardSource("#db-card","#db-card-source"));
   $("#db-id").addEventListener("input",()=>invalidate("#db-out"));

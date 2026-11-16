@@ -67,12 +67,12 @@
    else if([100,101,102,103,104,150,170,180,200,201,310].includes(card.tag)&&typeof card.uid==='string')rows=[card.uid];
    else {this.clear();this.get('card-edit-limit').textContent='此卡片类型没有受支持的数据编辑入口';return;}
    this.invalidateLFIdentity();this.invalidatePromotion();this.repairPreview=null;this.failure="";this.card=card;this.base=this.getText();this.dirty=false;this.revision++;
-   this.get('card-edit-name').value=card.name;
+   this.get('card-edit-name').value=card.name;document.dispatchEvent(new CustomEvent('desk-library-card',{detail:{id:card.id}}));
    this.get('card-repair-result').textContent='';this.get('card-selected-repair').value='';
    const protocol=!draft&&this.lfProtocol(card.tag);this.get('card-lf-identity').value=protocol?JSON.stringify({protocol,tag_type:card.tag,...(protocol==='ioprox'?{ioprox:{raw:card.uid?.slice(8,24)||''}}:{id:card.uid})},null,2):'';
    this.get('card-edit-rows').value=rows.map(row=>row.match(/.{2}/g)?.join(' ')||'').join('\n');
    const r=draft?.read_result;
-   this.get('card-edit-limit').textContent=draft?.read_result?.kind==='slot'?`槽位快照草稿 · 槽位 ${r.slot_snapshot?.slot} · 类型 ${r.slot_snapshot?.tag_type} · ${r.units_read}/${r.requested_units} 单元；身份与原始数据保留，未知字节不能填值。此来源不作为实体卡读取证据。`:draft?`Desk 读取草稿 · ${r.kind} · ${r.complete?'请求范围读取完成':'部分 / 中断读取'} · ${r.units_read} / ${r.requested_units} 单元。行号从 0 开始；?? 为未知字节，不能补值。原始读取结果保留。未转换的草稿禁止槽位加载、NDEF 与二进制 / 镜像转换；符合条件的 Classic、Type2 和 LF 可显式转换，JSON 导出保留标记。`:'每行对应一个块或页，从 0 开始；保持行数与宽度，未知空行必须保留。只修改文件，不写实体卡片。';
+   this.get('card-edit-limit').textContent=draft?.read_result?.kind==='file'?`外部文件来源草稿 · ${r.file_observation?.format} · ${r.file_observation?.unknown_bytes} 个未知字节；文件声明不是实体卡观察，未知字节不能填值。本阶段保留为 JSON 草稿，不转换为标准卡片。`:draft?.read_result?.kind==='slot'?`槽位快照草稿 · 槽位 ${r.slot_snapshot?.slot} · 类型 ${r.slot_snapshot?.tag_type} · ${r.units_read}/${r.requested_units} 单元；身份与原始数据保留，未知字节不能填值。此来源不作为实体卡读取证据。`:draft?`Desk 读取草稿 · ${r.kind} · ${r.complete?'请求范围读取完成':'部分 / 中断读取'} · ${r.units_read} / ${r.requested_units} 单元。行号从 0 开始；?? 为未知字节，不能补值。原始读取结果保留。未转换的草稿禁止槽位加载、NDEF 与二进制 / 镜像转换；符合条件的 Classic、Type2 和 LF 可显式转换，JSON 导出保留标记。`:'每行对应一个块或页，从 0 开始；保持行数与宽度，未知空行必须保留。只修改文件，不写实体卡片。';
    for(const id of ['card-type2-password','card-type2-pack'])this.get(id).value='';this.get('card-type2-confirm').checked=false;this.memory?.open(card);this.sync();this.previewReady=this.previewPromotion();this.lfPreviewReady=this.previewLFIdentity();
   }
   async importRead(result,current=()=>true){
@@ -120,7 +120,7 @@
    const base=this.getText(),source=this.card,otherID=this.get('card-merge-id').value.trim(),options=JSON.parse(this.get('card-merge-options').value),revision=this.revision;
    const value=await this.request({op:preview?'merge-classic-preview':'merge-classic',database:JSON.parse(base),id:source.id,other_id:otherID,merge_options:options});
    if(base!==this.getText()||source!==this.card||revision!==this.revision)throw Error('卡库或编辑已变化；合并结果未导入');
-   this.get('card-merge-result').textContent=JSON.stringify(value,null,2);
+   this.get('card-merge-result').textContent=JSON.stringify(value,null,2);if(preview)document.dispatchEvent(new CustomEvent('desk-classic-conflicts',{detail:{source:this.card.id,value}}));
    if(!preview){if(value.card?.id===source.id||value.card?.id===otherID)throw Error('合并结果必须使用新草稿标识，未导入');this.commit(value);this.open(value.card);this.display(value.card);this.notice('合并草稿已加入卡库，原始草稿保留');}
   }
   invalidateLFIdentity(){this.lfEpoch=(this.lfEpoch||0)+1;this.lfState=null;if(this.features.states){this.features.states.set('library.edit-lf-device',{id:'library.edit-lf-device',state:'unknown',reasons:[{code:'parameters_required',message:'Select and check ioProx fields'}],required_commands:[]});this.features.render?.();}}
@@ -151,7 +151,7 @@
    const value=await this.request({op:preview?'repair-classic-preview':'repair-classic',database:JSON.parse(base),id:source.id,selected_repair:repair,merge_options:options});
    if(base!==this.getText()||revision!==this.revision||source!==this.card||input!==this.get('card-selected-repair').value||optionsText!==this.get('card-merge-options').value)throw Error('卡库、补读或编辑已变化；结果未导入');
    this.get('card-repair-result').textContent=JSON.stringify(value,null,2);
-   if(preview){this.repairPreview={base,source,input,optionsText};this.sync();return;}
+   if(preview){document.dispatchEvent(new CustomEvent('desk-classic-conflicts',{detail:{source:this.card.id,value}}));this.repairPreview={base,source,input,optionsText};this.sync();return;}
    if(value.card?.id===source.id)throw Error('补读结果必须使用新草稿标识，未导入');
    this.commit(value);this.open(value.card);this.display(value.card);this.notice('补读证据已生成新草稿并加入卡库，原草稿保留');
   }

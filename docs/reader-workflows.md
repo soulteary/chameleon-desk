@@ -1,10 +1,11 @@
 # Reader workflows and saved-card editing
 
 The reader window includes **Complete reads, keys and physical-card operations**
-(the Chinese UI label is `完整读取、密钥与实体卡操作`). Select an operation, fill
-its JSON template, then check capabilities. Templates contain placeholders;
-replace them with observed identity, explicit keys, and actual backups. They do
-not select a device or supply default credentials.
+(the Chinese UI label is `完整读取、密钥与实体卡操作`). Select an operation and fill its typed form, then check capabilities. Saved
+Classic drafts can supply captured identity and explicit per-sector keys; source
+selection does not authorize a write. Enter passwords and backups explicitly.
+Advanced JSON remains available for inspection. Forms do not supply default
+credentials or select a device.
 
 All device operations use the current serialized session and background tasks.
 Results can be queried after a page refresh while the same server process is
@@ -33,10 +34,10 @@ present-card observation and a supported protocol. The original draft remains
 in the library. These checks establish a usable saved representation; they do
 not authenticate a chip or establish compatibility with every reader.
 
-For Classic selected-block results, export the workflow result and import it
+For Classic selected-block results, use the result handoff or export the workflow result and import it
 under **Import selected Classic repair** (`导入 Classic 指定块补读`). Preview
-identity and conflicts, set `confirm_same_card` and byte resolutions in the
-merge options, then apply to a new draft. A partial/error observation is never
+identity and conflicts, confirm the same physical card and select left/right for every conflicting
+byte, then apply to a new draft. Unresolved conflicts are not filled implicitly. A partial/error observation is never
 silently upgraded to a successful full read.
 
 ## Editing and recovery
@@ -72,7 +73,7 @@ to the server instance, current session and exact request. Parameter changes,
 connection changes and an execution attempt invalidate the browser's plan.
 The server repeats live checks; a browser preview grants no permission.
 
-- Type2 writes cover one modeled ordinary user page with expected original
+- Type2 writes cover one page or a bounded batch of modeled ordinary user pages with expected original
   bytes. Manufacturer, lock, configuration and password/PACK pages are excluded.
 - Classic writes require an explicit target backup and key map. Block 0 is
   always excluded; trailer writes require an additional explicit request.
@@ -85,6 +86,42 @@ unknown result. Query the task and independently inspect the card before any
 new decision. The application does not replay writes, reconnect automatically,
 restore a backup automatically or fall back to native USB. Pairing changes,
 full-device restore and DFU retain their native maintenance restrictions.
+
+## Additional guarded operations
+
+The Classic value form requires captured identity, key type/key, an ordinary
+block, its exact valid original 16-byte value encoding, a signed 32-bit value and
+byte address. Plan and execution check the redundancy and original bytes.
+`PlanClassicValue` and `WriteClassicValueObserved` issue at most one SET write,
+then read back. Block 0 and trailers are refused. This is not an atomic
+increment/decrement operation, and an unknown result must be read before reuse.
+
+Read-only Magic inspection accepts explicit Gen1A/Gen3/Gen4 selection and expected
+Classic identity (Gen4 also requires a four-byte password). Gen1A reads block 0
+through its read backdoor, Gen3 checks normal block-0 readability, and Gen4 reads
+configuration. No write/lock command is sent. Normal Gen3 readability cannot
+identify a Magic chip; every result distinguishes observations from chip
+authentication. Gen4 configuration can contain secrets.
+
+Offline CLI evidence commands create new output files and preserve sources:
+
+```sh
+chameleon read-draft merge --input left.json --other right.json --plan --output plan.json
+chameleon read-draft merge --input left.json --other right.json \
+  --confirm-same-card --resolution 4:2:right --output merged.json
+chameleon read-draft apply-repair --input source.json --repair result.json \
+  --confirm-same-card --output repaired.json
+```
+
+`--resolution block:byte:left|right` is repeatable. Apply accepts the selected
+repair result or task result envelope. A partial/error envelope cannot grant
+full-read authority. The SDK methods are `ClassicMergePreview`,
+`MergeClassicDraft`, `ClassicSelectedRepairPreview` and
+`ApplyClassicSelectedRepair` on `GUICard`.
+
+See [library organization](library-organization.md) for dictionary/folder forms,
+foreign-file observations and cross-file comparison, and
+[emulator controls](emulator-tools.md) for configuration/log/counter forms.
 
 ## Qualification
 

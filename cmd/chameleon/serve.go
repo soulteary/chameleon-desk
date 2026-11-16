@@ -212,6 +212,7 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/dictionary/sources", ws.handleDictSources)
 	mux.HandleFunc("/api/dictionary/download", ws.handleDictDownload)
 	mux.HandleFunc("/api/database", ws.handleDatabase)
+	mux.HandleFunc("/api/library/manage", ws.handleLibraryManage)
 	mux.HandleFunc("/api/capabilities", ws.handleCaps)
 	mux.HandleFunc("/api/features/check", ws.handleFeatureCheck)
 	for _, path := range []string{"status", "scan", "select", "connect", "disconnect"} {
@@ -376,7 +377,7 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		return e
 	})
 	if e != nil {
-		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/read-current" || r.URL.Path == "/api/settings/configure") && out != nil {
+		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/read-current" || strings.HasPrefix(r.URL.Path, "/api/slot/emulator/") || r.URL.Path == "/api/settings/configure") && out != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			writeJSON(w, map[string]any{"error": e.Error(), "result": out})

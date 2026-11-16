@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"reflect"
 )
 
 type ClassicEmulatorSettings struct {
@@ -163,9 +164,23 @@ func (c *Client) ConfigureSlotEmulator(ctx context.Context, slot int, p Emulator
 		return out, e
 	}
 	err = c.slotSession(ctx, slot, persist, func(s *ReaderSession) error {
+		var e error
+		out, e = c.configureEmulatorSession(ctx, s, p, nil, nil)
+		return e
+	})
+	return
+}
+func (c *Client) configureEmulatorSession(ctx context.Context, s *ReaderSession, p EmulatorPatch, expected *SlotEmulatorConfiguration, beforeWrite func()) (out SlotEmulatorConfiguration, err error) {
+	if e := p.Validate(); e != nil {
+		return out, e
+	}
+	err = func() error {
 		before, e := c.emulatorConfiguration(ctx, s)
 		if e != nil {
 			return e
+		}
+		if expected != nil && !reflect.DeepEqual(before, *expected) {
+			return fmt.Errorf("emulator configuration changed; refresh before applying")
 		}
 		if p.Family == "classic" && before.Classic == nil || p.Family == "type2" && before.Type2 == nil {
 			return fmt.Errorf("emulator family mismatch; no configuration written")
@@ -234,6 +249,9 @@ func (c *Client) ConfigureSlotEmulator(ctx context.Context, slot int, p Emulator
 			ops = append(ops, operation{4001, 4018, payload})
 		}
 		for _, op := range ops {
+			if beforeWrite != nil {
+				beforeWrite()
+			}
 			if _, e = s.expect(ctx, op.set, op.data, 0x68); e != nil {
 				return fmt.Errorf("configuration may be partial at %s: %w", op.set, e)
 			}
@@ -251,6 +269,9 @@ func (c *Client) ConfigureSlotEmulator(ctx context.Context, slot int, p Emulator
 				continue
 			}
 			payload := []byte{index | boolean(counter.ResetTearing)<<7, byte(*counter.Value), byte(*counter.Value >> 8), byte(*counter.Value >> 16)}
+			if beforeWrite != nil {
+				beforeWrite()
+			}
 			if _, e = s.expect(ctx, CmdMf0NtagSetCounterData, payload, 0x68); e != nil {
 				return e
 			}
@@ -263,6 +284,9 @@ func (c *Client) ConfigureSlotEmulator(ctx context.Context, slot int, p Emulator
 			}
 		}
 		if p.ResetAuthAttempts {
+			if beforeWrite != nil {
+				beforeWrite()
+			}
 			b, e := s.expect(ctx, CmdMf0NtagResetAuthCnt, nil, 0x68)
 			if e != nil {
 				return e
@@ -273,7 +297,8 @@ func (c *Client) ConfigureSlotEmulator(ctx context.Context, slot int, p Emulator
 		}
 		out, e = c.emulatorConfiguration(ctx, s)
 		return e
-	})
+
+	}()
 	return
 }
 func (c *Client) SlotCounter(ctx context.Context, slot, index int, value *uint32, resetTearing bool, persist bool) (out Type2Counter, err error) {

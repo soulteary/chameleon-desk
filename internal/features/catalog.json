@@ -446,8 +446,10 @@
       ],
       "conditional": [],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "POST /api/device/mode"
+        ],
         "controls": []
       },
       "cli": {
@@ -459,12 +461,17 @@
       "sdk": {
         "status": "supported",
         "entries": [
-          "Client.SetReaderMode"
+          "Client.SetReaderMode",
+          "DeviceModeChange.Requirements",
+          "Client.ChangeDeviceModeObserved"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Web mode changes compare the observed mode, require write permission and verify readback. Slot/configuration readers do not switch modes implicitly."
+      ],
       "sources": [
-        "settings.go"
+        "settings.go",
+        "device_mode_workflow.go"
       ],
       "effect": "device-write"
     },
@@ -919,7 +926,7 @@
         }
       ],
       "web": {
-        "status": "missing",
+        "status": "partial",
         "entries": [],
         "controls": []
       },
@@ -944,7 +951,8 @@
         ]
       },
       "notes": [
-        "Selected flags, tag family, counters and persistence determine exact getters/setters."
+        "Selected flags, tag family, counters and persistence determine exact getters/setters.",
+        "Dedicated current-slot, RF configuration, guarded value and inspection entries are listed separately. Existing SDK/raw scope does not imply unrestricted Web execution."
       ],
       "sources": [
         "emulator_workflows.go"
@@ -1169,7 +1177,7 @@
         }
       ],
       "web": {
-        "status": "missing",
+        "status": "partial",
         "entries": [],
         "controls": []
       },
@@ -1189,7 +1197,9 @@
           "Client.SetReaderConfig"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Dedicated current-slot, RF configuration, guarded value and inspection entries are listed separately. Existing SDK/raw scope does not imply unrestricted Web execution."
+      ],
       "sources": [
         "reader_extras.go"
       ],
@@ -1350,7 +1360,7 @@
         }
       ],
       "web": {
-        "status": "missing",
+        "status": "partial",
         "entries": [],
         "controls": []
       },
@@ -1373,7 +1383,9 @@
           "Client.ManipulateClassicValue"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Dedicated current-slot, RF configuration, guarded value and inspection entries are listed separately. Existing SDK/raw scope does not imply unrestricted Web execution."
+      ],
       "sources": [
         "classic_workflows.go"
       ],
@@ -1585,7 +1597,7 @@
         }
       ],
       "web": {
-        "status": "missing",
+        "status": "partial",
         "entries": [],
         "controls": []
       },
@@ -1604,7 +1616,8 @@
         ]
       },
       "notes": [
-        "Log recovery can be offline and needs the mfkey32 worker."
+        "Log recovery can be offline and needs the mfkey32 worker.",
+        "Dedicated current-slot, RF configuration, guarded value and inspection entries are listed separately. Existing SDK/raw scope does not imply unrestricted Web execution."
       ],
       "sources": [
         "detection_recovery.go"
@@ -4571,7 +4584,8 @@
         ]
       },
       "notes": [
-        "GET_VERSION determines modeled geometry. Unreadable and hidden bytes retain masks; supplied passwords are excluded from results."
+        "GET_VERSION determines modeled geometry. Unreadable and hidden bytes retain masks; supplied passwords are excluded from results.",
+        "Supports strict NTAG210/212 GET_VERSION profiles and optional 32-byte signature observation; observation is not cryptographic verification."
       ],
       "sources": [
         "type2_workflow.go",
@@ -5058,6 +5072,444 @@
         "classic_promotion.go",
         "type2_workflow.go",
         "cmd/chameleon/webui/library-editor.js"
+      ]
+    },
+    {
+      "id": "library.organize",
+      "title": "Organize local card and dictionary libraries",
+      "device": false,
+      "write": false,
+      "effect": "offline",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/library/manage"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "library view",
+          "library change",
+          "library import-file",
+          "library diff"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "GUIDatabase.Folders",
+          "GUIDatabase.ApplyLibraryChange",
+          "ParseCardFile",
+          "CompareCards"
+        ]
+      },
+      "notes": [
+        "Atomic folder/dictionary changes and record moves preserve unrelated metadata. Nonempty folders cannot be deleted. External import previews supported PM3/MCT/Flipper subsets as source-preserving drafts; no file declaration becomes physical-read evidence."
+      ],
+      "sources": [
+        "library_management.go"
+      ]
+    },
+    {
+      "id": "reader.type2-batch-plan",
+      "title": "Plan bounded ordinary Type2 page writes",
+      "device": true,
+      "write": false,
+      "effect": "transient-rf",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/type2-batch-plan"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.type2-batch-plan"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.PlanType2UserPages"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "type2_batch_write.go"
+      ]
+    },
+    {
+      "id": "reader.type2-batch-write",
+      "title": "Write and verify bounded ordinary Type2 pages",
+      "device": true,
+      "write": true,
+      "effect": "rf-write",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/type2-batch-write"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.type2-batch-write"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Type2BatchWrite.Requirements",
+          "Client.WriteType2UserPagesObserved"
+        ]
+      },
+      "notes": [
+        "1..32 ordered ordinary user pages only. Execution requires the version from the reviewed plan, all expected bytes and current-session confirmation. Failures stop without replay or rollback; verified and unattempted pages remain explicit."
+      ],
+      "sources": [
+        "type2_batch_write.go"
+      ]
+    },
+    {
+      "id": "reader.value-plan",
+      "title": "Plan a guarded Classic value-block update",
+      "device": true,
+      "write": false,
+      "effect": "transient-rf",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/value-plan"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.value-plan"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.PlanClassicValue"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "guarded_value.go"
+      ]
+    },
+    {
+      "id": "reader.value-write",
+      "title": "Write and verify a guarded Classic value block",
+      "device": true,
+      "write": true,
+      "effect": "rf-write",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/value-write"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.value-write"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ClassicValueRequest.Requirements",
+          "Client.WriteClassicValueObserved"
+        ]
+      },
+      "notes": [
+        "Requires captured identity, explicit key and exact redundant value-block backup. Excludes manufacturer/trailer blocks. One SET write at most; this is not an atomic credit/debit transaction."
+      ],
+      "sources": [
+        "guarded_value.go"
+      ]
+    },
+    {
+      "id": "reader.magic-inspect",
+      "title": "Inspect Magic protocols without memory writes",
+      "device": true,
+      "write": false,
+      "effect": "transient-rf",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/magic-inspect"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.magic-inspect"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "MagicInspection.Requirements",
+          "Client.InspectMagic"
+        ]
+      },
+      "notes": [
+        "Gen1A backdoor read, Gen4 configuration read and Gen3 block-0 readability only. Gen3 cannot be positively identified without a destructive probe; no such probe is performed."
+      ],
+      "sources": [
+        "magic_inspection.go"
+      ]
+    },
+    {
+      "id": "reader.config-read",
+      "title": "Read reader RF overrides",
+      "device": true,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "all",
+      "commands": [
+        2200
+      ],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/config-read"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.config-read"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReaderConfig"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_config_workflow.go"
+      ]
+    },
+    {
+      "id": "reader.config-update",
+      "title": "Update reader RF overrides with compare/readback",
+      "device": true,
+      "write": true,
+      "effect": "device-write",
+      "models": [
+        "ultra"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/reader/config-update"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation reader.config-update"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "ReaderConfigUpdate.Requirements",
+          "Client.ConfigureReaderObserved"
+        ]
+      },
+      "notes": [],
+      "sources": [
+        "reader_config_workflow.go"
+      ]
+    },
+    {
+      "id": "slot.emulator-read",
+      "title": "Read current emulator configuration",
+      "device": true,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/emulator/read"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation slot.emulator-read"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "CurrentEmulatorRequest.Requirements",
+          "Client.ReadCurrentEmulator"
+        ]
+      },
+      "notes": [
+        "Requires the observed current HF slot and emulator mode; does not switch slot or mode. Logs/configuration may contain credentials. Readback and optional flash-save acknowledgement are reported separately."
+      ],
+      "sources": [
+        "current_emulator.go"
+      ]
+    },
+    {
+      "id": "slot.emulator-configure",
+      "title": "Configure current emulator with compare/readback",
+      "device": true,
+      "write": true,
+      "effect": "device-write",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/emulator/configure"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation slot.emulator-configure"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ConfigureCurrentEmulator"
+        ]
+      },
+      "notes": [
+        "Requires the observed current HF slot and emulator mode; does not switch slot or mode. Logs/configuration may contain credentials. Readback and optional flash-save acknowledgement are reported separately."
+      ],
+      "sources": [
+        "current_emulator.go"
+      ]
+    },
+    {
+      "id": "slot.emulator-logs",
+      "title": "Read bounded current emulator detection logs",
+      "device": true,
+      "write": false,
+      "effect": "read",
+      "models": [
+        "ultra",
+        "lite"
+      ],
+      "transport": "any",
+      "requirement_mode": "parameterized",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/slot/emulator/logs"
+        ],
+        "controls": []
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation slot.emulator-logs"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "Client.ReadCurrentDetectionLogs"
+        ]
+      },
+      "notes": [
+        "Requires the observed current HF slot and emulator mode; does not switch slot or mode. Logs/configuration may contain credentials. Readback and optional flash-save acknowledgement are reported separately."
+      ],
+      "sources": [
+        "current_emulator.go"
       ]
     }
   ]

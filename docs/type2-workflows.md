@@ -1,7 +1,7 @@
 # Modeled Type2 reader workflows
 
-The modeled reader path uses GET_VERSION to identify NTAG213, NTAG215,
-NTAG216 and MIFARE Ultralight EV1 640/1312 layouts. It checks the expected
+The modeled reader path uses GET_VERSION to identify NTAG210, NTAG212, NTAG213,
+NTAG215, NTAG216 and MIFARE Ultralight EV1 640/1312 layouts. It checks the expected
 seven-byte UID, SAK, ATQA and ATS before and after each confirmed read chunk,
 and checks GET_VERSION again before completing the operation. Unknown version
 responses are rejected. SAK 00 alone does not establish a model or capacity.
@@ -68,9 +68,12 @@ result and unknown-page masks. The draft is preserved; conversion creates a new
 card ID. Other known page edits and unrelated metadata are retained. A standard
 card can use existing binary export and slot-loading paths, but this conversion
 does not claim to reproduce unknown source credentials or qualify firmware
-emulation behavior on every reader. This workflow does not collect the READ_SIG
-originality signature and does not establish source authenticity or restore that
-signature. Existing emulator defaults apply when no signature extra is supplied.
+emulation behavior on every reader. Optional `capture_signature:true` requests READ_SIG (`3C00`). The result records
+32 observed bytes, bound to the checked identity, with `verified:false`. A failed
+requested signature read leaves the operation incomplete and retains confirmed
+memory. Conversion retains an observed signature in the emulator extra and its
+source provenance; it does not verify cryptographic authenticity. Existing emulator
+defaults apply when no signature extra is supplied.
 
 ## Ordinary user-page writes
 
@@ -79,7 +82,8 @@ The SDK provides `PlanType2UserPage`, `WriteType2UserPage` and
 its four current `expected` bytes and four replacement `data` bytes. Optional
 authentication follows the same no-retry rule as reads.
 
-Only ordinary pages are eligible: 4–39 for NTAG213, 4–129 for NTAG215, 4–225
+Only ordinary pages are eligible: 4–15 for NTAG210, 4–35 for NTAG212,
+4–39 for NTAG213, 4–129 for NTAG215, 4–225
 for NTAG216, 4–15 for EV1 640 and 4–35 for EV1 1312. Manufacturer, static and
 dynamic lock, OTP, capability-container, configuration and credential pages are
 excluded. The helper also rejects active NTAG ASCII mirrors. Locked or protected
@@ -102,6 +106,34 @@ readback, unchanged identity/model and successful cleanup. `write_attempted`,
 After interruption or a lost response, inspect the page before deciding on a
 new write. Desk does not retry or roll back automatically.
 
+## NTAG210/212 layout and multi-page writes
+
+NTAG210 requires version `0004040101000B03` (20 pages, password/PACK at
+18/19). NTAG212 requires `0004040101000E03` (41 pages, dynamic lock at 36,
+password/PACK at 39/40). These profiles have no RF counters. Full reads redact
+secret pages as before; conversion does not invent counter observations or
+counter extras. Their ASCII mirror is enabled by MIRROR_PAGE greater than 3,
+rather than the NTAG213 MIRROR_CONF rule. Active mirrors block conversion and
+ordinary-page writes because virtual bytes do not establish backing memory.
+
+`PlanType2UserPages` and `WriteType2UserPagesObserved` accept `uid`, optional
+`password`, and 1–32 unique ascending `pages`, each containing `page`, `expected`
+and `data`. A plan reads and checks every requested page before execution can
+start. Execution additionally requires the reviewed eight-byte `expected_version`
+and repeats live checks under one serialized reader session.
+
+Web routes `/api/reader/type2-batch-plan` and `/api/reader/type2-batch-write`
+use the same session-bound five-minute confirmation as single-page writes. The
+form shows each original and replacement page. It adds the observed version to
+the execution request before confirmation. Equal data is a verified no-op.
+
+There is no multi-page atomicity. Each successful page is acknowledged and read
+back before proceeding. Results retain a verified prefix; a failed attempted
+page may be `write_outcome_unknown`, and later pages remain `not_started`.
+Cancellation or lost acknowledgement stops the sequence without retry, resume
+or rollback. A confirmed prefix is not proof that the remaining pages are
+unchanged. Inspect all intended pages before planning another operation.
+
 ## Scope and validation
 
 Automated transport fixtures cover exact model recognition, authentication
@@ -111,6 +143,7 @@ acknowledgement/readback failures, cancellation and cleanup failures. These test
 are not hardware qualification of every listed card or firmware version.
 
 Layout, command and hidden-credential behavior are based on the NXP
+[NTAG210/212 data sheet](https://www.nxp.com/docs/en/data-sheet/NTAG210_212.pdf),
 [NTAG213/215/216 data sheet](https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf)
 and [MIFARE Ultralight EV1 data sheet](https://www.nxp.com/docs/en/data-sheet/MF0ULX1.pdf).
 Legacy Ultralight, Ultralight C, NTAG I2C and unrecognized revisions require

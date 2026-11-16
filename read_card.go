@@ -10,20 +10,21 @@ import (
 
 // ReadResult describes one reader operation, not a complete emulator image.
 type ReadResult struct {
-	Slot      *SlotSnapshot      `json:"slot_snapshot,omitempty"`
-	Type2     *Type2ReadMetadata `json:"type2,omitempty"`
-	Identity  *ClassicIdentity   `json:"identity,omitempty"`
-	Schema    int                `json:"schema"`
-	Kind      string             `json:"kind"`
-	Complete  bool               `json:"complete"`
-	Start     int                `json:"start"`
-	Requested int                `json:"requested_units"`
-	Read      int                `json:"units_read"`
-	UID       HexBytes           `json:"uid,omitempty"`
-	Data      HexBytes           `json:"data,omitempty"`
-	Dump      *ClassicCardDump   `json:"dump,omitempty"`
-	Record    *LFRecord          `json:"record,omitempty"`
-	Present   *bool              `json:"present,omitempty"`
+	File      *CardFileObservation `json:"file_observation,omitempty"`
+	Slot      *SlotSnapshot        `json:"slot_snapshot,omitempty"`
+	Type2     *Type2ReadMetadata   `json:"type2,omitempty"`
+	Identity  *ClassicIdentity     `json:"identity,omitempty"`
+	Schema    int                  `json:"schema"`
+	Kind      string               `json:"kind"`
+	Complete  bool                 `json:"complete"`
+	Start     int                  `json:"start"`
+	Requested int                  `json:"requested_units"`
+	Read      int                  `json:"units_read"`
+	UID       HexBytes             `json:"uid,omitempty"`
+	Data      HexBytes             `json:"data,omitempty"`
+	Dump      *ClassicCardDump     `json:"dump,omitempty"`
+	Record    *LFRecord            `json:"record,omitempty"`
+	Present   *bool                `json:"present,omitempty"`
 }
 
 // ReadCardData keeps the original observation separate from the editable draft.
@@ -39,6 +40,18 @@ type ReadCardData struct {
 func (r ReadResult) draftRows() ([]string, error) {
 	if r.Schema != 1 || r.Requested < 1 || r.Requested > 256 || r.Read < 1 || r.Read > r.Requested || r.Start < 0 || r.Start > 255 || (r.Complete && r.Read != r.Requested) {
 		return nil, fmt.Errorf("read result has no confirmed data or invalid counters")
+	}
+	if r.Kind == "file" {
+		if r.File == nil || r.Slot != nil || r.Dump != nil || r.Type2 != nil || r.Record != nil || r.Identity != nil || r.Present != nil || len(r.Data) != 0 || r.Start != 0 || r.Requested != len(r.File.Rows) || r.Read != r.Requested || r.Complete != (r.File.UnknownBytes == 0) || !bytes.Equal(r.UID, r.File.UID) {
+			return nil, fmt.Errorf("invalid file observation envelope")
+		}
+		if err := r.File.Validate(); err != nil {
+			return nil, err
+		}
+		return append([]string(nil), r.File.Rows...), nil
+	}
+	if r.File != nil {
+		return nil, fmt.Errorf("file declarations cannot be used as physical-card observations")
 	}
 	if r.Kind == "slot" {
 		if r.Slot == nil || r.Dump != nil || r.Type2 != nil || r.Record != nil || r.Identity != nil || r.Present != nil || len(r.Data) != 0 || r.Start != 0 || r.Requested != r.Slot.Units || r.Read != r.Slot.Read || r.Complete != r.Slot.Complete {

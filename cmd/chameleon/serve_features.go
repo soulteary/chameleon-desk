@@ -39,6 +39,12 @@ func (ws *webServer) handleFeatureDevice(w http.ResponseWriter, r *http.Request)
 func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
+		ModeChange        *chameleon.DeviceModeChange              `json:"mode_change"`
+		Type2Batch        *chameleon.Type2BatchWrite               `json:"type2_batch"`
+		CurrentEmulator   *chameleon.CurrentEmulatorRequest        `json:"current_emulator"`
+		Value             *chameleon.ClassicValueRequest           `json:"value"`
+		Magic             *chameleon.MagicInspection               `json:"magic"`
+		ReaderConfig      *chameleon.ReaderConfigUpdate            `json:"reader_config"`
 		SlotRead          *chameleon.SlotReadRequest               `json:"slot_read"`
 		DeviceMode        *byte                                    `json:"device_mode"`
 		LFIdentity        *chameleon.LFIdentityInput               `json:"lf_identity"`
@@ -69,7 +75,7 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, 400, err)
 		return
 	}
-	request := chameleon.FeatureRequest{SlotRead: body.SlotRead, DeviceMode: body.DeviceMode, Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
+	request := chameleon.FeatureRequest{ModeChange: body.ModeChange, Type2Batch: body.Type2Batch, CurrentEmulator: body.CurrentEmulator, Value: body.Value, Magic: body.Magic, ReaderConfig: body.ReaderConfig, SlotRead: body.SlotRead, DeviceMode: body.DeviceMode, Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
 	request.ClassicRead, request.Type2Read, request.LFRead = body.ClassicRead, body.Type2Read, body.LFRead
 	request.LFWrite = body.LFWrite
 	request.LFIdentity = body.LFIdentity
@@ -80,6 +86,31 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 	var result chameleon.FeatureAvailability
 	var err error
 	switch body.ID {
+	case "device.mode":
+		if body.ModeChange == nil {
+			err = fmt.Errorf("mode_change required")
+		}
+	case "reader.type2-batch-plan", "reader.type2-batch-write":
+		if body.Type2Batch == nil {
+			err = fmt.Errorf("type2_batch required")
+		}
+	case "reader.value-plan", "reader.value-write":
+		if body.Value == nil {
+			err = fmt.Errorf("value required")
+		}
+	case "reader.magic-inspect":
+		if body.Magic == nil {
+			err = fmt.Errorf("magic required")
+		}
+	case "reader.config-update":
+		if body.ReaderConfig == nil {
+			err = fmt.Errorf("reader_config required")
+		}
+	case "slot.emulator-read", "slot.emulator-configure", "slot.emulator-logs":
+		if body.CurrentEmulator == nil {
+			err = fmt.Errorf("current_emulator required")
+		}
+
 	case "slot.read-current":
 		if body.SlotRead == nil {
 			err = fmt.Errorf("slot_read is required")

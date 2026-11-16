@@ -28,9 +28,9 @@ function valueStrip(label, value, copy = true) {
 function cardPanel(card, title = "卡片详情", subtitle = "当前卡片文件") {
   if (!card || !Number.isInteger(card.tag) || !Array.isArray(card.data)) throw new Error("卡片结果不完整，请重新读取");
   if(card.desk_read){
-    const draft=card.desk_read,r=draft.read_result,panel=toolPanel('cards',card.name||title,'Desk 读取草稿',r.kind==='lf'?'LF':'HF');
-    panel.append(fieldGrid([['读取类型',r.kind],['原始 UID / ID',r.uid||r.record?.id],['原始读取状态',r.complete?'请求范围读取完成':'部分 / 中断'],['确认单元',r.units_read+' / '+r.requested_units],['起始单元',r.start],['文件 ID',card.id]]));
-    panel.append(el('p','inference-note','数据编辑位于下方。未知字节以 ?? 保留；原始读取结果与编辑分开保存。未转换的草稿仅支持 Desk JSON。符合条件的 Classic 可在下方转换；草稿不能直接加载槽位或转换为二进制 / 镜像。'));
+    const draft=card.desk_read,r=draft.read_result,panel=toolPanel('cards',card.name||title,'Desk 读取草稿',r.kind==='lf'||r.slot_snapshot?.sense===1||r.file_observation?.sense===1?'LF':'HF');
+    panel.append(fieldGrid([['读取类型',r.kind],['原始 UID / ID',r.uid||r.record?.id||r.slot_snapshot?.record?.id||(r.file_observation?.sense===1?r.file_observation.rows?.[0]:null)],['来源状态',r.kind==='file'?'文件声明（不是实体观察）':r.complete?'请求范围读取完成':'部分 / 中断'],[r.kind==='file'?'文件行数':'确认单元',r.units_read+' / '+r.requested_units],['起始单元',r.start],['文件 ID',card.id]]));
+    panel.append(el('p','inference-note','数据编辑位于下方。未知字节以 ?? 保留；原始读取结果与编辑分开保存。未转换的草稿仅支持 Desk JSON。转换条件以下方能力检查为准；外部文件来源不进入实体读取转换。草稿不能直接加载槽位或转换为二进制 / 镜像。'));
     return panel;
   }
   const panel = toolPanel("cards", card.name || title, subtitle, card.tag >= 1000 ? "HF" : "LF");

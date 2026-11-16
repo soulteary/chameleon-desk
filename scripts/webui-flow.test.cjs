@@ -62,7 +62,7 @@ async function page(t, routes = {}, { width = 1368, height = 900, writes = false
   w.HTMLAnchorElement.prototype.click = function () { downloads.at(-1).name = this.download; };
   const inputClick = w.HTMLInputElement.prototype.click;
   w.HTMLInputElement.prototype.click = function () { if (this.type === 'file') imports.push(this); else inputClick.call(this); };
-  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'slot-reader.js', 'reader.js', 'reader-workflows.js', 'memory-editor.js', 'library-editor.js', 'app.js']) {
+  for (const file of ['window-geometry.js', 'desktop.js', 'tool-panels.js', 'library-persistence.js', 'feature-availability.js', 'background-tasks.js', 'configuration.js', 'slot-reader.js', 'reader.js', 'reader-workflows.js','workflow-forms.js','emulator-tools.js', 'memory-editor.js', 'library-editor.js','library-manager.js','conflict-forms.js', 'app.js']) {
     if (file === 'app.js') {
       const Controller = w.DeskLibraryPersistence;
       w.DeskLibraryPersistence = class extends Controller { constructor(options) { super(options); persistence.push(this); } };

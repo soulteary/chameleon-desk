@@ -103,6 +103,10 @@ func (d GUIDatabase) Records(dictionaries bool, query, sense string) ([]GUIRecor
 						s.UID = draft.Rows[0]
 					}
 				}
+				if draft.Result.Kind == "file" && draft.Result.File != nil && draft.Result.File.Sense == SenseLF {
+					s.Frequency = "lf"
+					s.UID = draft.Rows[0]
+				}
 				if draft.Result.Kind == "lf" {
 					s.Frequency = "lf"
 					s.UID = draft.Rows[0]

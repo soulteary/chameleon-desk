@@ -17,18 +17,27 @@ type Type2UnknownBytes struct {
 	Reason string `json:"reason"`
 }
 
+type Type2SignatureObservation struct {
+	Schema   int      `json:"schema"`
+	Status   string   `json:"status"`
+	Data     HexBytes `json:"data,omitempty"`
+	Verified bool     `json:"verified"`
+	Error    string   `json:"error,omitempty"`
+}
+
 type Type2ReadMetadata struct {
-	Schema        int                 `json:"schema"`
-	Identity      *ClassicIdentity    `json:"identity"`
-	Model         string              `json:"model"`
-	TagType       uint16              `json:"tag_type"`
-	Version       HexBytes            `json:"version"`
-	Pages         int                 `json:"pages"`
-	UserFirst     int                 `json:"user_first"`
-	UserLast      int                 `json:"user_last"`
-	Counters      []int               `json:"counters,omitempty"`
-	Authenticated bool                `json:"authenticated"`
-	Unknown       []Type2UnknownBytes `json:"unknown"`
+	Signature     *Type2SignatureObservation `json:"signature,omitempty"`
+	Schema        int                        `json:"schema"`
+	Identity      *ClassicIdentity           `json:"identity"`
+	Model         string                     `json:"model"`
+	TagType       uint16                     `json:"tag_type"`
+	Version       HexBytes                   `json:"version"`
+	Pages         int                        `json:"pages"`
+	UserFirst     int                        `json:"user_first"`
+	UserLast      int                        `json:"user_last"`
+	Counters      []int                      `json:"counters,omitempty"`
+	Authenticated bool                       `json:"authenticated"`
+	Unknown       []Type2UnknownBytes        `json:"unknown"`
 }
 
 type type2Layout struct {
@@ -49,6 +58,14 @@ func type2LayoutForVersion(version []byte) (type2Layout, error) {
 			return type2Layout{"NTAG215", 1101, 135, 129, 133, 134}, nil
 		case 0x13:
 			return type2Layout{"NTAG216", 1102, 231, 225, 229, 230}, nil
+		}
+	}
+	if version[2] == 4 && version[3] == 1 {
+		switch version[6] {
+		case 0x0b:
+			return type2Layout{"NTAG210", 1107, 20, 15, 18, 19}, nil
+		case 0x0e:
+			return type2Layout{"NTAG212", 1108, 41, 35, 39, 40}, nil
 		}
 	}
 	if version[2] == 3 && (version[3] == 1 || version[3] == 2) {
@@ -82,6 +99,27 @@ func (m Type2ReadMetadata) Validate() error {
 	}
 	if err = validateType2Identity(*m.Identity); err != nil {
 		return err
+	}
+	if sig := m.Signature; sig != nil {
+		if sig.Schema != 1 || sig.Verified {
+			return fmt.Errorf("signature observation does not establish cryptographic verification")
+		}
+		switch sig.Status {
+		case "not_captured":
+			if len(sig.Data) != 0 || sig.Error != "" {
+				return fmt.Errorf("invalid uncaptured signature")
+			}
+		case "observed":
+			if len(sig.Data) != 32 || sig.Error != "" {
+				return fmt.Errorf("invalid observed signature")
+			}
+		case "failed":
+			if len(sig.Data) != 0 || sig.Error == "" {
+				return fmt.Errorf("invalid failed signature observation")
+			}
+		default:
+			return fmt.Errorf("unknown signature observation state")
+		}
 	}
 	if len(m.Counters) > 3 {
 		return fmt.Errorf("invalid Type2 counter count")
@@ -148,7 +186,7 @@ func ValidateType2ReadResult(r ReadResult) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
-	if r.Kind != "type2" || r.Schema != 1 || r.Identity != nil || r.Dump != nil || r.Record != nil || r.Present != nil || !bytes.Equal(m.Identity.UID, r.UID) || r.Start < 0 || r.Requested < 1 || r.Start+r.Requested > m.Pages || r.Read < 0 || r.Read > r.Requested || len(r.Data) != r.Read*4 || (r.Complete && r.Read != r.Requested) {
+	if r.File != nil || r.Kind != "type2" || r.Schema != 1 || r.Identity != nil || r.Dump != nil || r.Record != nil || r.Present != nil || !bytes.Equal(m.Identity.UID, r.UID) || r.Start < 0 || r.Requested < 1 || r.Start+r.Requested > m.Pages || r.Read < 0 || r.Read > r.Requested || len(r.Data) != r.Read*4 || (r.Complete && r.Read != r.Requested) {
 		return fmt.Errorf("Type2 metadata differs from operation bounds or identity")
 	}
 	layout, _ := type2LayoutForVersion(m.Version)
@@ -202,11 +240,12 @@ func ApplyType2ReadMasks(m *Type2ReadMetadata, rows []string) ([]string, error) 
 }
 
 type Type2WorkflowRead struct {
-	UID      HexBytes `json:"uid"`
-	Start    int      `json:"start"`
-	Count    int      `json:"count"`
-	Full     bool     `json:"full"`
-	Password HexBytes `json:"password,omitempty"`
+	CaptureSignature bool     `json:"capture_signature,omitempty"`
+	UID              HexBytes `json:"uid"`
+	Start            int      `json:"start"`
+	Count            int      `json:"count"`
+	Full             bool     `json:"full"`
+	Password         HexBytes `json:"password,omitempty"`
 }
 
 func (r Type2WorkflowRead) Requirements() ([]Command, error) {
@@ -384,6 +423,44 @@ func (c *Client) ReadType2Workflow(ctx context.Context, input Type2WorkflowRead)
 				out.Type2.Counters = append(out.Type2.Counters, int(counter[0])|int(counter[1])<<8|int(counter[2])<<16)
 			}
 		}
+		if input.CaptureSignature {
+			sig := &Type2SignatureObservation{Schema: 1, Status: "not_captured"}
+			out.Type2.Signature = sig
+			capture := func() error {
+				if e := type2Observe(ctx, s, input.UID, &identity); e != nil {
+					return e
+				}
+				if len(input.Password) > 0 {
+					if _, e := type2Password(ctx, s, input.Password); e != nil {
+						return e
+					}
+				}
+				options := RawOptions{WaitResponse: true, AppendCRC: true, CheckResponseCRC: true, KeepField: true, TimeoutMS: 500}
+				if len(input.Password) == 0 {
+					options.ActivateField = true
+					options.AutoSelect = true
+				}
+				data, e := s.Raw14A(ctx, []byte{0x3c, 0}, options)
+				if e != nil {
+					return e
+				}
+				if len(data) != 32 {
+					return fmt.Errorf("READ_SIG requires 32 signature bytes")
+				}
+				if e = type2Observe(ctx, s, input.UID, &identity); e != nil {
+					return e
+				}
+				sig.Status = "observed"
+				sig.Data = append(HexBytes(nil), data...)
+				return nil
+			}
+			if e := capture(); e != nil {
+				sig.Status = "failed"
+				sig.Data = nil
+				sig.Error = e.Error()
+				return e
+			}
+		}
 		final, e := type2Version(ctx, s)
 		if e != nil {
 			return e
@@ -400,14 +477,18 @@ func (c *Client) ReadType2Workflow(ctx context.Context, input Type2WorkflowRead)
 // Type2PageWrite changes one ordinary user page. Expected is a mandatory
 // compare-before-write value from an explicit backup or current read.
 type Type2PageWrite struct {
-	UID      HexBytes `json:"uid"`
-	Page     int      `json:"page"`
-	Data     HexBytes `json:"data"`
-	Expected HexBytes `json:"expected"`
-	Password HexBytes `json:"password,omitempty"`
+	ExpectedVersion HexBytes `json:"expected_version,omitempty"`
+	UID             HexBytes `json:"uid"`
+	Page            int      `json:"page"`
+	Data            HexBytes `json:"data"`
+	Expected        HexBytes `json:"expected"`
+	Password        HexBytes `json:"password,omitempty"`
 }
 
 func (r Type2PageWrite) Requirements() ([]Command, error) {
+	if len(r.ExpectedVersion) != 0 && len(r.ExpectedVersion) != 8 {
+		return nil, fmt.Errorf("expected version requires eight bytes")
+	}
 	if len(r.UID) != 7 || r.Page < 4 || r.Page > 225 || len(r.Data) != 4 || len(r.Expected) != 4 || (len(r.Password) != 0 && len(r.Password) != 4) {
 		return nil, fmt.Errorf("Type2 ordinary-page write requires expected seven-byte UID, page>=4, four-byte data/expected values and optional four-byte password")
 	}
@@ -415,6 +496,7 @@ func (r Type2PageWrite) Requirements() ([]Command, error) {
 }
 
 type Type2PageWriteResult struct {
+	Version         HexBytes `json:"version,omitempty"`
 	Schema          int      `json:"schema"`
 	Model           string   `json:"model,omitempty"`
 	UID             HexBytes `json:"uid"`
@@ -459,8 +541,21 @@ func (c *Client) type2UserPage(ctx context.Context, input Type2PageWrite, before
 	if _, err = input.Requirements(); err != nil {
 		return out, err
 	}
+	err = c.Reader(ctx, func(s *ReaderSession) error {
+		var e error
+		out, e = type2UserPageSession(ctx, s, input, beforeWrite, planOnly)
+		return e
+	})
+	out.Verified = err == nil && out.ReadbackMatches
+	return out, err
+}
+
+func type2UserPageSession(ctx context.Context, s *ReaderSession, input Type2PageWrite, beforeWrite func(), planOnly bool) (out Type2PageWriteResult, err error) {
+	if _, err = input.Requirements(); err != nil {
+		return out, err
+	}
 	out = Type2PageWriteResult{Schema: 1, UID: append(HexBytes(nil), input.UID...), Page: input.Page}
-	err = c.Reader(ctx, func(s *ReaderSession) (e error) {
+	err = func() (e error) {
 		defer s.fieldCleanup(&e)
 		var identity ClassicIdentity
 		if e = type2Observe(ctx, s, input.UID, &identity); e != nil {
@@ -474,7 +569,11 @@ func (c *Client) type2UserPage(ctx context.Context, input Type2PageWrite, before
 		if e != nil {
 			return e
 		}
+		if len(input.ExpectedVersion) > 0 && !bytes.Equal(input.ExpectedVersion, version) {
+			return fmt.Errorf("Type2 model differs from planned version; write not attempted")
+		}
 		out.Model = layout.name
+		out.Version = append(HexBytes(nil), version...)
 		if e = type2Observe(ctx, s, input.UID, &identity); e != nil {
 			return e
 		}
@@ -498,12 +597,12 @@ func (c *Client) type2UserPage(ctx context.Context, input Type2PageWrite, before
 			}
 			return data, nil
 		}
-		if layout.tag >= 1100 && layout.tag <= 1102 {
+		if layout.tag >= 1100 && layout.tag <= 1102 || layout.tag == 1107 || layout.tag == 1108 {
 			cfg, e := readBounded(layout.passwordPage-2, layout.passwordPage-1)
 			if e != nil {
 				return e
 			}
-			if cfg[0]&0xc0 != 0 && cfg[2] > 3 {
+			if type2MirrorEnabled(layout, cfg) {
 				return fmt.Errorf("Type2 ASCII mirror is enabled; virtual readback cannot verify a physical-page write")
 			}
 		}
@@ -579,7 +678,8 @@ func (c *Client) type2UserPage(ctx context.Context, input Type2PageWrite, before
 		}
 		out.ReadbackMatches = true
 		return nil
-	})
+
+	}()
 	out.Verified = err == nil && out.ReadbackMatches
 	return out, err
 }
