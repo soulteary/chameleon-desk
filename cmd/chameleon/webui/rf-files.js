@@ -44,6 +44,14 @@
       for(let start=0;start<bytes.length;start+=65536){parts.push(Array.from(bytes.subarray(start,start+65536),b=>b.toString(16).padStart(2,'0')).join(''));if(start+65536<bytes.length)await new Promise(r=>setTimeout(r,0));if(epoch!==this.fileEpoch)return;}
       this.bytes=bytes;this.hex=parts.join('');this.fileName=file.name;this.status('原文件已读取：'+file.name+' · '+bytes.length+' 字节。请选择明确格式与解析参数。');this.sync();
     }
+    useCapture(file){
+      if(this.pending||this.busy())throw Error('离线分析正在处理，请稍后导入采集文件。');
+      if(!file||!['hf-json','lf-json','lf-u8'].includes(file.format)||typeof file.data!=='string'||!file.data.length||file.data.length>2097152||file.data.length%2||!/^[0-9a-f]+$/i.test(file.data))throw Error('采集文件格式或大小无效。');
+      this.invalidate(true);this.fileEpoch=(this.fileEpoch||0)+1;
+      this.bytes=Uint8Array.from(file.data.match(/../g),v=>parseInt(v,16));this.hex=file.data;this.fileName=file.name;
+      $('rf-file').value='';$('rf-format').value=file.format;$('rf-short-markers').checked=false;$('rf-layout').value='data';$('rf-rate').value='0';$('rf-start').value='0';$('rf-count').value='0';$('rf-decode').checked=false;
+      this.root.open=true;this.status('已接收采集文件；尚未执行离线分析。HF 默认 data 仅保留声明位/字节，不能假定所有 RX/TX 都使用同一种奇偶位布局。');this.sync();
+    }
     input(output=''){
       const format=$('rf-format').value,lf=format.startsWith('lf-');
       const integer=(id)=>{const v=Number($(id).value);if(!Number.isSafeInteger(v)||v<0)throw Error('范围、时钟和采样率必须为非负整数。');return v;};

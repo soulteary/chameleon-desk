@@ -3,7 +3,9 @@
 The Reader window's **RF / trace offline file analysis** panel accepts files only.
 It does not acquire samples, transmit, change device mode, authenticate a card,
 run recovery workers or import observations into the card library. Existing
-CLI/SDK acquisition APIs retain their separate behavior and restrictions.
+CLI/SDK acquisition APIs retain their separate behavior and restrictions. The
+separate [Web RF capture panel](rf-capture.md) can explicitly transfer a returned
+file here; selecting or analyzing a file never starts acquisition.
 
 Choose a format, select a local file, set the range/options and run analysis.
 Changing source or parameters invalidates export eligibility for the previous

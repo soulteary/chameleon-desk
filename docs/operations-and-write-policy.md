@@ -77,3 +77,8 @@ required device session. This is a server-owned exception for non-device,
 non-write features; it does not relax any device operation. See
 [offline RF/trace analysis](offline-rf-trace.md) for bounds, retention and the
 explicit distinction between file/candidate observations and live RF evidence.
+
+`rf.hf-sniff` retains an explicit mutation gate for emulator RAM reloads; this
+does not grant physical-card write permission. HF auth trace and LF acquisition
+are separately registered reads with mode/slot impact acknowledgment. Capture
+results never establish that unsaved slot RAM survived mode restoration.

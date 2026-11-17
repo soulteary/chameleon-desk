@@ -398,6 +398,8 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) (fun
 
 func (ws *webServer) operationHandler(path string) http.HandlerFunc {
 	switch path {
+	case "/api/rf/hf-sniff", "/api/rf/hf-auth", "/api/rf/lf-capture":
+		return ws.handleRFCapture
 	case "/api/files/rf/analyze":
 		return ws.handleRFFile
 	case "/api/environment":

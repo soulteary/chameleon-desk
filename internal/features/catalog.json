@@ -2533,7 +2533,7 @@
       "id": "rf.hf-trace",
       "title": "HF sniff and authentication trace",
       "device": true,
-      "write": false,
+      "write": true,
       "models": [
         "ultra"
       ],
@@ -2558,8 +2558,12 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "Reader RF capture panel",
+          "POST /api/rf/hf-sniff",
+          "POST /api/rf/hf-auth"
+        ],
         "controls": []
       },
       "cli": {
@@ -2573,13 +2577,22 @@
         "status": "supported",
         "entries": [
           "Client.SniffHF",
-          "Client.AuthTrace"
+          "Client.AuthTrace",
+          "Client.CaptureRF"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Capture requires acknowledgment of temporary mode changes and possible loss of unsaved emulator RAM. Original mode is read back; cancellation or cleanup failure leaves device state to be checked.",
+        "No slot save, physical-card write, automatic capture retry or recovery invocation is added.",
+        "Sniff uses the active card emulator and reloads its slot from storage; it is not passive third-party capture. Auth trace is an active keyed exchange and includes firmware-generated frames. RX/TX parity layout can differ; offline interpretation remains explicit.",
+        "Web HF sniff additionally requires --allow-writes because it reloads mutable emulator RAM; its task is conservatively classified as a mutation. Auth trace remains an acknowledged read."
+      ],
       "sources": [
         "advanced.go",
-        "reader_extras.go"
+        "reader_extras.go",
+        "rf_capture.go",
+        "cmd/chameleon/serve_rf_capture.go",
+        "docs/rf-capture.md"
       ],
       "effect": "parameter-dependent"
     },
@@ -2612,8 +2625,11 @@
         }
       ],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "Reader RF capture panel",
+          "POST /api/rf/lf-capture"
+        ],
         "controls": []
       },
       "cli": {
@@ -2627,12 +2643,20 @@
         "status": "supported",
         "entries": [
           "Client.CaptureLF",
-          "Client.ReadLFADC"
+          "Client.ReadLFADC",
+          "Client.CaptureRF"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Capture requires acknowledgment of temporary mode changes and possible loss of unsaved emulator RAM. Original mode is read back; cancellation or cleanup failure leaves device state to be checked.",
+        "No slot save, physical-card write, automatic capture retry or recovery invocation is added.",
+        "Samples and ADC enable the reader field. Requested duration is a timeout ceiling; buffer limits do not establish a complete interval. ADC sample rate remains unknown."
+      ],
       "sources": [
-        "reader_extras.go"
+        "reader_extras.go",
+        "rf_capture.go",
+        "cmd/chameleon/serve_rf_capture.go",
+        "docs/rf-capture.md"
       ],
       "effect": "parameter-dependent"
     },
@@ -4870,7 +4894,7 @@
         ]
       },
       "notes": [
-        "Requires explicit identity, geometry, candidate keys and a 1\u201330 second limit. Independent verification follows discovery."
+        "Requires explicit identity, geometry, candidate keys and a 1–30 second limit. Independent verification follows discovery."
       ],
       "sources": [
         "classic_repair_dictionary.go",
