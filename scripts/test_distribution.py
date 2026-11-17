@@ -116,3 +116,22 @@ class RecoveryCompanionTests(unittest.TestCase):
                 (folder/("nested.exe" if info["os"]=="windows" else "nested")).write_bytes(b"changed")
                 self.sums(root)
                 with self.assertRaisesRegex(ValueError,"worker checksum"):installer.verify(root)
+
+
+class RecoveryStaticLinkTests(unittest.TestCase):
+    def test_private_crypto_dependencies_are_static_and_missing_inputs_fail(self):
+        recovery = module("recovery_static", "build_recovery.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for name in ("libz.a", "libzstd.a", "libjitterentropy.a"):
+                (root/name).write_bytes(b"archive")
+            def locate(command, **kwargs):
+                self.assertEqual(command[0], "compiler")
+                return str(root/command[1].split("=",1)[1])+"\n"
+            with patch.object(recovery.subprocess, "check_output", side_effect=locate):
+                flags, archives = recovery.linux_static_links("compiler", "-lcrypto -ldl -pthread -lz -lzstd -ljitterentropy")
+                self.assertEqual([p.name for p in archives], ["libz.a","libzstd.a","libjitterentropy.a"])
+                self.assertEqual(flags[:2],["-ldl","-pthread"])
+                self.assertTrue(all(str(p) in flags for p in archives))
+                with self.assertRaisesRegex(ValueError,"missing static dependency"):
+                    recovery.linux_static_links("compiler","-lmissing")

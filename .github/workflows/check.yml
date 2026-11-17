@@ -66,7 +66,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libssl-dev liblzma-dev
+          sudo apt-get install --yes libssl-dev liblzma-dev pkg-config zlib1g-dev libzstd-dev
+          if pkg-config --static --libs libcrypto | grep -q jitterentropy; then
+            if apt-cache show libjitterentropy3-dev >/dev/null 2>&1; then
+              sudo apt-get install --yes libjitterentropy3-dev
+            else
+              sudo apt-get install --yes libjitterentropy-dev
+            fi
+          fi
       - name: Install macOS companion build dependencies
         if: runner.os == 'macOS'
         run: |

@@ -57,7 +57,8 @@ makes no bridge data connection.
 Build a companion distribution with `scripts/build_distribution.py
 --with-recovery` and the existing wheelhouse arguments. The native build requires
 C/pthread headers plus static OpenSSL and liblzma archives and their notices.
-Linux uses the distribution development packages, macOS Homebrew `openssl@3` and
+Linux uses the distribution development packages and `pkg-config` to resolve
+OpenSSL static dependencies (including compression/entropy libraries when required), macOS Homebrew `openssl@3` and
 `xz`, Windows MSYS2 UCRT64 `gcc`, `openssl` and `xz`. Set `--cc` explicitly when
 several compilers exist. CI uses the matching native compiler, builds the entire
 archive twice, compares bytes, verifies a fresh extraction and runs explicit
