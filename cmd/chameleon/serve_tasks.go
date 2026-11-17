@@ -182,6 +182,13 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 	} else {
 		operation, _ = chameleon.OperationForPath(input.Path)
 	}
+	if operation.Scope == "offline" {
+		if input.SessionID != "" && input.SessionID != "offline" {
+			writeErr(w, 400, fmt.Errorf("offline tasks do not accept a device session"))
+			return
+		}
+		input.SessionID = "offline"
+	}
 	input.OperationID = operation.ID
 	method, write := taskPath(input.Path)
 	if method == "" || len(input.RequestID) < 16 || len(input.RequestID) > 128 || input.SessionID == "" {
@@ -213,7 +220,7 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if input.SessionID != ws.currentSessionID() {
+	if operation.SessionRequired && input.SessionID != ws.currentSessionID() {
 		ts.mu.Unlock()
 		writeErr(w, 409, fmt.Errorf("device session changed"))
 		return
@@ -278,6 +285,7 @@ func (ws *webServer) handleTasks(w http.ResponseWriter, r *http.Request) {
 			ts.mu.Lock()
 			defer ts.mu.Unlock()
 			defer func() { _ = ts.persistLocked(t) }()
+			defer ts.pruneOfflineResultsLocked(16 << 20)
 			t.Status = out.status
 			if t.Status == 0 {
 				t.Status = 200
@@ -390,6 +398,8 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) (fun
 
 func (ws *webServer) operationHandler(path string) http.HandlerFunc {
 	switch path {
+	case "/api/files/rf/analyze":
+		return ws.handleRFFile
 	case "/api/environment":
 		return ws.handleEnvironment
 	case "/api/bridge/status", "/api/bridge/scan", "/api/bridge/select", "/api/bridge/connect", "/api/bridge/disconnect":
@@ -451,4 +461,29 @@ func (ws *webServer) operationHandler(path string) http.HandlerFunc {
 		return ws.handleSlotLoadCard
 	}
 	return nil
+}
+
+// Keep offline result bodies under a shared memory budget. Metadata and durable
+// receipts remain queryable; dropping an old result never resubmits its input.
+func (ts *webTasks) pruneOfflineResultsLocked(budget int) {
+	total := 0
+	for _, t := range ts.records {
+		if o, ok := chameleon.OperationForPath(t.Path); ok && o.Scope == "offline" {
+			total += len(t.Result)
+		}
+	}
+	for _, id := range ts.order {
+		if total <= budget {
+			break
+		}
+		t := ts.records[id]
+		if t == nil || !taskTerminal(t) {
+			continue
+		}
+		if o, ok := chameleon.OperationForPath(t.Path); ok && o.Scope == "offline" {
+			total -= len(t.Result)
+			t.Result = nil
+			t.ResultRetained = false
+		}
+	}
 }

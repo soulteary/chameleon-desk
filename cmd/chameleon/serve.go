@@ -49,6 +49,8 @@ type webServer struct {
 	port             string
 	timeout          time.Duration
 	allowWrites      bool
+	rfOnce           sync.Once
+	rfGate           chan struct{}
 	gateOnce         sync.Once
 	gate             chan struct{}
 	listenPort       string
@@ -560,7 +562,7 @@ func readBody(r *http.Request, limit int64) ([]byte, error) {
 func decodeBody(r *http.Request, v any) error {
 	limit := int64(1 << 20)
 	switch r.URL.Path {
-	case "/api/slot/load-card", "/api/ndef/write", "/api/features/check":
+	case "/api/slot/load-card", "/api/ndef/write", "/api/features/check", "/api/files/rf/analyze":
 		limit = webCardBodyLimit
 	case "/api/tasks":
 		limit = webCardBodyLimit + (64 << 10)

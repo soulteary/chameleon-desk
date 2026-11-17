@@ -87,6 +87,10 @@ Device information, scans and slot writes use [background tasks](docs/background
 
 The slot window can [read the current emulator slot](docs/current-slot-snapshots.md), preview confirmed and unknown data, and import a distinct snapshot draft into the local card library. Complete snapshots that pass type-specific checks can be explicitly converted to standard saved cards while retaining their source draft and provenance. This does not switch slots/modes or enable physical-card writing.
 
+The Reader window includes an [offline RF/trace workbench](docs/offline-rf-trace.md)
+for bounded LF sample and HF frame files, selection, candidate checks and exports.
+It uses offline tasks and does not acquire hardware data.
+
 The [recovery companion and environment tools](docs/recovery-environment.md) provide
 matching native workers, bridge management through Desk tasks, and a Web diagnosis
 panel. They preserve the existing transport and write boundaries.

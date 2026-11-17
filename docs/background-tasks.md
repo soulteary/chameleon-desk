@@ -209,3 +209,18 @@ slot/channel in emulator mode without switching, saving or writing. Partial
 results retain confirmed units; a changed source prevents library import. The
 Web task panel can explicitly import retained slot snapshots as distinct drafts.
 See [current-slot snapshots](current-slot-snapshots.md) for layouts and limits.
+
+## Offline file operations
+
+Registered `scope: offline` operations have `session_required: false`; all existing
+device/bridge operations retain their session scope. The SDK and server normalize
+an omitted offline session to the fixed `offline` audit marker and refuse a device
+session on that scope. Operation scope cannot be selected in a request. Offline
+scope is restricted to non-device, non-write features in the registry.
+
+The [RF/trace file workbench](offline-rf-trace.md) uses this scope. Its tasks do not
+open or serialize on the hardware gate and remain valid across device reconnects.
+Its durable `offline-analysis` phase recovers as an interrupted read, with no
+replay. Offline result bodies use a shared 16 MiB memory budget: old terminal
+bodies can expire while receipts and metadata remain. Device result retention and
+write retry rules are unchanged. Journals never retain imported files or bodies.

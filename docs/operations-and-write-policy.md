@@ -71,3 +71,9 @@ plan/backup. A new request ID is a new operation, not a safe retry mechanism.
 See [task durability and clients](background-tasks.md) for restart handling,
 record limits and examples. Tests use simulated transports; they do not establish
 physical RF success, storage-device power-loss guarantees or adapter behavior.
+
+Offline file analysis is registered separately with `scope: offline` and no
+required device session. This is a server-owned exception for non-device,
+non-write features; it does not relax any device operation. See
+[offline RF/trace analysis](offline-rf-trace.md) for bounds, retention and the
+explicit distinction between file/candidate observations and live RF evidence.

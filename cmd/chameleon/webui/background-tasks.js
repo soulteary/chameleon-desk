@@ -37,7 +37,7 @@
      const dismiss=node("button","我已记录，移除此页提醒");dismiss.onclick=()=>{this.pending=this.pending.filter(p=>p.requestID!==receipt.requestID);this.remember();this.render(tasks);};warning.append(dismiss);this.container.append(warning);
     }
    }
-   const labels={queued:"排队中",running:"设备执行中",succeeded:"已完成",failed:"失败",canceled:"执行前取消",interrupted:"执行中断"};
+   const labels={queued:"排队中",running:"执行中",succeeded:"已完成",failed:"失败",canceled:"执行前取消",interrupted:"执行中断"};
    for(const task of tasks) {
     const row=node("article");row.dataset.taskId=task.id;row.dataset.state=task.state;
     row.append(node("strong",`${labels[task.state]||task.state} · ${task.path}`));
@@ -47,7 +47,7 @@
     if(task.cancel_requested)row.append(node("p","已请求取消；等待执行结束，取消不代表撤销已执行命令。"));
     if(task.outcome==="write_not_started")row.append(node("p","写入尚未开始；验证或预检未通过，没有调用修改接口。"));
     if(task.outcome==="write_outcome_unknown")row.append(node("p","写入结果未知：部分命令可能已经生效。请读取设备状态核对，不要直接重复写入。"));
-    if(task.outcome==="read_interrupted")row.append(node("p","读取已中断；设备模式或临时状态可能需要核对。"));
+    if(task.outcome==="read_interrupted")row.append(node("p",this.operation(task.path)?.session_required===false?"离线分析已中断；请保留原文件，任务不会自动重放。":"读取已中断；设备模式或临时状态可能需要核对。"));
     if(!terminal(task)){const cancel=node("button","取消任务");cancel.onclick=async()=>{cancel.disabled=true;try{await this.api(`/api/tasks/${task.id}/cancel`,{method:"POST",body:"{}"});await this.refresh();}catch(e){row.append(node("p",e.message));cancel.disabled=false;}};row.append(cancel);}
     const result=task.result||this.results.get(task.id);
     if(result){const details=node("details"),pre=node("pre",JSON.stringify(result,null,2));details.open=this.expanded.has(task.id);details.ontoggle=()=>{if(details.open)this.expanded.add(task.id);else this.expanded.delete(task.id);};details.append(node("summary","查看结果与已确认阶段"),pre);row.append(details);}
@@ -70,7 +70,7 @@
    // Parse before keeping a receipt: invalid local input was never submitted.
    const body=opts.body!=null?JSON.parse(opts.body):undefined;
    if(!this.serverID)await this.refresh();
-   const sessionID=opts.headers?.["X-Chameleon-Session"];
+   const sessionID=operation.session_required===false?"offline":opts.headers?.["X-Chameleon-Session"];
    if(!sessionID)throw new Error("请先刷新设备会话");
    const receipt={serverID:this.serverID,requestID:window.crypto.randomUUID(),write:operation.write};
    this.pending.push(receipt);this.remember();

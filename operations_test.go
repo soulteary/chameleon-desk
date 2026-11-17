@@ -20,7 +20,7 @@ func TestOperationsHaveUniqueTaskRoutesAndFeatureRequirements(t *testing.T) {
 		}
 		ids[o.ID] = true
 		paths[o.Path] = true
-		if o.Feature.ID != o.FeatureID || !o.SessionRequired || o.RetryPolicy != "never" || (o.Method != "GET" && o.Method != "POST") || (o.Write && o.Method != "POST") {
+		if o.Feature.ID != o.FeatureID || o.SessionRequired != (o.Scope != "offline") || o.RetryPolicy != "never" || (o.Method != "GET" && o.Method != "POST") || (o.Write && o.Method != "POST") {
 			t.Fatalf("invalid operation: %+v", o)
 		}
 		if o.Write && !o.Feature.Write {

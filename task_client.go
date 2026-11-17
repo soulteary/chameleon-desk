@@ -156,8 +156,8 @@ func (c *TaskClient) request(ctx context.Context, method, path string, body any,
 	return response.StatusCode, json.Unmarshal(b, out)
 }
 func (c *TaskClient) Submit(ctx context.Context, input TaskSubmission) (out TaskSnapshot, err error) {
-	if len(input.RequestID) < 16 || len(input.RequestID) > 128 || input.SessionID == "" {
-		return out, fmt.Errorf("request_id (16–128 bytes) and session_id are required")
+	if len(input.RequestID) < 16 || len(input.RequestID) > 128 {
+		return out, fmt.Errorf("request_id must contain 16–128 bytes")
 	}
 	var o OperationDefinition
 	if input.OperationID != "" {
@@ -171,6 +171,14 @@ func (c *TaskClient) Submit(ctx context.Context, input TaskSubmission) (out Task
 	}
 	if err != nil {
 		return out, err
+	}
+	if o.Scope == "offline" {
+		if input.SessionID != "" && input.SessionID != "offline" {
+			return out, fmt.Errorf("offline tasks do not accept a device session")
+		}
+		input.SessionID = "offline"
+	} else if input.SessionID == "" {
+		return out, fmt.Errorf("session_id is required")
 	}
 	if input.Path != "" && input.Path != o.Path {
 		return out, fmt.Errorf("operation and path differ")

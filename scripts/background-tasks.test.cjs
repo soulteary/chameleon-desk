@@ -86,3 +86,9 @@ test('historical slot snapshots import through the read-library callback and sou
  await p.controller.refresh();const button=[...p.dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes('导入'));assert(button);button.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(got.value.kind,'slot');assert.equal(got.error,'partial');
  value.slot_snapshot.source_changed=true;await p.controller.refresh();assert.equal([...p.dom.window.document.querySelectorAll('button')].some(b=>b.textContent.includes('导入')),false);
 });
+
+test('offline registered operations need no device session and submit exactly once',async t=>{
+ const {controller}=fixture(t,async(path,options)=>{if(path==='/api/tasks'&&options){const value=JSON.parse(options.body);assert.equal(value.session_id,'offline');return {id:'task-1',state:'succeeded',result:{kind:'offline_rf'}};}return {server_id:'server',tasks:[]};});
+ controller.configureOperations([{id:'files.rf-analyze',path:'/api/files/rf/analyze',method:'POST',write:false,retry_policy:'never',session_required:false,scope:'offline'}]);
+ const value=await controller.execute('/api/files/rf/analyze',{body:'{"format":"lf-u8","data":"00"}'});assert.equal(value.kind,'offline_rf');
+});

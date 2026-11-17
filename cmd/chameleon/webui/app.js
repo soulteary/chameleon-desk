@@ -8,7 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let environmentTools = null, emulatorTools = null, backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
+let rfFileTools = null, environmentTools = null, emulatorTools = null, backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryManager = null, libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
@@ -36,9 +36,9 @@ const groups = { hardware: ["device", "slots", "read"], database: ["cards"], nde
 async function api(path, opts = {}) {
   const epoch = sessionEpoch;
   let offlineFeatureCheck=false;
-  if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=JSON.parse(opts.body).id?.startsWith("library.");}catch(_){}}
+  if(path==="/api/features/check"&&typeof opts.body==="string"){try{offlineFeatureCheck=/^(library|files)\./.test(JSON.parse(opts.body).id||"");}catch(_){}}
   const taskOperation=backgroundTasks?.operation(path);
-  const deviceRequest = !!taskOperation || path.startsWith("/api/device/") || path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
+  const deviceRequest = (!!taskOperation && taskOperation.session_required!==false) || path.startsWith("/api/device/") || path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path === "/api/info" || path.startsWith("/api/scan/") || path.startsWith("/api/slot/") || path === "/api/features/device" || (path === "/api/features/check" && !offlineFeatureCheck) || path === "/api/firmware/check";
   const headers = { Accept: "application/json", ...opts.headers };
   if (opts.body != null) headers["Content-Type"] = "application/json";
   if (taskOperation || path.startsWith("/api/device/") || path.startsWith("/api/physical/") || path.startsWith("/api/reader/") || path.startsWith("/api/settings/") || path.startsWith("/api/slot/") || path.startsWith("/api/bridge/") || path.startsWith("/api/session/") || path.startsWith("/api/tasks")) headers["X-Chameleon-Token"] = csrfToken;
@@ -52,7 +52,7 @@ async function api(path, opts = {}) {
     if(backgroundTasks && deviceRequest && !taskOperation && !["/api/features/check","/api/firmware/check"].includes(path))throw new Error("此操作未在服务端登记；请更新 Desk 并刷新页面");
     if (backgroundTasks && taskOperation) {
      const value=await backgroundTasks.execute(path,{...opts,headers});
-     if(epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
+     if(deviceRequest && epoch!==sessionEpoch){const error=new Error("旧会话任务结果仅保留在任务列表");error.staleSession=true;throw error;}
      return value;
     }
     const r = await fetch(path, { ...opts, headers, signal: controller.signal });
@@ -103,7 +103,7 @@ function updateWriteButtons() {
   updateLibraryButtons();
   featureAvailability?.apply();
   libraryEditor?.sync();libraryManager?.sync();
-  readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();
+  readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();
 }
 
 function updateLibraryButtons() {
@@ -112,7 +112,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
-  libraryEditor?.sync();libraryManager?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();
+  libraryEditor?.sync();libraryManager?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -468,6 +468,7 @@ function wire() {
   new window.DeskConflictForms({getText:()=>$("#db-json").value});
   slotReader = new window.DeskSlotReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   emulatorTools = new window.DeskEmulatorTools({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),writeAllowed:()=>writesEnabled});
+  rfFileTools = new window.DeskRFFiles({post:postJSON,api,features:featureAvailability,run:runTask,busy:()=>busy.has("analysis")});
   environmentTools = new window.DeskEnvironment({api,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware")});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));

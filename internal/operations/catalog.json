@@ -301,6 +301,14 @@
       "method": "POST",
       "feature_id": "bridge.manage",
       "write": false
+    },
+    {
+      "id": "files.rf-analyze",
+      "path": "/api/files/rf/analyze",
+      "method": "POST",
+      "feature_id": "files.rf-analysis",
+      "write": false,
+      "scope": "offline"
     }
   ]
 }

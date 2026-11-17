@@ -16,10 +16,12 @@ const WriteRetryPolicy = "never"
 var operationCatalogJSON []byte
 
 // OperationDefinition binds a task entry to the existing feature requirements.
+// Scope defaults to session; offline scope is limited to non-device reads.
 // A plan may refer to a write feature while Write remains false: generating a
 // plan does not grant permission to execute it. Handlers retain typed validation
 // and device-side guards. The registry is not arbitrary route execution.
 type OperationDefinition struct {
+	Scope           string            `json:"scope"`
 	ID              string            `json:"id"`
 	Path            string            `json:"path"`
 	Method          string            `json:"method"`
@@ -57,7 +59,13 @@ func loadOperations() []OperationDefinition {
 		ids[o.ID] = true
 		paths[o.Path] = true
 		o.Feature = f
-		o.SessionRequired = true
+		if o.Scope == "" {
+			o.Scope = "session"
+		}
+		if o.Scope != "session" && o.Scope != "offline" || o.Scope == "offline" && (f.Device || o.Write || f.Write) {
+			panic("invalid operation scope: " + o.ID)
+		}
+		o.SessionRequired = o.Scope != "offline"
 		o.RetryPolicy = WriteRetryPolicy
 	}
 	return doc.Operations
