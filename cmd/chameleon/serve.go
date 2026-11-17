@@ -303,8 +303,12 @@ func (ws *webServer) needWrites(w http.ResponseWriter) bool {
 	return true
 }
 
-func (ws *webServer) withDevice(parent context.Context, fn func(context.Context, *chameleon.Client) error) error {
-	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+func (ws *webServer) withDevice(parent context.Context, fn func(context.Context, *chameleon.Client) error, budgets ...time.Duration) error {
+	budget := 30 * time.Second
+	if len(budgets) > 0 {
+		budget = budgets[0]
+	}
+	ctx, cancel := context.WithTimeout(parent, budget)
 	defer cancel()
 	ws.gateOnce.Do(func() { ws.gate = make(chan struct{}, 1) })
 	select {
@@ -358,7 +362,7 @@ func (ws *webServer) withDevice(parent context.Context, fn func(context.Context,
 	return fn(ctx, c)
 }
 
-func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(context.Context, *chameleon.Client) (any, error)) {
+func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(context.Context, *chameleon.Client) (any, error), budgets ...time.Duration) {
 	if ws.nativePort != "" && r.URL.Path != "/api/features/device" && r.URL.Path != "/api/settings/read" && r.URL.Path != "/api/settings/configure" {
 		writeErr(w, http.StatusBadGateway, chameleon.ErrUSBBridgeRequired)
 		return
@@ -374,9 +378,9 @@ func (ws *webServer) device(w http.ResponseWriter, r *http.Request, fn func(cont
 		v, e := fn(ctx, c)
 		out = v
 		return e
-	})
+	}, budgets...)
 	if e != nil {
-		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/read-current" || strings.HasPrefix(r.URL.Path, "/api/slot/emulator/") || r.URL.Path == "/api/settings/configure") && out != nil {
+		if ((strings.HasPrefix(r.URL.Path, "/api/reader/") || strings.HasPrefix(r.URL.Path, "/api/physical/") || strings.HasPrefix(r.URL.Path, "/api/rf/")) || r.URL.Path == "/api/slot/load-card" || r.URL.Path == "/api/slot/edit" || r.URL.Path == "/api/slot/read-current" || strings.HasPrefix(r.URL.Path, "/api/slot/emulator/") || r.URL.Path == "/api/settings/configure") && out != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			writeJSON(w, map[string]any{"error": e.Error(), "result": out})

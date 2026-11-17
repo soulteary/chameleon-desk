@@ -309,6 +309,27 @@
       "feature_id": "files.rf-analysis",
       "write": false,
       "scope": "offline"
+    },
+    {
+      "id": "rf.lf-capture",
+      "path": "/api/rf/lf-capture",
+      "method": "POST",
+      "feature_id": "rf.lf-samples",
+      "write": false
+    },
+    {
+      "id": "rf.hf-sniff",
+      "path": "/api/rf/hf-sniff",
+      "method": "POST",
+      "feature_id": "rf.hf-trace",
+      "write": true
+    },
+    {
+      "id": "rf.hf-auth",
+      "path": "/api/rf/hf-auth",
+      "method": "POST",
+      "feature_id": "rf.hf-trace",
+      "write": false
     }
   ]
 }

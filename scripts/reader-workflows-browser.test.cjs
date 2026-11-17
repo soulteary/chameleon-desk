@@ -27,6 +27,33 @@ const launch = () => chromium.launch({ headless: true, executablePath: process.e
 const library = page => page.locator('#db-json').inputValue().then(JSON.parse);
 const cards = database => Object.entries(database).filter(([key]) => key === 'cards' || key.endsWith('.cards')).flatMap(([, values]) => values.map(value => typeof value === 'string' ? JSON.parse(value) : value));
 const saved = page => page.waitForFunction(() => document.querySelector('#db-save-state').textContent.includes('已自动保存'));
+async function rfCaptureSimulator(){
+ const commands=[],sockets=new Set();let mode=1;
+ const server=net.createServer(socket=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>{});let buffer=Buffer.alloc(0);
+  socket.on('data',chunk=>{buffer=Buffer.concat([buffer,chunk]);while(buffer.length>=10){const size=buffer.readUInt16BE(6)+10;if(buffer.length<size)break;const frame=buffer.subarray(0,size);buffer=buffer.subarray(size);const command=frame.readUInt16BE(2),input=frame.subarray(9,size-1);commands.push({command,input:[...input]});let status=0x68,data=Buffer.alloc(0);
+   if(command===1033)data=Buffer.from([0]);else if(command===1035){const list=[1001,1002,2020,2017,3031,3009];data=Buffer.alloc(list.length*2);list.forEach((v,i)=>data.writeUInt16BE(v,i*2));}
+   else if(command===1002)data=Buffer.from([mode]);else if(command===1001)mode=input[0];
+   else if(command===2020)data=Buffer.from([0,7,0x26,0x80,16,4,0]);
+   else if(command===2017){status=0;data=Buffer.from([0,7,0x26]);}
+   else if(command===3031||command===3009){status=0x40;data=Buffer.from(Array.from({length:128},(_,i)=>i%16<8?0:200));}
+   else status=0x67;
+   const reply=Buffer.alloc(data.length+10);reply[0]=0x11;reply[1]=0xef;reply.writeUInt16BE(command,2);reply.writeUInt16BE(status,4);reply.writeUInt16BE(data.length,6);reply[8]=(-reply.subarray(0,8).reduce((s,v)=>s+v,0))&255;data.copy(reply,9);reply[reply.length-1]=(-data.reduce((s,v)=>s+v,0))&255;socket.write(reply);
+  }});
+ });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ return {port:'tcp:127.0.0.1:'+server.address().port,commands,get mode(){return mode},async close(){for(const socket of sockets)socket.destroy();await new Promise(resolve=>server.close(resolve))}};
+}
+
+test('Chromium captures HF and LF once, confirms mode readback and explicitly hands files to offline analysis after reload', {skip:!binary,timeout:90000},async t=>{
+ const simulator=await rfCaptureSimulator();let server,browser;const errors=[];t.after(async()=>{if(browser)await browser.close();if(server)await server.close();await simulator.close()});server=await serve(['--port',simulator.port,'--allow-writes']);browser=await launch();const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(server.base);await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="device"]').click();await page.locator('#refresh-features').click();await page.waitForFunction(()=>!document.querySelector('#device').hasAttribute('aria-busy'));await page.locator('.dock [data-open="read"]').click();await page.locator('#rf-capture > summary').click();
+ for(const action of ['lf-samples','hf-sniff','hf-auth','lf-adc']){
+  await page.locator('#rf-capture-action').selectOption(action);if(action!=='lf-adc')await page.locator('#rf-capture-duration').fill('1');if(action==='hf-auth')await page.locator('#rf-capture-key').fill('010203040506');await page.locator('#rf-capture-confirm').check();await page.locator('#rf-capture-check').click();await page.waitForFunction(()=>!document.querySelector('#rf-capture-go').disabled);await page.locator('#rf-capture-go').click();await page.waitForFunction(()=>!document.querySelector('#rf-capture-analyze').disabled);
+  assert.match(await page.locator('#rf-capture-status').textContent(),/已回读确认原模式/);assert.equal(simulator.mode,1);const count=simulator.commands.length;await page.locator('#rf-capture-analyze').click();assert.equal(simulator.commands.length,count);assert.equal(await page.locator('#rf-format').inputValue(),action.startsWith('hf-')?'hf-json':action==='lf-adc'?'lf-u8':'lf-json');await page.locator('#rf-analyze').click();await page.waitForFunction(()=>!document.querySelector('#rf-report').disabled);assert.equal(simulator.commands.length,count);
+  if(action==='lf-adc'){assert.match(await page.locator('#rf-summary').textContent(),/采样率 未知/);assert(await page.locator('#rf-csv').isDisabled());}
+ }
+ const captures=simulator.commands.filter(v=>[2020,2017,3031,3009].includes(v.command));assert.deepEqual(captures.map(v=>v.command),[3031,2020,2017,3009]);assert.deepEqual(captures[2].input,[96,0,1,2,3,4,5,6,0,1]);assert.deepEqual(simulator.commands.filter(v=>v.command===1001).map(v=>v.input[0]),[0,1]);
+ const tasks=await page.evaluate(()=>api('/api/tasks')),task=tasks.tasks.find(v=>v.operation_id==='rf.hf-sniff');assert(task);const count=simulator.commands.length;await page.reload();await page.evaluate(()=>window.libraryReady);await page.locator('.dock [data-open="read"]').click();await page.locator('#rf-capture > summary').click();await page.locator('#rf-capture-task').fill(task.id);await page.locator('#rf-capture-query').click();await page.waitForFunction(()=>!document.querySelector('#rf-capture-analyze').disabled);assert.match(await page.locator('#rf-capture-status').textContent(),/不代表当前设备状态/);assert.equal(simulator.commands.length,count);await page.locator('#rf-capture-analyze').click();await page.locator('#rf-analyze').click();await page.waitForFunction(()=>!document.querySelector('#rf-report').disabled);assert.equal(simulator.commands.length,count);assert.deepEqual(errors,[]);
+});
 async function selectCard(page, id) {
   await page.locator('.dock [data-open="cards"]').click();
   await page.locator('#db-id').fill(id); await page.locator('#db-show').click();

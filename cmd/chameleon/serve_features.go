@@ -39,6 +39,7 @@ func (ws *webServer) handleFeatureDevice(w http.ResponseWriter, r *http.Request)
 func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
+		RFCapture         *chameleon.RFCaptureRequest              `json:"rf_capture"`
 		ModeChange        *chameleon.DeviceModeChange              `json:"mode_change"`
 		Type2Batch        *chameleon.Type2BatchWrite               `json:"type2_batch"`
 		CurrentEmulator   *chameleon.CurrentEmulatorRequest        `json:"current_emulator"`
@@ -77,6 +78,7 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 	}
 	request := chameleon.FeatureRequest{ModeChange: body.ModeChange, Type2Batch: body.Type2Batch, CurrentEmulator: body.CurrentEmulator, Value: body.Value, Magic: body.Magic, ReaderConfig: body.ReaderConfig, SlotRead: body.SlotRead, DeviceMode: body.DeviceMode, Slot: body.Slot, Persist: body.Persist, Activate: body.Activate, SettingsPatch: body.SettingsPatch, SlotEdit: body.SlotEdit}
 	request.ClassicRead, request.Type2Read, request.LFRead = body.ClassicRead, body.Type2Read, body.LFRead
+	request.RFCapture = body.RFCapture
 	request.LFWrite = body.LFWrite
 	request.LFIdentity = body.LFIdentity
 	request.ClassicDictionary = body.ClassicDictionary
@@ -86,6 +88,10 @@ func (ws *webServer) handleFeatureCheck(w http.ResponseWriter, r *http.Request) 
 	var result chameleon.FeatureAvailability
 	var err error
 	switch body.ID {
+	case "rf.hf-trace", "rf.lf-samples":
+		if body.RFCapture == nil {
+			err = fmt.Errorf("rf_capture required")
+		}
 	case "device.mode":
 		if body.ModeChange == nil {
 			err = fmt.Errorf("mode_change required")

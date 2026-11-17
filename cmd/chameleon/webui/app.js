@@ -8,7 +8,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 let csrfToken = "", writesEnabled = false, generatedCard = null, capabilitiesPending = false;
-let rfFileTools = null, environmentTools = null, emulatorTools = null, backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
+let rfCaptureTools = null, rfFileTools = null, environmentTools = null, emulatorTools = null, backgroundTasks = null, readerController = null, workflowController = null, slotReader = null;
 let deviceSession = null, sessionEpoch = 0, sessionsEnabled = false, nativeMaintenanceEnabled = false;
 let bridgeEnabled = false, bridgeStatus = null, bridgeMedium = "ble";
 let libraryManager = null, libraryEditor = null, libraryPersistence = null, libraryState = null, pendingLibraryMutation = false;
@@ -103,7 +103,7 @@ function updateWriteButtons() {
   updateLibraryButtons();
   featureAvailability?.apply();
   libraryEditor?.sync();libraryManager?.sync();
-  readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();
+  readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();rfCaptureTools?.sync();
 }
 
 function updateLibraryButtons() {
@@ -112,7 +112,7 @@ function updateLibraryButtons() {
   $("#db-reload").disabled = blocked || libraryState.saving;
   $("#db-restore-previous").disabled = blocked || libraryState.saving || !libraryState.previous;
   $("#db-export-draft").disabled = busy.has("database");
-  libraryEditor?.sync();libraryManager?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();
+  libraryEditor?.sync();libraryManager?.sync(); readerController?.sync();workflowController?.sync();slotReader?.sync();emulatorTools?.sync();environmentTools?.sync();rfFileTools?.sync();rfCaptureTools?.sync();
 }
 function resetLibraryView() {
   $("#library-results").replaceChildren(); $("#db-id").value = ""; invalidate("#db-out");
@@ -469,6 +469,7 @@ function wire() {
   slotReader = new window.DeskSlotReader({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),libraryBusy:()=>busy.has("database")||!libraryState||libraryState.loading,importRead:(result,current)=>libraryEditor.importRead(result,current)});
   emulatorTools = new window.DeskEmulatorTools({post:postJSON,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),writeAllowed:()=>writesEnabled});
   rfFileTools = new window.DeskRFFiles({post:postJSON,api,features:featureAvailability,run:runTask,busy:()=>busy.has("analysis")});
+  rfCaptureTools = new window.DeskRFCapture({post:postJSON,api,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware"),analysisBusy:()=>busy.has("analysis"),session:()=>deviceSession?.session_id||"",useFile:file=>rfFileTools.useCapture(file),impact:()=>{slotReader?.clear();emulatorTools?.clear();const slots=$("#slot-list");slots.replaceChildren();slots.dataset.ready="false";delete slots.dataset.exportJson;$("#info-cards").replaceChildren();$("#info-raw").replaceChildren();}});
   environmentTools = new window.DeskEnvironment({api,features:featureAvailability,run:runTask,busy:()=>busy.has("hardware")});
   new window.DeskConfiguration({api,post:postJSON,features:featureAvailability,run:runTask,writeAllowed:()=>writesEnabled});
   $("#refresh-features").addEventListener("click", () => runTask("hardware", refreshFeatures));

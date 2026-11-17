@@ -91,6 +91,11 @@ The Reader window includes an [offline RF/trace workbench](docs/offline-rf-trace
 for bounded LF sample and HF frame files, selection, candidate checks and exports.
 It uses offline tasks and does not acquire hardware data.
 
+The Reader window also exposes session-bound HF sniff/auth trace and LF samples/ADC
+capture, with explicit mode/slot impact confirmation and a separate handoff to the
+offline workbench. See [Web RF capture](docs/rf-capture.md) for write permission,
+timeout, cancellation and firmware-layout limits.
+
 The [recovery companion and environment tools](docs/recovery-environment.md) provide
 matching native workers, bridge management through Desk tasks, and a Web diagnosis
 panel. They preserve the existing transport and write boundaries.

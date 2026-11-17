@@ -224,3 +224,11 @@ Its durable `offline-analysis` phase recovers as an interrupted read, with no
 replay. Offline result bodies use a shared 16 MiB memory budget: old terminal
 bodies can expire while receipts and metadata remain. Device result retention and
 write retry rules are unchanged. Journals never retain imported files or bodies.
+
+RF capture operations also use the common device gate and session receipts.
+`rf.hf-sniff` is classified as a mutation and requires `--allow-writes` because
+it reloads mutable emulator RAM. HF auth trace and LF capture remain acknowledged
+reads. Cancellation cannot immediately stop the firmware capture; missing mode
+readback must be checked after reconnect. Historical data can be explicitly
+queried and sent to offline analysis without replaying acquisition. See
+[Web RF capture](rf-capture.md).

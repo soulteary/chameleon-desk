@@ -97,6 +97,7 @@ type FeatureAvailability struct {
 // FeatureRequest resolves requirements for selected parameters without I/O.
 // Not all CLI workflows have resolvers; unresolved parameterized entries remain unknown.
 type FeatureRequest struct {
+	RFCapture         *RFCaptureRequest              `json:"rf_capture,omitempty"`
 	ModeChange        *DeviceModeChange              `json:"mode_change,omitempty"`
 	Type2Batch        *Type2BatchWrite               `json:"type2_batch,omitempty"`
 	CurrentEmulator   *CurrentEmulatorRequest        `json:"current_emulator,omitempty"`
@@ -255,6 +256,13 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 		var readErr error
 		resolvedRead := false
 		switch {
+		case (f.ID == "rf.hf-trace" || f.ID == "rf.lf-samples") && request.RFCapture != nil:
+			readCommands, readErr = request.RFCapture.Requirements()
+			f.Write = request.RFCapture.Action == "hf-sniff"
+			resolvedRead = true
+			if request.RFCapture.FeatureID() != f.ID {
+				readErr = fmt.Errorf("capture action differs from feature")
+			}
 		case f.ID == "device.mode" && request.ModeChange != nil:
 			readCommands, readErr = request.ModeChange.Requirements()
 			resolvedRead = true
