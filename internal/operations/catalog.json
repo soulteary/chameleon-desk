@@ -259,6 +259,48 @@
       "method": "POST",
       "feature_id": "device.mode",
       "write": true
+    },
+    {
+      "id": "environment.diagnostics",
+      "path": "/api/environment",
+      "method": "GET",
+      "feature_id": "environment.diagnostics",
+      "write": false
+    },
+    {
+      "id": "bridge.status",
+      "path": "/api/bridge/status",
+      "method": "GET",
+      "feature_id": "bridge.manage",
+      "write": false
+    },
+    {
+      "id": "bridge.scan",
+      "path": "/api/bridge/scan",
+      "method": "POST",
+      "feature_id": "bridge.manage",
+      "write": false
+    },
+    {
+      "id": "bridge.select",
+      "path": "/api/bridge/select",
+      "method": "POST",
+      "feature_id": "bridge.manage",
+      "write": false
+    },
+    {
+      "id": "bridge.connect",
+      "path": "/api/bridge/connect",
+      "method": "POST",
+      "feature_id": "bridge.manage",
+      "write": false
+    },
+    {
+      "id": "bridge.disconnect",
+      "path": "/api/bridge/disconnect",
+      "method": "POST",
+      "feature_id": "bridge.manage",
+      "write": false
     }
   ]
 }

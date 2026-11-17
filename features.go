@@ -194,6 +194,9 @@ func evaluateFeature(f FeatureDefinition, surface string, ctx FeatureContext, re
 		return a, nil
 	}
 
+	if surface == "web" && f.ID == "bridge.manage" && !ctx.BridgeConfigured {
+		reason("unavailable", "bridge_required", "Configure a managed USB or BLE bridge first")
+	}
 	if f.RequirementMode == "bridge" {
 		medium := ctx.BridgeMedium
 		if medium == "" {

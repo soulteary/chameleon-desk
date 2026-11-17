@@ -30,6 +30,20 @@ def smoke(directory):
         bridge = json.loads(subprocess.check_output([str(python), str(root/"bridge/bridge.py"), "--version"]))
         if core != bridge or not core["revision"]:
             raise ValueError("packaged core/bridge identity mismatch")
+        manifest=json.loads((root/"distribution.json").read_text())
+        if manifest.get("recovery_bundled"):
+            # Explicit smoke checks execute only packaged workers without card
+            # inputs. The normal doctor itself never executes these programs.
+            report=json.loads(subprocess.check_output([str(binary),"environment","doctor"],cwd=root.parent))
+            if any(w["code"]!="worker_integrity_match" for w in report["recovery"]["workers"]):
+                raise ValueError("packaged worker integrity unavailable outside bundle working directory")
+            for worker in report["recovery"]["workers"]:
+                path=root/"recovery/bin"/(worker["name"]+(".exe" if sys.platform=="win32" else ""))
+                probe=subprocess.run([str(path)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10,cwd=root.parent)
+                if probe.returncode not in (0,1): raise ValueError("packaged worker failed its argument/loader smoke check: "+worker["name"])
+            worker=root/"recovery/bin"/("mfkey32.exe" if sys.platform=="win32" else "mfkey32")
+            answer=subprocess.check_output([str(worker),"11223344","12345678","01020304","8177993d","05060708","02ac0c37"],timeout=30,cwd=root.parent)
+            if b"Found Key: [a0a1a2a3a4a5]" not in answer: raise ValueError("packaged worker known vector failed")
         for backend in ("usb", "ble"):
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0)); port = listener.getsockname()[1]

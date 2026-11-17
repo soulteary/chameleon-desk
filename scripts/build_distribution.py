@@ -65,7 +65,7 @@ def write_zip(folder, output):
             name = path.relative_to(folder).as_posix()
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             info.create_system = 3
-            mode = 0o755 if name == "chameleon" else 0o644
+            mode = 0o755 if name == "chameleon" or (name.startswith("recovery/bin/") and not name.endswith(".json")) else 0o644
             info.external_attr = (0o100000 | mode) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, path.read_bytes(), compresslevel=9)
@@ -97,7 +97,9 @@ def build(args):
         shutil.copytree(source/"licenses", bundle/"licenses")
         for backend, wheelhouse in (("usb", args.usb_wheelhouse), ("ble", args.ble_wheelhouse)):
             copy_wheels(Path(wheelhouse).resolve(), bundle, backend)
-        manifest = dict(schema_version=1, revision=revision, version=version, os=system, arch=machine,
+        if args.with_recovery:
+            subprocess.run([sys.executable, str(source/"scripts/build_recovery.py"), "--output", str(bundle/"recovery"), "--revision", revision, "--cc", args.cc], check=True)
+        manifest = dict(recovery_bundled=args.with_recovery, schema_version=1, revision=revision, version=version, os=system, arch=machine,
                         python=list(sys.version_info[:2]),
                         python_version=platform.python_version(),
                         zlib_version=zlib.ZLIB_VERSION, zlib_runtime=zlib.ZLIB_RUNTIME_VERSION,
@@ -108,6 +110,7 @@ def build(args):
         output = Path(args.output).resolve()
         output.mkdir(parents=True, exist_ok=True)
         name = f"chameleon-desk-{version['release']}-{revision[:12]}-{system}-{machine}"
+        if args.with_recovery: name += "-recovery"
         archive = output / (name+".zip")
         write_zip(bundle, archive)
         (output/(name+".zip.sha256")).write_text(digest(archive)+"  "+archive.name+"\n", encoding="utf-8")
@@ -118,6 +121,8 @@ if __name__ == "__main__":
     if sys.version_info < (3, 11):
         raise SystemExit("distribution builder requires Python 3.11 or later")
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--with-recovery", action="store_true", help="build the matching native recovery companion")
+    p.add_argument("--cc", default=os.environ.get("RECOVERY_CC", os.environ.get("CC", "cc")))
     p.add_argument("--ref", default="HEAD", help="committed revision; working tree changes are excluded")
     p.add_argument("--go", default="go")
     p.add_argument("--usb-wheelhouse", required=True)

@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -244,17 +241,7 @@ func ValidateClassicRecoveryHelpers(directory, strategy string) error {
 	default:
 		return fmt.Errorf("unsupported recovery strategy")
 	}
-	suffix := ""
-	if runtime.GOOS == "windows" {
-		suffix = ".exe"
-	}
-	for _, name := range names {
-		info, err := os.Stat(filepath.Join(directory, name+suffix))
-		if err != nil || !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0) {
-			return fmt.Errorf("trusted recovery helper is unavailable: %s", name)
-		}
-	}
-	return nil
+	return DiagnoseRecovery(directory).Require(names...)
 }
 func (c *Client) RecoverClassicBound(ctx context.Context, r ClassicRecoveryRequest, tools string) (out ClassicRecoveryResult, err error) {
 	// A candidate from an interrupted inner helper is not a verified workflow result.

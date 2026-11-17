@@ -2,7 +2,8 @@
 
 The native distribution contains a core binary, USB/BLE bridge source, separate
 offline wheel sets, hash-locked install inputs, licenses and build metadata.
-It does not include Python, drivers, Bluetooth services or recovery workers.
+CI companion builds also include matching native recovery workers, their sources
+and build metadata. Python, drivers and Bluetooth services are not included.
 No installer starts a bridge, opens hardware, enables writes or installs system
 packages. Native USB maintenance and DFU remain separate explicit workflows.
 
@@ -151,7 +152,7 @@ build and install the bundle. This network step is explicit:
 ```sh
 python -m pip download --only-binary=:all: -r tools/ble_bridge/requirements-usb.txt --dest reports/wheels-usb
 python -m pip download --only-binary=:all: -r tools/ble_bridge/requirements.txt --dest reports/wheels-ble
-python scripts/build_distribution.py --ref HEAD --usb-wheelhouse reports/wheels-usb --ble-wheelhouse reports/wheels-ble
+python scripts/build_distribution.py --with-recovery --ref HEAD --usb-wheelhouse reports/wheels-usb --ble-wheelhouse reports/wheels-ble
 python scripts/test_distribution_smoke.py reports/distribution
 ```
 
@@ -159,7 +160,9 @@ Use `py -3.11` instead of `python` on Windows if needed. The builder exports onl
 the selected committed tree, ignores dirty/untracked files, sets `CGO_ENABLED=0`,
 uses `-mod=readonly -trimpath -buildvcs=false` and stamps the same revision into
 core and bridge. It does not cross-build wheels. Core serial dependencies remain
-for maintenance/DFU. Optional C recovery workers are not bundled.
+for maintenance/DFU. Use `--with-recovery` to include the matching native C worker companion (enabled
+in CI artifacts); building it requires native C dependencies. See
+[recovery companions and diagnostics](recovery-environment.md).
 
 The resulting archive records Go, Python and zlib versions, target and exact wheel files/hashes;
 ZIP entry order, permissions and timestamps are normalized. CI builds twice
@@ -169,6 +172,14 @@ diagnosis. Re-resolving transitive wheels from an index later can produce a
 different input set; archive reproducibility requires retaining the recorded
 wheels and toolchain, not just the top-level requirements. The smoke test uses
 no physical adapter, device or card and does not establish driver compatibility.
+
+## Web and worker diagnostics
+
+The Web environment panel and `environment doctor` inspect the configured worker
+companion and running-bridge host checks without opening hardware or executing
+workers. The bridge CLI controls the existing Desk session through tasks. See
+[recovery and bridge environment workflows](recovery-environment.md) for commands,
+unknown states, compatibility checks and acceptance boundaries.
 
 ## Transport and maintenance boundaries
 

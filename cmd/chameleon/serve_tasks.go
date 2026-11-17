@@ -390,6 +390,10 @@ func (ws *webServer) taskProgress(ctx context.Context, c *chameleon.Client) (fun
 
 func (ws *webServer) operationHandler(path string) http.HandlerFunc {
 	switch path {
+	case "/api/environment":
+		return ws.handleEnvironment
+	case "/api/bridge/status", "/api/bridge/scan", "/api/bridge/select", "/api/bridge/connect", "/api/bridge/disconnect":
+		return ws.handleBridge
 	case "/api/device/mode", "/api/reader/type2-batch-plan", "/api/reader/type2-batch-write", "/api/reader/value-plan", "/api/reader/value-write", "/api/reader/magic-inspect", "/api/reader/config-read", "/api/reader/config-update", "/api/slot/emulator/read", "/api/slot/emulator/configure", "/api/slot/emulator/logs":
 		return ws.handleExtendedWorkflow
 

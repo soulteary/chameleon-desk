@@ -208,7 +208,7 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		f.BoolVar(&slow, "slow", false, "slow hardnested acquisition")
 		f.IntVar(&targetBlock, "target-block", 4, "recovery target block")
 		f.StringVar(&targetType, "target-key-type", "A", "recovery target A/B")
-		f.StringVar(&name, "tools-dir", "tools/bin", "trusted recovery helper directory")
+		f.StringVar(&name, "tools-dir", chameleon.DefaultRecoveryToolsDir(), "trusted recovery helper directory")
 		f.DurationVar(&rfTimeout, "limit", 5*time.Minute, "recovery total time limit")
 		f.IntVar(&block, "block", 0, "block index 0..255")
 		f.IntVar(&count, "count", 64, "dump block count: 20,64,128,256")
@@ -234,7 +234,7 @@ func runExtendedWithContext(ctx context.Context, args []string, openDevice func(
 		f.StringVar(&bridgeTokenFile, "bridge-token-file", "", "private token file shared with the Python device bridge")
 	case "recover":
 		f.StringVar(&kind, "tool", "", "offline recovery tool name")
-		f.StringVar(&name, "tools-dir", "tools/bin", "trusted tool directory")
+		f.StringVar(&name, "tools-dir", chameleon.DefaultRecoveryToolsDir(), "trusted tool directory")
 		f.DurationVar(&rfTimeout, "limit", 5*time.Minute, "offline process time limit")
 	}
 	f.Usage = func() {

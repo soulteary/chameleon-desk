@@ -86,6 +86,41 @@ func (b *BLEBridge) Diagnose(ctx context.Context) BridgeDiagnostic {
 		// Error text is backend-controlled and may contain identifiers; do not echo it.
 		add("backend_error", "unknown", "Bridge reports a backend failure; run the local Python doctor and inspect its local log")
 	}
+	if status.DiagnosticsVersion == 1 {
+		var host struct {
+			Schema  int                     `json:"schema_version"`
+			Backend string                  `json:"backend"`
+			Build   *BuildInfo              `json:"bridge_version"`
+			Checks  []BridgeDiagnosticCheck `json:"checks"`
+		}
+		backend := "ble"
+		if b.Medium() == "usb-serial" {
+			backend = "usb"
+		}
+		err := b.request(ctx, http.MethodGet, "diagnostics", nil, &host)
+		if err != nil || host.Schema != 1 || host.Backend != backend || host.Build == nil || CheckBridgeVersion(host.Build) != nil || (status.Build != nil && host.Build != nil && *status.Build != *host.Build) || len(host.Checks) > 32 {
+			add("bridge_host_diagnostics_failed", "fail", "Cannot validate running bridge host checks; use its local Python doctor")
+		} else {
+			hints := map[string]string{
+				"python_version":           "Bridge host requires Python 3.11 or later",
+				"dependency_version":       "Check selected backend dependency against the matching lock file",
+				"dependency_missing":       "Install the selected backend requirements on the bridge host",
+				"dependency_load_failed":   "Backend cannot load; check OS libraries, Python architecture and dependency versions",
+				"serial_port_missing":      "Selected application serial path is absent; scan and select explicitly",
+				"serial_permission_denied": "Bridge process lacks serial access metadata; check OS ownership and permissions",
+				"serial_access_metadata":   "Access metadata is only a snapshot; serial occupancy and driver setup remain unverified",
+				"listeners_owned":          "The running bridge owns its listeners; no bind or owner-termination probe was attempted",
+				"hardware_unverified":      "Bluetooth permissions, driver behavior and hardware remain unverified; no device was opened",
+			}
+			for _, check := range host.Checks {
+				if message, ok := hints[check.Code]; ok && (check.Status == "pass" || check.Status == "fail" || check.Status == "unknown") {
+					add("bridge_host_"+check.Code, check.Status, message)
+				}
+			}
+		}
+	} else {
+		add("bridge_host_diagnostics_unavailable", "unknown", "This bridge does not advertise host diagnostics; run its local Python doctor")
+	}
 	add("management_ready", "pass", "Authenticated status and transport policy validated")
 	add("hardware_unverified", "unknown", "No device was opened; driver, adapter, card and firmware behavior remain unverified")
 	return out

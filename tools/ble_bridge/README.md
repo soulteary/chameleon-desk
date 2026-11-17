@@ -276,3 +276,12 @@ a second client's rejection. Verify any intended write on a disposable test
 slot and read it back. An interrupted write can have completed on the device;
 do not retry until its state has been read. BLE performance and Windows/Linux
 hardware compatibility require measurements on the target systems.
+
+## Running-host diagnostics
+
+Managed status advertises `diagnostics_version: 1`. Authenticated
+`GET /v1/diagnostics` checks the configured backend and selected USB permission
+metadata without scanning, opening hardware, rebinding listeners or changing
+connections. It accepts no paths or executable choices. Older Desk clients ignore
+this additive endpoint. See [environment diagnostics](../../docs/recovery-environment.md)
+for the core/Web task flow and remaining unknown states.

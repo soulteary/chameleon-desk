@@ -46,7 +46,7 @@ def dependency(backend):
     return ("pyserial", "serial", "3.5") if backend == "usb" else ("bleak", "bleak", "3.1.0")
 
 
-def diagnose(args):
+def diagnose(args, *, running=False):
     checks = []
     def add(code, status, message):
         checks.append(dict(code=code, status=status, message=message))
@@ -60,9 +60,11 @@ def diagnose(args):
         add("dependency_missing", "fail", f"Install the {args.backend} requirements into the Python environment running this command")
     except Exception:
         add("dependency_load_failed", "fail", "Installed backend cannot load; check OS libraries, architecture and the matching environment")
-    if args.control_port == args.port:
+    if not running and args.control_port == args.port:
         add("listener_configuration", "fail", "Management and data ports must differ")
-    for name, number in (("data", args.port), ("management", args.control_port)):
+    if running:
+        add("listeners_owned", "unknown", "Running bridge owns its listeners; no bind check or port-owner termination is attempted")
+    for name, number in (() if running else (("data", args.port), ("management", args.control_port))):
         if number is None:
             continue
         family = socket.AF_INET6 if ":" in args.listen else socket.AF_INET
@@ -100,3 +102,10 @@ def diagnose(args):
     hints = {"Linux": "Check serial group/udev permissions or BlueZ/D-Bus and adapter power", "Darwin": "Check the application serial port or Bluetooth privacy permission for this Python executable", "Windows": "Check COM ownership/driver or Bluetooth adapter/privacy settings; access denied may also mean another process owns the port"}
     add("hardware_unverified", "unknown", hints.get(platform.system(), "Check platform backend support") + "; no serial port, BLE scan or firmware command was attempted")
     return dict(schema_version=1, bridge_version=build_info(), backend=args.backend, platform=platform.system(), checks=checks)
+
+
+def runtime_diagnose(backend, serial_port=None):
+    # Configuration comes from the running controller, never from HTTP input.
+    from argparse import Namespace
+    return diagnose(Namespace(backend=backend, serial_port=serial_port, port=None,
+                              control_port=None, token_file=None, listen="127.0.0.1"), running=True)

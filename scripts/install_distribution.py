@@ -37,6 +37,21 @@ def verify(root):
     revision = json.loads((root/"bridge/_build.json").read_text())["revision"]
     if core != dict(bridge, revision=revision) or revision != info["revision"] or bridge != info["version"]:
         raise ValueError("core/bridge/distribution version mismatch")
+    if info.get("recovery_bundled"):
+        workers = json.loads((root/"recovery/bin/workers.json").read_text(encoding="utf-8"))
+        if workers["core_version"] != core or workers["os"] != system or workers["arch"] != machine:
+            raise ValueError("recovery companion identity mismatch")
+        expected_workers = {"nested", "staticnested", "darkside", "mfkey32", "mfkey32v2", "mfkey64", "staticnested_1nt", "staticnested_2x1nt_rf08s", "staticnested_2x1nt_rf08s_1key", "mfulc_des_brute", "hardnested"}
+        if workers["schema_version"] != 1 or len(workers["files"]) != len(expected_workers) or {w["name"] for w in workers["files"]} != expected_workers:
+            raise ValueError("recovery worker inventory mismatch")
+        for worker in workers["files"]:
+            name = worker["name"]
+            if not name.replace("_", "").isalnum():
+                raise ValueError("unsafe recovery worker name")
+            path = root/"recovery/bin"/(name+(".exe" if system == "windows" else ""))
+            if path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != worker["sha256"]:
+                raise ValueError("recovery worker checksum mismatch")
+            if system != "windows": path.chmod(0o755)
     return info
 
 
