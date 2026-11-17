@@ -20,6 +20,8 @@ Local modifications:
 - crapto1.c initializes recovery32 bucket ownership before allocation failures can reach cleanup, frees partial results, and returns NULL with ENOMEM on allocation failure.
 - mfulc_des_brute.c checks thread creation, signals a separate atomic abort flag on failure, joins only started workers, and reports an incomplete search as failure. It validates bounded numeric/hex input, frees partial allocations, and reads CBC bytes without alignment assumptions.
 - darkside.c and mfkey.c release empty and discarded candidate lists, transfer parity-zero history ownership explicitly, and report candidate-allocation failures separately from empty results. Parameter allocation failures clean up retained state.
+- HardnestedRecovery/pm3/util.c uses the portable msclock definition in util_posix.c instead of defining a second Windows symbol.
 Cryptographic state-transition and recovery calculations are unchanged. Their copyright/license notices and GPL-3.0 LICENSE are retained. Local source patches are recorded in ARGUMENT-GUARDS.patch, MEMORY-BOUNDS.patch, HARDNESTED-IO.patch, HARDNESTED-BOUNDS.patch, RECOVERY32-ALLOCATIONS.patch, MFULC-THREADS.patch, HARDNESTED-THREADS.patch, DARKSIDE-OWNERSHIP.patch, HELPER-FAILURES.patch, HARDNESTED-ALLOCATIONS.patch, HARDNESTED-SLICES.patch, NESTED-DISTANCE.patch, and HARDNESTED-CALLBACKS.patch.
+The Windows clock-link correction is recorded in HARDNESTED-WINDOWS.patch.
 Go protocol wrappers are independently implemented; protocol catalog docstrings retain upstream provenance.
 The offline C workers are optional executables; no Python is required at runtime.
