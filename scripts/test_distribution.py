@@ -89,3 +89,49 @@ class DistributionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RecoveryCompanionTests(unittest.TestCase):
+    fixture = DistributionTests.fixture
+    sums = DistributionTests.sums
+    def test_companion_identity_inventory_and_hashes(self):
+        recovery_builder = module("recovery_builder", "build_recovery.py")
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);core=self.fixture(root)
+            folder=root/"recovery/bin";folder.mkdir(parents=True)
+            info=json.loads((root/"distribution.json").read_text());info["recovery_bundled"]=True
+            (root/"distribution.json").write_text(json.dumps(info))
+            files=[]
+            for name in recovery_builder.TOOLS:
+                path=folder/(name+(".exe" if info["os"]=="windows" else ""));path.write_bytes(name.encode())
+                files.append(dict(name=name,sha256=builder.digest(path)))
+            manifest=dict(schema_version=1,core_version=json.loads(core),os=info["os"],arch=info["arch"],files=files)
+            worker_file=folder/"workers.json";worker_file.write_text(json.dumps(manifest));self.sums(root)
+            with patch.object(installer.subprocess,"check_output",return_value=core):
+                installer.verify(root)
+                manifest["files"]=files[:1];worker_file.write_text(json.dumps(manifest));self.sums(root)
+                with self.assertRaisesRegex(ValueError,"inventory"):installer.verify(root)
+                manifest["files"]=files;manifest["core_version"]["revision"]="other";worker_file.write_text(json.dumps(manifest));self.sums(root)
+                with self.assertRaisesRegex(ValueError,"identity"):installer.verify(root)
+                manifest["core_version"]=json.loads(core);worker_file.write_text(json.dumps(manifest))
+                (folder/("nested.exe" if info["os"]=="windows" else "nested")).write_bytes(b"changed")
+                self.sums(root)
+                with self.assertRaisesRegex(ValueError,"worker checksum"):installer.verify(root)
+
+
+class RecoveryStaticLinkTests(unittest.TestCase):
+    def test_private_crypto_dependencies_are_static_and_missing_inputs_fail(self):
+        recovery = module("recovery_static", "build_recovery.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for name in ("libz.a", "libzstd.a", "libjitterentropy.a"):
+                (root/name).write_bytes(b"archive")
+            def locate(command, **kwargs):
+                self.assertEqual(command[0], "compiler")
+                return str(root/command[1].split("=",1)[1])+"\n"
+            with patch.object(recovery.subprocess, "check_output", side_effect=locate):
+                flags, archives = recovery.linux_static_links("compiler", "-lcrypto -ldl -pthread -lz -lzstd -l:libjitterentropy.a")
+                self.assertEqual([p.name for p in archives], ["libz.a","libzstd.a","libjitterentropy.a"])
+                self.assertEqual(flags[:2],["-ldl","-pthread"])
+                self.assertTrue(all(str(p) in flags for p in archives))
+                with self.assertRaisesRegex(ValueError,"missing static dependency"):
+                    recovery.linux_static_links("compiler","-lmissing")

@@ -1,7 +1,11 @@
 # Server-owned device tasks
 
 Web, CLI and Go task clients submit the same registered device operations to an
-existing Desk server. The server owns execution and the serialized device session.
+existing Desk server. Bridge lifecycle commands and environment diagnostics also
+use this registry, session identity and serialized operation gate. Their durable
+`bridge-management` and `environment` phases do not invent firmware-command
+progress. Restart marks started host tasks as interrupted reads and never
+replays them. The server owns execution and the serialized device session.
 Refreshing/closing a page or stopping a polling client does not cancel a task.
 Existing synchronous endpoints remain compatible. See
 [operation registration and write policy](operations-and-write-policy.md) for

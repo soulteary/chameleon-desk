@@ -300,3 +300,35 @@ func TestFailedTerminalCheckpointRecoversAsUnknown(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestHostTaskPhasesRecoverWithoutReplay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host-tasks.jsonl")
+	ts := new(webTasks)
+	if err := ts.openJournal(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ operation, path, phase string }{{"environment.diagnostics", "/api/environment", "environment"}, {"bridge.scan", "/api/bridge/scan", "bridge-management"}} {
+		snapshot := chameleon.TaskSnapshot{ID: newTaskID(), RequestID: "interrupted-host-" + item.phase, SessionID: "old-session", OperationID: item.operation, Path: item.path, State: "running", Phase: item.phase, Outcome: "in_progress", Created: time.Now().UTC()}
+		task := &webTask{TaskSnapshot: snapshot, cancel: func() {}}
+		ts.records[snapshot.ID] = task
+		ts.order = append(ts.order, snapshot.ID)
+		ts.receipts[snapshot.RequestID] = taskReceipt{sha256.Sum256([]byte(snapshot.ID)), snapshot.ID}
+		if err := ts.persistLocked(task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ts.stop()
+	recovered := new(webTasks)
+	if err := recovered.openJournal(path); err != nil {
+		t.Fatal(err)
+	}
+	defer recovered.stop()
+	if len(recovered.records) != 2 {
+		t.Fatal(recovered.records)
+	}
+	for _, task := range recovered.records {
+		if task.State != "interrupted" || task.Outcome != "read_interrupted" || !task.Recovered || task.cancel != nil || task.ResultRetained {
+			t.Fatal(task)
+		}
+	}
+}

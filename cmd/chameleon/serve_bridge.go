@@ -77,15 +77,7 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	action := strings.TrimPrefix(r.URL.Path, "/api/bridge/")
-	if action == "status" {
-		v, err := ws.bridge.Status(ctx)
-		if err != nil {
-			writeErr(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, v)
-		return
-	}
+
 	// Connection management shares the device operation gate. It does not
 	// require card-write permission, but it does require the Web session token.
 	ws.gateOnce.Do(func() { ws.gate = make(chan struct{}, 1) })
@@ -98,6 +90,19 @@ func (ws *webServer) handleBridge(w http.ResponseWriter, r *http.Request) {
 	defer func() { <-ws.gate }()
 	if expected, ok := r.Context().Value(sessionContextKey{}).(string); ok && expected != ws.currentSessionID() {
 		writeErr(w, 409, fmt.Errorf("device session changed; refresh connection status"))
+		return
+	}
+	if err := ws.hostTaskStart(ctx, "bridge-management"); err != nil {
+		writeErr(w, 503, err)
+		return
+	}
+	if action == "status" {
+		v, err := ws.bridge.Status(ctx)
+		if err != nil {
+			writeErr(w, 502, err)
+			return
+		}
+		writeJSON(w, v)
 		return
 	}
 	var input struct {

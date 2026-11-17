@@ -167,7 +167,9 @@ func (ts *webTasks) openJournal(path string) (err error) {
 	ts.evictLocked()
 	return nil
 }
-func entryStarted(t chameleon.TaskSnapshot) bool { return t.Commands > 0 || t.Phase == "device" }
+func entryStarted(t chameleon.TaskSnapshot) bool {
+	return t.Commands > 0 || t.Phase == "device" || t.Phase == "environment" || t.Phase == "bridge-management"
+}
 func (j *taskJournal) append(v any) error {
 	current, e := os.Lstat(j.path)
 	if e != nil {
@@ -300,5 +302,5 @@ func validJournalState(state string) bool {
 	return false
 }
 func validJournalPhase(phase string) bool {
-	return phase == "queued" || phase == "device" || phase == "finished"
+	return phase == "queued" || phase == "device" || phase == "environment" || phase == "bridge-management" || phase == "finished"
 }

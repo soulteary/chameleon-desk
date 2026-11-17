@@ -129,8 +129,11 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "tasks" {
 		return runTasks(os.Args[2:])
 	}
-	if len(os.Args) > 2 && os.Args[1] == "bridge" && os.Args[2] == "doctor" {
-		return runBridgeDoctor(os.Args[3:])
+	if len(os.Args) > 1 && os.Args[1] == "bridge" {
+		return runBridgeCLI(os.Args[2:])
+	}
+	if len(os.Args) > 2 && os.Args[1] == "environment" && os.Args[2] == "doctor" {
+		return runEnvironmentDoctor(os.Args[3:])
 	}
 	if len(os.Args) > 1 && os.Args[1] == "features" {
 		return runFeatures(os.Args[2:])

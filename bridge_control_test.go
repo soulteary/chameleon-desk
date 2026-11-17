@@ -144,3 +144,29 @@ func TestBLEBridgeSessionMustMatchTheSelectedDevice(t *testing.T) {
 		listener.Close()
 	}
 }
+
+func TestBridgeHostDiagnosticsAreNegotiatedAndRedacted(t *testing.T) {
+	token := strings.Repeat("e", 64)
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/v1/status" {
+			_ = json.NewEncoder(w).Encode(BridgeStatus{APIVersion: 1, DiagnosticsVersion: 1, State: "disconnected", DataAddress: "127.0.0.1:12345", Transport: TransportInfo{Connection: "tcp", Medium: "ble", Managed: true}})
+			return
+		}
+		if r.URL.Path != "/v1/diagnostics" || r.Method != "GET" {
+			t.Error("unexpected mutation", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"schema_version": 1, "backend": "ble", "bridge_version": CoreBuildInfo(), "checks": []BridgeDiagnosticCheck{{Code: "dependency_load_failed", Status: "fail", Message: token}, {Code: "untrusted-path", Status: "fail", Message: "/private/secret"}}})
+	}))
+	defer server.Close()
+	bridge, err := NewBLEBridge(server.URL, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := bridge.Diagnose(context.Background())
+	raw, _ := json.Marshal(report)
+	if len(paths) != 2 || !strings.Contains(string(raw), "bridge_host_dependency_load_failed") || strings.Contains(string(raw), token) || strings.Contains(string(raw), "/private/secret") {
+		t.Fatal(string(raw), paths)
+	}
+}

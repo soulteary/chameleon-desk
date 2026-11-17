@@ -140,7 +140,7 @@ func runWorkflowWithContext(ctx context.Context, args []string) (retErr error) {
 	output := f.String("output", "", "atomic output file")
 	dictionary := f.String("dictionary", "", "text or GUI dictionary file")
 	keysFile := f.String("keys-file", "", "Classic key map JSON")
-	tools := f.String("tools-dir", "tools/bin", "trusted recovery tool directory")
+	tools := f.String("tools-dir", chameleon.DefaultRecoveryToolsDir(), "trusted recovery tool directory")
 	strategy := f.String("strategy", "auto", "auto|nested|hardnested|darkside")
 	aidText := f.String("aid", "000000", "DESFire application ID bytes")
 	algorithm := f.String("algorithm", "aes", "aes|des|3des")

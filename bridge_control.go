@@ -27,15 +27,16 @@ type BridgeDevice struct {
 }
 
 type BridgeStatus struct {
-	Build          *BuildInfo    `json:"bridge_version,omitempty"`
-	APIVersion     int           `json:"api_version"`
-	State          string        `json:"state"`
-	SelectedDevice *BridgeDevice `json:"selected_device"`
-	SessionActive  bool          `json:"session_active"`
-	Transport      TransportInfo `json:"transport"`
-	DataAddress    string        `json:"data_address"`
-	Error          string        `json:"error"`
-	ErrorCode      string        `json:"error_code,omitempty"`
+	DiagnosticsVersion int           `json:"diagnostics_version,omitempty"`
+	Build              *BuildInfo    `json:"bridge_version,omitempty"`
+	APIVersion         int           `json:"api_version"`
+	State              string        `json:"state"`
+	SelectedDevice     *BridgeDevice `json:"selected_device"`
+	SessionActive      bool          `json:"session_active"`
+	Transport          TransportInfo `json:"transport"`
+	DataAddress        string        `json:"data_address"`
+	Error              string        `json:"error"`
+	ErrorCode          string        `json:"error_code,omitempty"`
 }
 
 type BridgeScan struct {

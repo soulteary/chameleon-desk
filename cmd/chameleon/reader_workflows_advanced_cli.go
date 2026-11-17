@@ -107,7 +107,7 @@ func runAdvancedReaderCLI(args []string) error {
 	output := f.String("output", "", "mandatory new result file")
 	timeout := f.Duration("timeout", 5*time.Second, "per-command timeout")
 	operationTimeout := f.Duration("operation-timeout", 30*time.Second, "whole operation timeout")
-	tools := f.String("recovery-tools-dir", "", "trusted local recovery helpers; classic-recover only")
+	tools := f.String("recovery-tools-dir", chameleon.DefaultRecoveryToolsDir(), "trusted local recovery helpers; classic-recover only")
 	if err := f.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil

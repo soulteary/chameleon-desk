@@ -71,7 +71,7 @@ func runServe(args []string) error {
 	addr := f.String("addr", "127.0.0.1:8088", "loopback listen address (localhost, 127.0.0.1 or ::1)")
 	port := f.String("port", "", applicationPortHelp)
 	timeout := f.Duration("timeout", 5*time.Second, "per-command device timeout")
-	recoveryTools := f.String("recovery-tools-dir", "tools/bin", "trusted local recovery helper directory; browser cannot select executables")
+	recoveryTools := f.String("recovery-tools-dir", chameleon.DefaultRecoveryToolsDir(), "trusted local recovery helper directory; browser cannot select executables")
 	allowWrites := f.Bool("allow-writes", false, "enable endpoints that change the device or write cards")
 	bridgeURL := f.String("ble-bridge", "", "HTTP loopback origin of a managed BLE bridge")
 	usbBridgeURL := f.String("usb-bridge", "", "HTTP loopback origin of a managed USB serial bridge")
@@ -215,9 +215,6 @@ func (ws *webServer) routes(mux *http.ServeMux) error {
 	mux.HandleFunc("/api/library/manage", ws.handleLibraryManage)
 	mux.HandleFunc("/api/capabilities", ws.handleCaps)
 	mux.HandleFunc("/api/features/check", ws.handleFeatureCheck)
-	for _, path := range []string{"status", "scan", "select", "connect", "disconnect"} {
-		mux.HandleFunc("/api/bridge/"+path, ws.handleBridge)
-	}
 	return nil
 }
 

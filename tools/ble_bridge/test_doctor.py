@@ -85,3 +85,28 @@ class DoctorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RuntimeDoctorTests(unittest.TestCase):
+    def test_running_host_check_never_binds_or_opens_hardware(self):
+        with patch.object(doctor.socket, "socket", side_effect=AssertionError("must not bind")), patch.object(doctor.importlib.metadata, "version", return_value="3.5"), patch.object(doctor.importlib, "import_module"):
+            value = doctor.runtime_diagnose("usb")
+        checks = {c["code"]: c["status"] for c in value["checks"]}
+        self.assertEqual(checks["dependency_version"], "pass")
+        self.assertEqual(checks["listeners_owned"], "unknown")
+        self.assertNotIn("listener_configuration", checks)
+        self.assertNotIn("data_port_free", checks)
+
+    def test_authenticated_management_diagnostics_uses_configured_backend_only(self):
+        async def run():
+            controller = serial_management.SerialController(None, None)
+            controller.selected = {"id": "configured-port"}
+            server = management.ManagementServer(controller, "a"*64, "127.0.0.1:12346")
+            with patch.object(management, "runtime_diagnose", return_value={"schema_version": 1}) as check:
+                value = await server.dispatch("GET", "/v1/diagnostics", None)
+                self.assertEqual(value["schema_version"], 1)
+                check.assert_called_once_with("usb", "configured-port")
+            self.assertEqual(controller.state, "disconnected")
+            self.assertEqual(controller.status()["diagnostics_version"], 1)
+            with self.assertRaises(management.APIError):
+                await server.dispatch("POST", "/v1/diagnostics", {"serial_port": "untrusted"})
+        asyncio.run(run())

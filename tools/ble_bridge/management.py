@@ -8,7 +8,7 @@ import secrets
 import stat
 
 from bridge import Bridge, Session, connect_nus, transport_info, NUS_SERVICE, build_info
-from doctor import FAILURE_CODES, failure_code
+from doctor import FAILURE_CODES, failure_code, runtime_diagnose
 
 
 class APIError(Exception):
@@ -116,7 +116,7 @@ class Controller:
         self.data_address = ""
 
     def status(self):
-        return {"api_version": 1, "bridge_version": build_info(), "state": self.state,
+        return {"api_version": 1, "bridge_version": build_info(), "state": self.state, "diagnostics_version": 1,
                 "error_code": self.error if self.error in FAILURE_CODES else "",
                 "selected_device": self.record(self.selected) if self.selected else None,
                 "session_active": self.bridge.active,
@@ -266,6 +266,10 @@ class ManagementServer:
         task.add_done_callback(self.tasks.discard)
 
     async def dispatch(self, method, path, body):
+        if method == "GET" and path == "/v1/diagnostics":
+            selected = self.controller.selected
+            port = selected.get("id") if self.controller.backend == "usb" and selected else None
+            return await asyncio.to_thread(runtime_diagnose, self.controller.backend, port)
         if method == "GET" and path == "/v1/status":
             return self.controller.status()
         if method != "POST":
