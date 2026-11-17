@@ -63,6 +63,16 @@ func TestEnvironmentTaskIsReadOnlyAndSharesSessionGate(t *testing.T) {
 	if done.Status != 409 || calls.Load() != 1 {
 		t.Fatal("stale host task reached bridge", done)
 	}
+	ws.gate <- struct{}{}
+	canceled := submitTask(t, ws, h, "/api/environment", "", "environment-cancel-0001")
+	if w := taskCall(h, ws.token, "POST", "/api/tasks/"+canceled.ID+"/cancel", "{}"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	<-ws.gate
+	done = waitTask(t, ws, canceled.ID, func(v webTask) bool { return taskTerminal(&v) })
+	if done.State != "canceled" || done.Outcome != "not_started" || calls.Load() != 1 {
+		t.Fatal("canceled task reached host", done, calls.Load())
+	}
 	for _, tc := range []struct {
 		method, path, body string
 		want               int

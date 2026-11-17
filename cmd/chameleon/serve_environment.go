@@ -11,6 +11,9 @@ import (
 // hostTaskStart records bounded host/management work without manufacturing
 // device-protocol progress or claiming the bridge data socket.
 func (ws *webServer) hostTaskStart(ctx context.Context, phase string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	t, _ := ctx.Value(taskKey{}).(*webTask)
 	if t == nil {
 		return nil
@@ -25,6 +28,7 @@ func (ws *webServer) hostTaskStart(ctx context.Context, phase string) error {
 	t.Updated = time.Now().UTC()
 	if err := ts.persistLocked(t); err != nil {
 		t.started = false
+		t.State, t.Phase, t.Outcome = "queued", "queued", "not_started"
 		return fmt.Errorf("could not record task start; no host action was started")
 	}
 	return nil
@@ -61,6 +65,10 @@ func (ws *webServer) handleEnvironment(w http.ResponseWriter, r *http.Request) {
 		report.Bridge = &result
 	} else {
 		report.Checks = append(report.Checks, chameleon.BridgeDiagnosticCheck{Code: "managed_bridge_not_configured", Status: "unknown", Message: "No diagnosable managed bridge is configured; existing TCP/native maintenance policy is unchanged"})
+	}
+	if err := ctx.Err(); err != nil {
+		writeErr(w, http.StatusRequestTimeout, err)
+		return
 	}
 	writeJSON(w, report)
 }
