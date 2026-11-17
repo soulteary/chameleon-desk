@@ -182,6 +182,83 @@
       "method": "POST",
       "feature_id": "slot.read-current",
       "write": false
+    },
+    {
+      "id": "reader.type2-batch-plan",
+      "path": "/api/reader/type2-batch-plan",
+      "method": "POST",
+      "feature_id": "reader.type2-batch-plan",
+      "write": false
+    },
+    {
+      "id": "reader.type2-batch-write",
+      "path": "/api/reader/type2-batch-write",
+      "method": "POST",
+      "feature_id": "reader.type2-batch-write",
+      "write": true
+    },
+    {
+      "id": "reader.value-plan",
+      "path": "/api/reader/value-plan",
+      "method": "POST",
+      "feature_id": "reader.value-plan",
+      "write": false
+    },
+    {
+      "id": "reader.value-write",
+      "path": "/api/reader/value-write",
+      "method": "POST",
+      "feature_id": "reader.value-write",
+      "write": true
+    },
+    {
+      "id": "reader.magic-inspect",
+      "path": "/api/reader/magic-inspect",
+      "method": "POST",
+      "feature_id": "reader.magic-inspect",
+      "write": false
+    },
+    {
+      "id": "reader.config-read",
+      "path": "/api/reader/config-read",
+      "method": "POST",
+      "feature_id": "reader.config-read",
+      "write": false
+    },
+    {
+      "id": "reader.config-update",
+      "path": "/api/reader/config-update",
+      "method": "POST",
+      "feature_id": "reader.config-update",
+      "write": true
+    },
+    {
+      "id": "slot.emulator-read",
+      "path": "/api/slot/emulator/read",
+      "method": "POST",
+      "feature_id": "slot.emulator-read",
+      "write": false
+    },
+    {
+      "id": "slot.emulator-configure",
+      "path": "/api/slot/emulator/configure",
+      "method": "POST",
+      "feature_id": "slot.emulator-configure",
+      "write": true
+    },
+    {
+      "id": "slot.emulator-logs",
+      "path": "/api/slot/emulator/logs",
+      "method": "POST",
+      "feature_id": "slot.emulator-logs",
+      "write": false
+    },
+    {
+      "id": "device.mode",
+      "path": "/api/device/mode",
+      "method": "POST",
+      "feature_id": "device.mode",
+      "write": true
     }
   ]
 }

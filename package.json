@@ -2,7 +2,7 @@
   "name": "chameleon-desk",
   "private": true,
   "scripts": {
-    "test:webui": "node --test scripts/webui-desktop.test.cjs scripts/webui-flow.test.cjs scripts/library-persistence.test.cjs scripts/background-tasks.test.cjs scripts/configuration.test.cjs scripts/reader.test.cjs scripts/slot-reader.test.cjs scripts/library-editor.test.cjs scripts/memory-editor.test.cjs scripts/reader-workflows.test.cjs",
+    "test:webui": "node --test scripts/webui-desktop.test.cjs scripts/webui-flow.test.cjs scripts/library-persistence.test.cjs scripts/background-tasks.test.cjs scripts/configuration.test.cjs scripts/reader.test.cjs scripts/slot-reader.test.cjs scripts/library-editor.test.cjs scripts/memory-editor.test.cjs scripts/reader-workflows.test.cjs scripts/r1-r2.test.cjs",
     "test:browser": "node --test scripts/library-browser.test.cjs scripts/reader-workflows-browser.test.cjs",
     "test:ci": "node --test scripts/ci-workflow.test.cjs"
   },

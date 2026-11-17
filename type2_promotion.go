@@ -100,13 +100,22 @@ func (c GUICard) type2PromotionCard(options Type2PromotionOptions) (GUICard, err
 		}
 	}
 	extra["ultralightVersion"], _ = json.Marshal(ints(meta.Version))
+	if sig := meta.Signature; sig != nil && sig.Status == "observed" {
+		extra["ultralightSignature"], _ = json.Marshal(ints(sig.Data))
+	}
 	counters := []int{0, 0, 0}
-	if layout.tag >= 1105 {
+	if layout.tag == 1105 || layout.tag == 1106 {
 		copy(counters, meta.Counters)
 	} else if len(meta.Counters) == 1 {
 		counters[2] = meta.Counters[0]
 	}
-	extra["ultralightCounters"], _ = json.Marshal(counters)
+	if layout.tag == 1107 || layout.tag == 1108 {
+		if _, exists := extra["ultralightCounters"]; exists {
+			return GUICard{}, fmt.Errorf("NTAG210/212 have no captured RF counters; remove separately attached counter claims")
+		}
+	} else {
+		extra["ultralightCounters"], _ = json.Marshal(counters)
+	}
 	out = out.withField("extra", extra)
 	if err = out.Validate(); err != nil {
 		return GUICard{}, err
@@ -138,14 +147,26 @@ func validateType2UIDPages(data []byte, uid []byte) error {
 	return nil
 }
 func type2HasMirror(layout type2Layout, data []byte) bool {
-	if layout.tag < 1100 || layout.tag > 1102 || len(data) < layout.pages*4 {
+	if !((layout.tag >= 1100 && layout.tag <= 1102) || layout.tag == 1107 || layout.tag == 1108) || len(data) < layout.pages*4 {
 		return false
 	}
 	cfg := (layout.passwordPage - 2) * 4
-	return data[cfg]&0xc0 != 0 && data[cfg+2] > 3
+	return type2MirrorEnabled(layout, data[cfg:])
+}
+func type2MirrorEnabled(layout type2Layout, cfg []byte) bool {
+	if len(cfg) < 3 {
+		return false
+	}
+	if layout.tag == 1107 || layout.tag == 1108 {
+		return cfg[2] > 3
+	}
+	return cfg[0]&0xc0 != 0 && cfg[2] > 3
 }
 func type2CounterIndices(layout type2Layout, data []byte) []byte {
-	if layout.tag >= 1105 {
+	if layout.tag == 1107 || layout.tag == 1108 {
+		return nil
+	}
+	if layout.tag == 1105 || layout.tag == 1106 {
 		return []byte{0, 1, 2}
 	}
 	cfg := (layout.passwordPage - 1) * 4

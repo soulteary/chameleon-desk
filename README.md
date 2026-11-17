@@ -87,6 +87,10 @@ Device information, scans and slot writes use [background tasks](docs/background
 
 The slot window can [read the current emulator slot](docs/current-slot-snapshots.md), preview confirmed and unknown data, and import a distinct snapshot draft into the local card library. Complete snapshots that pass type-specific checks can be explicitly converted to standard saved cards while retaining their source draft and provenance. This does not switch slots/modes or enable physical-card writing.
 
+The [R1/R2 delivery notes](docs/r1-r2-delivery.md) describe the typed reader and
+controlled-write forms, [library organization and external-file drafts](docs/library-organization.md),
+and [current-emulator controls](docs/emulator-tools.md), including their validation limits.
+
 Offline file tools work without a connected device. Valid card-library changes
 are saved automatically in IndexedDB and restored after refresh or restart,
 using the same browser profile and origin (scheme, host and port). Save failures

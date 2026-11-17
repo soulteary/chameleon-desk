@@ -33,12 +33,16 @@ func readerWorkflowUsage() {
 	fmt.Println("Usage: chameleon reader classic|lf|type2 --output FILE --port tcp:HOST:PORT [options]")
 	fmt.Println("       chameleon reader classic-repair|classic-verify|classic-dictionary|classic-recover --input FILE --output FILE --port tcp:HOST:PORT")
 	fmt.Println("       chameleon read-draft import|promote --input FILE [--kind auto|classic|lf|type2|slot] [--plan] [--output FILE]")
+	fmt.Println("       chameleon read-draft merge|apply-repair --input FILE --other FILE|--repair FILE [--plan] [--confirm-same-card] [--resolution BLOCK:BYTE:left|right] [--output FILE]")
 	fmt.Println("       chameleon database import-read|promote-read --input DATABASE [--source READ] [--id ID] [--output FILE]")
 }
 func runReaderWorkflowCLI(args []string) error {
 	if len(args) < 2 || args[1] == "--help" || args[1] == "-h" {
 		readerWorkflowUsage()
 		return nil
+	}
+	if args[0] == "read-draft" && (args[1] == "merge" || args[1] == "apply-repair") {
+		return runEvidenceCLI(args)
 	}
 	if args[0] == "reader" {
 		return runReaderCaptureCLI(args[1:])

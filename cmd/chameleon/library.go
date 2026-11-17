@@ -21,6 +21,8 @@ func isLibrary(args []string) bool {
 		return false
 	}
 	switch args[0] {
+	case "library":
+		return true
 	case "database":
 		switch args[1] {
 		case "list", "show", "add", "edit", "delete":
@@ -81,6 +83,9 @@ func cardPatch(f *flag.FlagSet, name, uid, color, folder, atqa, ats *string, sak
 }
 
 func runLibrary(args []string) error {
+	if args[0] == "library" {
+		return runLibraryOrganizer(args)
+	}
 	group, action := args[0], args[1]
 	f := flag.NewFlagSet(group+" "+action, flag.ContinueOnError)
 	input := f.String("input", "", "database snapshot (database), card JSON / .bin dump (cardfile, slot)")
