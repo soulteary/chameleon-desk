@@ -23,7 +23,6 @@ def build(root, output, revision, cc):
     src = Path('third_party/chameleon/src')
     base = [str(src/name) for name in ('common.c','crapto1.c','crypto1.c','bucketsort.c','parity.c','mfkey.c','nested_util.c')]
     flags = ['-O2', '-D_GNU_SOURCE', '-I'+str(src), '-pthread']
-    if system == 'darwin': flags += ['-Wl,-no_uuid']
     if system == 'windows': flags += ['-static', '-Wl,--no-insert-timestamp']
     def compile_tool(name, sources, extra=()):
         target = folder/(name+('.exe' if system == 'windows' else ''))

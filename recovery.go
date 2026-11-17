@@ -58,6 +58,9 @@ func runRecoveryIn(ctx context.Context, directory, workspace, tool string, args 
 	if e := validateRecoveryArgs(tool, args); e != nil {
 		return RecoveryResult{Tool: tool}, e
 	}
+	if e := ctx.Err(); e != nil {
+		return RecoveryResult{Tool: tool}, e
+	}
 	if e := DiagnoseRecovery(directory).Require(tool); e != nil {
 		return RecoveryResult{Tool: tool}, e
 	}
