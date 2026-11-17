@@ -21,7 +21,7 @@ def linux_static_links(cc, pkg_flags):
     for flag in shlex.split(pkg_flags):
         if flag == '-lcrypto': continue
         if flag.startswith('-l') and flag[2:] not in ('dl','pthread','m','rt','c'):
-            archive = Path(subprocess.check_output([cc,'-print-file-name=lib'+flag[2:]+'.a'],text=True).strip()).resolve()
+            archive = Path(subprocess.check_output([cc,'-print-file-name='+(flag[3:] if flag.startswith('-l:') else 'lib'+flag[2:]+'.a')],text=True).strip()).resolve()
             if not archive.is_file(): raise ValueError('missing static dependency: '+flag)
             archives.append(archive)
             extra.append(str(archive))

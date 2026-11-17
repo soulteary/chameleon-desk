@@ -126,7 +126,8 @@ For fixed USB, replace the Python management arguments with
 local doctor still applies. Fixed BLE uses `--device` instead. Keep the existing
 USB/BLE setup documentation for adapter-specific requirements.
 
-The core doctor makes one authenticated `GET /v1/status`: no scan, selection,
+The core doctor makes one authenticated `GET /v1/status` and, when advertised,
+one `GET /v1/diagnostics` for running-host checks: no scan, selection,
 connection changes, data socket claim or firmware commands. It reports missing
 listener, authentication, timeout, invalid protocol/medium, cleanup blocking,
 active data ownership and version mismatch. It redacts tokens and backend error

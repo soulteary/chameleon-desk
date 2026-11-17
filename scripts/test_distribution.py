@@ -129,7 +129,7 @@ class RecoveryStaticLinkTests(unittest.TestCase):
                 self.assertEqual(command[0], "compiler")
                 return str(root/command[1].split("=",1)[1])+"\n"
             with patch.object(recovery.subprocess, "check_output", side_effect=locate):
-                flags, archives = recovery.linux_static_links("compiler", "-lcrypto -ldl -pthread -lz -lzstd -ljitterentropy")
+                flags, archives = recovery.linux_static_links("compiler", "-lcrypto -ldl -pthread -lz -lzstd -l:libjitterentropy.a")
                 self.assertEqual([p.name for p in archives], ["libz.a","libzstd.a","libjitterentropy.a"])
                 self.assertEqual(flags[:2],["-ldl","-pthread"])
                 self.assertTrue(all(str(p) in flags for p in archives))

@@ -330,10 +330,10 @@ class ManagementTests(unittest.IsolatedAsyncioTestCase):
                 base = "http://" + match[1].decode()
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-                def request(path, body=None, token=""):
+                def request(path, body=None, token="", method=None):
                     data = None if body is None else json.dumps(body).encode()
                     headers = {"Content-Type": "application/json", "X-Chameleon-Token": token}
-                    req = urllib.request.Request(base + path, data=data, headers=headers)
+                    req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
                     try:
                         with opener.open(req, timeout=5) as response:
                             return response.status, json.load(response)
@@ -341,15 +341,15 @@ class ManagementTests(unittest.IsolatedAsyncioTestCase):
                         content = error.read().decode()
                         return error.code, json.loads(content) if "application/json" in error.headers.get("Content-Type", "") else content
 
-                async def api(path, body=None, token=""):
-                    return await asyncio.to_thread(request, path, body, token)
+                async def api(path, body=None, token="", method=None):
+                    return await asyncio.to_thread(request, path, body, token, method)
 
                 _, caps = await api("/api/capabilities")
                 self.assertTrue(caps["ble_bridge_enabled"])
                 self.assertFalse(caps["writes_enabled"])
                 self.assertNotIn(self.token, json.dumps(caps))
                 token = caps["csrf_token"]
-                self.assertEqual((await api("/api/bridge/scan", {}))[0], 403)
+                self.assertEqual((await api("/api/bridge/scan", method="POST"))[0], 403)
                 self.assertEqual((await api("/api/bridge/scan", {}, token))[0], 200)
                 self.assertEqual((await api("/api/bridge/select", {"device_id": "first-id"}, token))[0], 200)
                 code, connected = await api("/api/bridge/connect", {}, token)
