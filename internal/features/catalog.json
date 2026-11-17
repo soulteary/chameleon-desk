@@ -2650,8 +2650,10 @@
       "commands": [],
       "conditional": [],
       "web": {
-        "status": "missing",
-        "entries": [],
+        "status": "supported",
+        "entries": [
+          "POST /api/files/rf/analyze"
+        ],
         "controls": []
       },
       "cli": {
@@ -2667,12 +2669,17 @@
         "status": "supported",
         "entries": [
           "AnalyzeLFSamples",
-          "DecodeManchester"
+          "DecodeManchester",
+          "AnalyzeRFFile"
         ]
       },
-      "notes": [],
+      "notes": [
+        "Bounded offline LF sample import/selection/analysis and CSV/SVG exports use existing SDK helpers. Rate declarations and heuristics do not establish physical modulation or a card identity."
+      ],
       "sources": [
-        "samples.go"
+        "samples.go",
+        "rf_files.go",
+        "cmd/chameleon/serve_rf_files.go"
       ],
       "effect": "offline"
     },
@@ -5624,6 +5631,54 @@
         "recovery_diagnostics.go",
         "cmd/chameleon/serve_environment.go",
         "scripts/build_recovery.py"
+      ]
+    },
+    {
+      "id": "files.rf-analysis",
+      "title": "Offline LF samples and HF trace workbench",
+      "device": false,
+      "write": false,
+      "effect": "offline",
+      "models": [
+        "any"
+      ],
+      "transport": "any",
+      "requirement_mode": "offline",
+      "commands": [],
+      "conditional": [],
+      "web": {
+        "status": "supported",
+        "entries": [
+          "POST /api/files/rf/analyze"
+        ],
+        "controls": [
+          "#rf-analyze"
+        ]
+      },
+      "cli": {
+        "status": "supported",
+        "entries": [
+          "tasks submit --operation files.rf-analyze"
+        ]
+      },
+      "sdk": {
+        "status": "supported",
+        "entries": [
+          "AnalyzeRFFile",
+          "RFFileRequest.Validate",
+          "TaskClient.Submit"
+        ]
+      },
+      "notes": [
+        "Explicit LF JSON/u8 and Desk HF JSON/packed or PM3/GUI trace formats only; no hardware acquisition, transmission, key recovery or card-library handoff.",
+        "Offline tasks do not require a device session, firmware command or write permission. They retain receipts and bounded in-memory results; restart never replays them.",
+        "Partial frame prefixes, parity/CRC suffix candidates and file-declared timing are not verified RF evidence. No timestamps are synthesized."
+      ],
+      "sources": [
+        "rf_files.go",
+        "cmd/chameleon/serve_rf_files.go",
+        "cmd/chameleon/webui/rf-files.js",
+        "docs/offline-rf-trace.md"
       ]
     }
   ]

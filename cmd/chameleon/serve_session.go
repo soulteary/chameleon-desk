@@ -17,8 +17,8 @@ import (
 type sessionContextKey struct{}
 
 func hardwareRequest(path string) bool {
-	if _, ok := chameleon.OperationForPath(path); ok {
-		return true
+	if operation, ok := chameleon.OperationForPath(path); ok {
+		return operation.SessionRequired
 	}
 	return path == "/api/firmware/check"
 }
